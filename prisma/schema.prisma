@@ -1,13 +1,142 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
-generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
-}
-
 datasource db {
   provider = "postgresql"
+  
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  loginId   String   @unique // Used for logging in (e.g., username or ID)
+  password  String
+  email     String?  @unique // Optional, used for password recovery codes
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student   Student?
+  teacher   Teacher?
+  parent    Parent?
+  notices   Notice[]
+}
+
+model Student {
+  id             String         @id @default(uuid())
+  userId         String         @unique
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admissionNo    String         @unique
+  firstName      String
+  lastName       String
+  classSectionId String?
+  classSection   ClassSection?  @relation(fields: [classSectionId], references: [id])
+  parentId       String?
+  parent         Parent?        @relation(fields: [parentId], references: [id])
+  attendances    Attendance[]
+  examAttempts   ExamAttempt[]
+  fees           Fee[]
+}
+
+model Teacher {
+  id         String         @id @default(uuid())
+  userId     String         @unique
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName  String
+  lastName   String
+  classes    ClassSection[]
+  timetables Timetable[]
+}
+
+model Parent {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName String
+  lastName  String
+  students  Student[]
+}
+
+model ClassSection {
+  id         String      @id @default(uuid())
+  name       String      // e.g., "Grade 10-A"
+  teacherId  String?
+  teacher    Teacher?    @relation(fields: [teacherId], references: [id])
+  students   Student[]
+  timetables Timetable[]
+  exams      Exam[]
+}
+
+model Timetable {
+  id             String       @id @default(uuid())
+  classSectionId String
+  classSection   ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  teacherId      String
+  teacher        Teacher      @relation(fields: [teacherId], references: [id])
+  dayOfWeek      String       // e.g., "MONDAY"
+  startTime      String       // e.g., "08:00 AM"
+  endTime        String       // e.g., "09:00 AM"
+  subject        String
+}
+
+model Attendance {
+  id        String           @id @default(uuid())
+  studentId String
+  student   Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date      DateTime
+  status    AttendanceStatus
+  remarks   String?
+}
+
+model Exam {
+  id             String        @id @default(uuid())
+  title          String        // e.g., "Midterm Mathematics"
+  classSectionId String
+  classSection   ClassSection  @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  totalMarks     Float
+  examDate       DateTime
+  attempts       ExamAttempt[]
+}
+
+model ExamAttempt {
+  id            String   @id @default(uuid())
+  examId        String
+  exam          Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  marksObtained Float
+  grade         String?  // e.g., "A", "B+"
+}
+
+model Fee {
+  id        String    @id @default(uuid())
+  studentId String
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  amount    Float
+  dueDate   DateTime
+  isPaid    Boolean   @default(false)
+  paidAt    DateTime?
+}
+
+model Notice {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
 }

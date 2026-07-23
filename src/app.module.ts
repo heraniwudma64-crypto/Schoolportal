@@ -14,9 +14,10 @@ import { ReportCardModule } from './report-card/report-card.module';
 import { ExportModule } from './export/export.module';
 import { NoticeModule } from './notice/notice.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, StudentModule, FeeModule, AcademicYearModule, ClassSectionModule, TimetableModule, AttendanceModule, ExamModule, ReportCardModule, ExportModule, NoticeModule, DashboardModule],
+  imports: [PrismaModule, AuthModule, StudentModule, FeeModule, AcademicYearModule, ClassSectionModule, TimetableModule, AttendanceModule, ExamModule, ReportCardModule, ExportModule, NoticeModule, DashboardModule, UsersModule],
   controllers: [AppController],
   providers: [AppService],
 })
