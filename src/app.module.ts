@@ -16,9 +16,27 @@ import { NoticeModule } from './notice/notice.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { UsersModule } from './users/users.module';
 import { StudentsModule } from './students/students.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, StudentModule, StudentsModule, FeeModule, AcademicYearModule, ClassSectionModule, TimetableModule, AttendanceModule, ExamModule, ReportCardModule, ExportModule, NoticeModule, DashboardModule, UsersModule],
+  imports: [
+    PrismaModule,
+    AuthModule,
+    AdminModule,
+    StudentModule,
+    StudentsModule,
+    FeeModule,
+    AcademicYearModule,
+    ClassSectionModule,
+    TimetableModule,
+    AttendanceModule,
+    ExamModule,
+    ReportCardModule,
+    ExportModule,
+    NoticeModule,
+    DashboardModule,
+    UsersModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
