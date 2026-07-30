@@ -1,17 +1,9 @@
-import { IsEmail, IsNotEmpty, IsEnum, IsOptional, MinLength } from 'class-validator';
 import { Role } from '@prisma/client';
 
-export class RegisterDto {  
-  @IsNotEmpty()
-  loginId: string;
-
-  @IsEmail()
+export class RegisterDto {
+  loginId: string; // Add this line
   email: string;
-
-  @MinLength(6, { message: 'Password must be at least 6 characters long' })
   password: string;
-
-  @IsEnum(Role)
-  @IsOptional()
-  role?: Role;
+  name?: string;
+  role?: Role; // Match the Prisma Role enum type
 }
