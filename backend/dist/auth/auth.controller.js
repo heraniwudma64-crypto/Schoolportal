@@ -20,7 +20,6 @@ const passport_1 = require("@nestjs/passport");
 const roles_decorator_1 = require("./decorators/roles.decorator");
 const roles_guard_1 = require("./guards/roles.guard");
 const bcrypt = require("bcrypt");
-const client_1 = require("@prisma/client");
 const register_dto_1 = require("./dto/register.dto");
 const login_dto_1 = require("./dto/login.dto");
 let AuthController = class AuthController {
@@ -30,17 +29,31 @@ let AuthController = class AuthController {
     }
     async register(registerDto) {
         const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-        return this.prisma.user.create({
+        return await this.prisma.user.create({
             data: {
-                loginId: registerDto.loginId,
-                email: registerDto.email,
+                loginId: registerDto.idNumber,
+                email: registerDto.email || null,
                 password: hashedPassword,
-                role: registerDto.role || client_1.Role.STUDENT,
+                role: registerDto.role,
             },
         });
     }
     async login(loginDto) {
-        return this.authService.login(loginDto.loginId, loginDto.password);
+        const user = await this.prisma.user.findUnique({
+            where: { loginId: loginDto.loginId },
+        });
+        if (!user) {
+            throw new common_1.UnauthorizedException('Invalid credentials');
+        }
+        const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
+        if (!isPasswordValid) {
+            throw new common_1.UnauthorizedException('Invalid credentials');
+        }
+        return {
+            message: 'Login successful',
+            role: user.role,
+            userId: user.id
+        };
     }
     getProfile(req) {
         return {

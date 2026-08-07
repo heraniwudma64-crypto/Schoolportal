@@ -5,15 +5,15 @@ export declare class EnrollmentsService {
     enrollStudent(studentId: string, courseId: string): Promise<{
         id: string;
         createdAt: Date;
-        studentId: string;
         courseId: string;
+        studentId: string;
     }>;
     getCourseStudents(courseId: string): Promise<({
         student: {
             id: string;
             loginId: string;
-            password: string;
             email: string | null;
+            password: string;
             role: import(".prisma/client").$Enums.Role;
             createdAt: Date;
             updatedAt: Date;
@@ -21,7 +21,7 @@ export declare class EnrollmentsService {
     } & {
         id: string;
         createdAt: Date;
-        studentId: string;
         courseId: string;
+        studentId: string;
     })[]>;
 }

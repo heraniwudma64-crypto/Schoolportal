@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:4000', // Your NestJS backend URL
+  baseURL: 'http://localhost:5000', // Your NestJS backend URL
 });
 
 // Automatically attach JWT token to requests if it exists

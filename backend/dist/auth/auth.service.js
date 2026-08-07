@@ -12,13 +12,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
+const bcrypt = require("bcrypt");
 let AuthService = class AuthService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    async validateUser(email, pass) {
-        const user = await this.prisma.user.findUnique({ where: { email } });
-        if (user && user.password === pass) {
+    async validateUser(loginId, pass) {
+        const user = await this.prisma.user.findUnique({
+            where: { email: loginId },
+        });
+        if (user && (await bcrypt.compare(pass, user.password))) {
             const { password, ...result } = user;
             return result;
         }
@@ -33,6 +36,49 @@ let AuthService = class AuthService {
             message: 'Login successful',
             user,
         };
+    }
+    async register(dto) {
+        const hashedPassword = await bcrypt.hash(dto.password, 10);
+        const nameParts = (dto.fullName || '').trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        return await this.prisma.$transaction(async (prisma) => {
+            const user = await prisma.user.create({
+                data: {
+                    loginId: dto.idNumber,
+                    email: dto.email || null,
+                    password: hashedPassword,
+                    role: dto.role,
+                },
+            });
+            if (dto.role === 'STUDENT') {
+                await prisma.student.create({
+                    data: {
+                        userId: user.id,
+                        admissionNo: dto.idNumber,
+                        firstName,
+                        lastName,
+                        classGrade: dto.classGrade || null,
+                        address: dto.address || null,
+                        parentName: dto.parentName || null,
+                        parentPhone: dto.parentPhone || null,
+                        medicalStatus: dto.medicalStatus || null,
+                    },
+                });
+            }
+            else if (dto.role === 'TEACHER' || dto.role === 'ADMIN') {
+                await prisma.teacher.create({
+                    data: {
+                        userId: user.id,
+                        firstName,
+                        lastName,
+                        address: dto.address || null,
+                        medicalStatus: dto.medicalStatus || null,
+                    },
+                });
+            }
+            return { message: 'User registered successfully', userId: user.id };
+        });
     }
 };
 exports.AuthService = AuthService;

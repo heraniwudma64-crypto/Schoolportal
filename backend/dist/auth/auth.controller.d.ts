@@ -17,7 +17,8 @@ export declare class AuthController {
     }>;
     login(loginDto: LoginDto): Promise<{
         message: string;
-        user: any;
+        role: import(".prisma/client").$Enums.Role;
+        userId: string;
     }>;
     getProfile(req: any): {
         message: string;

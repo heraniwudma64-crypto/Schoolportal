@@ -11,17 +11,17 @@ export declare class AttendanceController {
     }): Promise<{
         id: string;
         createdAt: Date;
-        courseId: string;
+        userId: string;
         date: Date;
         status: import(".prisma/client").$Enums.AttendanceStatus;
-        userId: string;
+        courseId: string;
     }>;
     getCourseAttendance(courseId: string): Promise<({
         user: {
             id: string;
             loginId: string;
-            password: string;
             email: string | null;
+            password: string;
             role: import(".prisma/client").$Enums.Role;
             createdAt: Date;
             updatedAt: Date;
@@ -29,9 +29,9 @@ export declare class AttendanceController {
     } & {
         id: string;
         createdAt: Date;
-        courseId: string;
+        userId: string;
         date: Date;
         status: import(".prisma/client").$Enums.AttendanceStatus;
-        userId: string;
+        courseId: string;
     })[]>;
 }

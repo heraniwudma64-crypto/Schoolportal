@@ -14,13 +14,6 @@ const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./auth/auth.module");
 const fee_module_1 = require("./fee/fee.module");
 const academic_year_module_1 = require("./academic-year/academic-year.module");
-const class_section_module_1 = require("./class-section/class-section.module");
-const timetable_module_1 = require("./timetable/timetable.module");
-const exam_module_1 = require("./exam/exam.module");
-const report_card_module_1 = require("./report-card/report-card.module");
-const export_module_1 = require("./export/export.module");
-const notice_module_1 = require("./notice/notice.module");
-const dashboard_module_1 = require("./dashboard/dashboard.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -31,13 +24,6 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             fee_module_1.FeeModule,
             academic_year_module_1.AcademicYearModule,
-            class_section_module_1.ClassSectionModule,
-            timetable_module_1.TimetableModule,
-            exam_module_1.ExamModule,
-            report_card_module_1.ReportCardModule,
-            export_module_1.ExportModule,
-            notice_module_1.NoticeModule,
-            dashboard_module_1.DashboardModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

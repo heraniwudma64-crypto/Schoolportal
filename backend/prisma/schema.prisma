@@ -1,9 +1,13 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
 generator client {
   provider = "prisma-client-js"
 }
-datasource db {
-  provider = "postgresql"
-}
+
 enum Role {
   ADMIN
   TEACHER
@@ -19,32 +23,33 @@ enum AttendanceStatus {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  loginId   String   @unique // Used for logging in (e.g., username or ID)
+  id        String   @id @default(uuid()) // Fixed: changed from Int to String (UUID) to match foreign keys
+  loginId   String   @unique 
   password  String
-  email     String?  @unique // Optional, used for password recovery codes
+  email     String?  @unique 
   role      Role
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  courses   Course[]
+  
+  courses     Course[]
   enrollments Enrollment[]
   attendances Attendance[]
 
-  student   Student?
-  teacher   Teacher?
-  parent    Parent?
-  notices   Notice[]
+  student     Student?
+  teacher     Teacher?
+  parent      Parent?
+  notices     Notice[]
 }
 
 model Course {
-  id          String   @id @default(uuid())
-  title       String
-  description String?
-  teacherId   String
-  teacher     User     @relation(fields: [teacherId], references: [id])
-  createdAt   DateTime @default(now())
-  enrollments Enrollment[]
-  attendances Attendance[]
+  id           String       @id @default(uuid())
+  title        String
+  description  String?
+  teacherId    String
+  teacher      User         @relation(fields: [teacherId], references: [id])
+  createdAt    DateTime     @default(now())
+  enrollments  Enrollment[]
+  attendances  Attendance[]
 }
 
 model Enrollment {
@@ -55,33 +60,42 @@ model Enrollment {
   course    Course   @relation(fields: [courseId], references: [id])
   createdAt DateTime @default(now())
 
-  @@unique([studentId, courseId]) // Ensures a student can't enroll in the same course twice
+  @@unique([studentId, courseId])
 }
 
 model Student {
-  id             String         @id @default(uuid())
-  userId         String         @unique
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  admissionNo    String         @unique
-  firstName      String
-  lastName       String
-  classSectionId String?
-  classSection   ClassSection?  @relation(fields: [classSectionId], references: [id])
-  parentId       String?
-  parent         Parent?        @relation(fields: [parentId], references: [id])
+  id            String        @id @default(uuid())
+  userId        String        @unique
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admissionNo   String        @unique
+  firstName     String
+  lastName      String
+  classGrade    String?       
+  address       String?       
+  parentName    String?       
+  parentPhone   String?       
+  medicalStatus String?       
   
-  examAttempts   ExamAttempt[]
-  fees           Fee[]
+  classSectionId String?
+  classSection   ClassSection? @relation(fields: [classSectionId], references: [id])
+  parentId       String?
+  parent         Parent?       @relation(fields: [parentId], references: [id])
+  
+  examAttempts ExamAttempt[]
+  fees         Fee[]
 }
 
 model Teacher {
-  id         String         @id @default(uuid())
-  userId     String         @unique
-  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  firstName  String
-  lastName   String
-  classes    ClassSection[]
-  timetables Timetable[]
+  id            String         @id @default(uuid())
+  userId        String         @unique
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName     String
+  lastName      String
+  address       String?        
+  medicalStatus String?        
+  
+  classes       ClassSection[]
+  timetables    Timetable[]
 }
 
 model Parent {
@@ -95,7 +109,7 @@ model Parent {
 
 model ClassSection {
   id         String      @id @default(uuid())
-  name       String      // e.g., "Grade 10-A"
+  name       String      
   teacherId  String?
   teacher    Teacher?    @relation(fields: [teacherId], references: [id])
   students   Student[]
@@ -109,9 +123,9 @@ model Timetable {
   classSection   ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
   teacherId      String
   teacher        Teacher      @relation(fields: [teacherId], references: [id])
-  dayOfWeek      String       // e.g., "MONDAY"
-  startTime      String       // e.g., "08:00 AM"
-  endTime        String       // e.g., "09:00 AM"
+  dayOfWeek      String       
+  startTime      String       
+  endTime        String       
   subject        String
 }
 
@@ -121,7 +135,7 @@ model Attendance {
   status    AttendanceStatus @default(PRESENT)
   
   userId    String
-  user      User             @relation(fields: [userId], references: [id]) // <-- Links to User table
+  user      User             @relation(fields: [userId], references: [id]) 
   
   courseId  String
   course    Course           @relation(fields: [courseId], references: [id])
@@ -133,7 +147,7 @@ model Attendance {
 
 model Exam {
   id             String        @id @default(uuid())
-  title          String        // e.g., "Midterm Mathematics"
+  title          String        
   classSectionId String
   classSection   ClassSection  @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
   totalMarks     Float
@@ -148,20 +162,18 @@ model ExamAttempt {
   studentId     String
   student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   marksObtained Float
-  grade         String?  // e.g., "A", "B+"
+  grade         String?  
 }
 
 model Fee {
-  id        String    @id @default(uuid())
+  id        String   @id @default(uuid())
   studentId String
-  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   amount    Float
   dueDate   DateTime
-  isPaid    Boolean   @default(false)
+  isPaid    Boolean  @default(false)
   paidAt    DateTime?
 }
-
-
 
 model Notice {
   id        String   @id @default(uuid())

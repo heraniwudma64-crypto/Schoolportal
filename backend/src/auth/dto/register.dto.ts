@@ -1,9 +1,13 @@
-import { Role } from '@prisma/client';
-
 export class RegisterDto {
-  loginId: string; // Add this line
-  email: string;
+  fullName: string;
+  idNumber: string; // <-- Add this line
+  email?: string;
   password: string;
-  name?: string;
-  role?: Role; // Match the Prisma Role enum type
+  gender: string;
+  role: 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
+  classGrade?: string;
+  parentName?: string;
+  parentPhone?: string;
+  address?: string;
+  medicalStatus?: string;
 }

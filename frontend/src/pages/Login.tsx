@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import api from '../api/axios';
+import { useNavigate, Link } from 'react-router-dom';
+import api from '../api/axios'; // Make sure to use 'api' instead of 'axios'
 
 export default function Login() {
   const [loginId, setLoginId] = useState('');
@@ -10,20 +10,22 @@ export default function Login() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Send loginId instead of email to match your backend
-      const response = await api.post('/auth/login', { loginId, password });
+      // Use 'api' instance here instead of 'axios'
+      const response = await api.post('/auth/login', {
+        loginId: loginId,
+        password: password,
+      });
       
-      // Save token and role returned from your backend
-      localStorage.setItem('token', response.data.access_token);
-      localStorage.setItem('role', response.data.role);
-
-      // Route based on role
+      // Redirect based on role returned from backend
       const role = response.data.role;
       if (role === 'STUDENT') navigate('/student');
-      else if (role === 'TEACHER' || role === 'ADMIN') navigate('/teacher');
-      else if (role === 'PARENT') navigate('/parent');
-    } catch (err) {
-      alert('Login failed. Check your credentials.');
+      else if (role === 'TEACHER') navigate('/teacher');
+      else if (role === 'ADMIN') navigate('/admin');
+      else navigate('/parent');
+
+    } catch (error) {
+      console.error(error);
+      alert('Login failed: Invalid ID or password');
     }
   };
 
@@ -46,6 +48,14 @@ export default function Login() {
           required 
         />
         <button type="submit">Login</button>
+        <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+          <p style={{ color: '#666', fontSize: '0.9rem' }}>
+            Don't have an account?{' '}
+            <Link to="/register" style={{ color: '#4f46e5', textDecoration: 'underline' }}>
+              Register now
+            </Link>
+          </p>
+        </div>
       </form>
     </div>
   );
