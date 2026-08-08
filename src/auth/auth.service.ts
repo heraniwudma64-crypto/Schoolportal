@@ -11,7 +11,7 @@ export class AuthService {
   ) {}
 
   async login(loginId: string, pass: string) {
-    const user = await this.prisma.user.findFirst({
+    const user = await this.prisma.findFirst('user', {
       where: {
         OR: [{ loginId: loginId }, { email: loginId }],
       },

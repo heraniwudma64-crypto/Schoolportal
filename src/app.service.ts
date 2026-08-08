@@ -7,10 +7,10 @@ export class AppService {
 
   async getHello(): Promise<string> {
     try {
-      const userCount = await this.prisma.user.count();
+      const userCount = await this.prisma.count('user');
       return `Database connection successful! Total users in database: ${userCount}`;
     } catch (error) {
-      return `Database connection failed: ${error.message}`;
+      return `Database connection failed: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
 }

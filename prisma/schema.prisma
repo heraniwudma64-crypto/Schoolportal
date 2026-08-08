@@ -50,6 +50,8 @@ model Student {
   attendances    Attendance[]
   examAttempts   ExamAttempt[]
   fees           Fee[]
+  enrollments    Enrollment[]
+  assignments    Assignment[]
 }
 
 model Teacher {
@@ -72,13 +74,15 @@ model Parent {
 }
 
 model ClassSection {
-  id         String      @id @default(uuid())
-  name       String      // e.g., "Grade 10-A"
-  teacherId  String?
-  teacher    Teacher?    @relation(fields: [teacherId], references: [id])
-  students   Student[]
-  timetables Timetable[]
-  exams      Exam[]
+  id           String        @id @default(uuid())
+  name         String        // e.g., "Grade 10-A"
+  teacherId    String?
+  teacher      Teacher?      @relation(fields: [teacherId], references: [id])
+  students     Student[]
+  timetables   Timetable[]
+  exams        Exam[]
+  enrollments  Enrollment[]
+  assignments  Assignment[]
 }
 
 model Timetable {
@@ -100,6 +104,30 @@ model Attendance {
   date      DateTime
   status    AttendanceStatus
   remarks   String?
+}
+
+model Enrollment {
+  id             String        @id @default(uuid())
+  studentId      String
+  student        Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classSectionId String
+  classSection   ClassSection  @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  enrolledAt     DateTime      @default(now())
+
+  @@unique([studentId, classSectionId])
+}
+
+model Assignment {
+  id             String        @id @default(uuid())
+  title          String
+  courseName     String
+  dueDate        DateTime
+  status         String        @default("PENDING")
+  studentId      String?
+  student        Student?      @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  classSectionId String?
+  classSection   ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
 }
 
 model Exam {
