@@ -27,12 +27,8 @@ export default function Attendance() {
       
       // Fetch from the 'student' table and join the 'user' table data
       const { data, error } = await supabase
-        .from('student')
-        .select(`
-          id,
-          class_name,
-          user:user_id ( name, email )
-        `)
+        .from('Student')
+        .select('*')
         .eq('class_name', selectedClass);
 
       if (error) {

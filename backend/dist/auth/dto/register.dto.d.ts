@@ -4,6 +4,8 @@ export declare class RegisterDto {
     email?: string;
     password: string;
     gender: string;
+    name: string;
+    class: string;
     role: 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
     classGrade?: string;
     parentName?: string;
