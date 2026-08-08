@@ -1,16 +1,20 @@
 import { Controller, Post, Body, Get, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard } from '@nestjs/passport';
-import { Roles } from './decorators/roles.decorator'; // Import decorator
-import { RolesGuard } from './guards/roles.guard';     // Import guard
+import { Roles } from './decorators/roles.decorator';
+import { RolesGuard } from './guards/roles.guard';
+
+interface RequestWithUser {
+  user: {
+    id: string;
+    email?: string;
+    role: string;
+  };
+}
 
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Post('login')
   async login(@Body() body: { loginId: string; password: string }) {
@@ -19,18 +23,17 @@ export class AuthController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get('profile')
-  getProfile(@Req() req) {
+  getProfile(@Req() req: RequestWithUser) {
     return {
       message: 'This is a protected route!',
       user: req.user,
     };
   }
 
-  // --- NEW ADMIN-ONLY ROUTE ---
-  @UseGuards(AuthGuard('jwt'), RolesGuard) // Requires both valid token AND matching role
-  @Roles('ADMIN')                          // Only ADMIN role allowed
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('ADMIN')
   @Get('admin-dashboard')
-  getAdminData(@Req() req) {
+  getAdminData(@Req() req: RequestWithUser) {
     return {
       message: 'Welcome to the secret admin dashboard!',
       user: req.user,

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class StudentsService {
@@ -9,7 +10,7 @@ export class StudentsService {
     return await this.prisma.student.findMany();
   }
 
-  async create(student: any) {
+  async create(student: Prisma.StudentCreateInput) {
     return await this.prisma.student.create({ data: student });
   }
 
@@ -22,6 +23,7 @@ export class StudentsService {
         email: true,
         role: true,
         createdAt: true,
+        student: true,
       },
     });
 
