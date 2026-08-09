@@ -1,186 +1,166 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient'; // Adjust path if your supabaseClient.ts is in a different folder
+﻿import { useMemo, useState } from 'react';
 
-interface Student {
-  id: number | string;
-  name: string;
-  class_name: string;
-  status?: 'PRESENT' | 'ABSENT' | 'LATE';
+type AttendanceRecord = {
+  date: string;
+  subject: string;
+  status: 'PRESENT' | 'ABSENT' | 'LATE';
+  teacher: string;
+};
+
+const months = [
+  'All Months',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const attendanceRecords: AttendanceRecord[] = [
+  { date: '2024-05-18', subject: 'Mathematics', status: 'PRESENT', teacher: 'Meron Tadesse' },
+  { date: '2024-05-17', subject: 'Physics', status: 'PRESENT', teacher: 'Meron Tadesse' },
+  { date: '2024-05-16', subject: 'English', status: 'LATE', teacher: 'Dawit Gebre' },
+  { date: '2024-05-15', subject: 'Mathematics', status: 'PRESENT', teacher: 'Meron Tadesse' },
+  { date: '2024-05-14', subject: 'Physics', status: 'ABSENT', teacher: 'Meron Tadesse' },
+];
+
+function getMonthName(dateString: string) {
+  return new Date(dateString).toLocaleString('en', { month: 'long' });
+}
+
+function getBadgeStyle(status: AttendanceRecord['status']) {
+  switch (status) {
+    case 'PRESENT':
+      return 'text-emerald-700 bg-emerald-100';
+    case 'ABSENT':
+      return 'text-rose-700 bg-rose-100';
+    case 'LATE':
+      return 'text-amber-800 bg-amber-100';
+    default:
+      return 'text-slate-700 bg-slate-100';
+  }
 }
 
 export default function Attendance() {
-  const [selectedClass, setSelectedClass] = useState<string>('Grade 10A');
-  const [selectedSubject, setSelectedSubject] = useState<string>('Mathematics');
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [message, setMessage] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState('All Months');
 
-  // Dropdown options
-  const classesList = ['Grade 10A', 'Grade 10B', 'Grade 11A'];
-  const subjectsList = ['Mathematics', 'Physics', 'Chemistry', 'English'];
-
- // Fetch students from Supabase whenever 'selectedClass' changes
- useEffect(() => {
-    const fetchStudentsForClass = async () => {
-      setLoading(true);
-      setMessage('');
-      
-      // Fetch from the 'student' table and join the 'user' table data
-      const { data, error } = await supabase
-        .from('Student')
-        .select('*')
-        .eq('class_name', selectedClass);
-
-      if (error) {
-        console.error('Error fetching students:', error.message);
-        setMessage(`Error loading students: ${error.message}`);
-        setStudents([]);
-      } else {
-        // Flatten the joined data structure for your UI table
-        const formattedStudents = (data || []).map((item: any) => ({
-          id: item.id,
-          name: item.user?.name || 'Unknown', // Pulled safely from the linked User table
-          class_name: item.class_name,
-          status: 'PRESENT',
-        }));
-        setStudents(formattedStudents);
-      }
-      setLoading(false);
-    };
-
-    fetchStudentsForClass();
-  }, [selectedClass]);
-
-  // Handle individual status toggle
-  const handleStatusChange = (studentId: number | string, newStatus: 'PRESENT' | 'ABSENT' | 'LATE') => {
-    setStudents(prev =>
-      prev.map(s => (s.id === studentId ? { ...s, status: newStatus } : s))
-    );
-  };
-
-  // Save attendance session data to Supabase
-  const handleSaveChanges = async () => {
-    if (students.length === 0) {
-      alert('No students found to save attendance for.');
-      return;
-    }
-
-    const presentCount = students.filter(s => s.status === 'PRESENT').length;
-    const absentCount = students.filter(s => s.status === 'ABSENT').length;
-
-    const payload = {
-      date: new Date().toISOString(),
-      class_name: selectedClass,
-      subject: selectedSubject,
-      present_count: presentCount,
-      absent_count: absentCount,
-      records: students, // Saves full student roster and individual statuses as JSON
-    };
-
-    try {
-      const { error } = await supabase
-        .from('attendance')
-        .insert([payload]);
-
-      if (error) {
-        console.error('Supabase error:', error.message);
-        alert(`Error saving to database: ${error.message}`);
-      } else {
-        alert(`Attendance successfully saved for ${selectedClass}!`);
-      }
-    } catch (err: any) {
-      console.error('Connection error:', err);
-      alert('Failed to connect to Supabase database.');
-    }
-  };
+  const filteredRecords = useMemo(() => {
+    if (selectedMonth === 'All Months') return attendanceRecords;
+    return attendanceRecords.filter((record) => getMonthName(record.date) === selectedMonth);
+  }, [selectedMonth]);
 
   return (
-    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', fontFamily: 'sans-serif' }}>
-      <h2>Take Class Attendance</h2>
-
-      {/* Class and Subject Selectors */}
-      <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Select Class:</label>
-          <select
-            value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
-            style={{ padding: '8px', fontSize: '16px' }}
-          >
-            {classesList.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+          <h1 className="text-3xl font-semibold text-slate-900">Attendance Records</h1>
+          <p className="mt-2 text-sm text-slate-500">Review your attendance summary and recent activity.</p>
         </div>
-
-        <div>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Select Subject:</label>
-          <select
-            value={selectedSubject}
-            onChange={(e) => setSelectedSubject(e.target.value)}
-            style={{ padding: '8px', fontSize: '16px' }}
-          >
-            {subjectsList.map((sub) => (
-              <option key={sub} value={sub}>{sub}</option>
-            ))}
-          </select>
+        <div className="w-full max-w-xs rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 sm:w-auto">
+          <div className="flex items-center gap-3">
+            <span>All Months</span>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none"
+            >
+              {months.map((month) => (
+                <option key={month} value={month}>{month}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
-      {message && <p style={{ color: 'red' }}>{message}</p>}
+      <div className="grid gap-6 md:grid-cols-3">
+        <div className="rounded-3xl bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 text-xl">✓</div>
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Present</p>
+              <p className="mt-3 text-3xl font-semibold text-slate-900">172 Days</p>
+            </div>
+          </div>
+        </div>
 
-      {/* Students Marking Table */}
-      {loading ? (
-        <p>Loading students...</p>
-      ) : students.length === 0 ? (
-        <p style={{ color: '#666' }}>
-          No students registered in this class yet. Add students to your <b>`students`</b> table in Supabase matching this class name.
-        </p>
-      ) : (
-        <div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+        <div className="rounded-3xl bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 text-xl">✕</div>
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Absent</p>
+              <p className="mt-3 text-3xl font-semibold text-slate-900">5 Days</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 text-xl">⏰</div>
+            <div>
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-slate-500">Late</p>
+              <p className="mt-3 text-3xl font-semibold text-slate-900">3 Days</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-8 rounded-3xl bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Recent Attendance Details</h2>
+            <p className="mt-1 text-sm text-slate-500">Details for the selected month.</p>
+          </div>
+        </div>
+
+        <div className="mt-6 overflow-x-auto">
+          <table className="min-w-full border-separate border-spacing-y-3 text-left">
             <thead>
-              <tr style={{ background: '#f4f4f4', textAlign: 'left' }}>
-                <th style={{ padding: '10px', border: '1px solid #ddd' }}>Student Name</th>
-                <th style={{ padding: '10px', border: '1px solid #ddd' }}>Status</th>
+              <tr>
+                <th className="px-4 py-3 text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Date</th>
+                <th className="px-4 py-3 text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Subject</th>
+                <th className="px-4 py-3 text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Status</th>
+                <th className="px-4 py-3 text-xs font-medium uppercase tracking-[0.24em] text-slate-500">Teacher</th>
               </tr>
             </thead>
             <tbody>
-              {students.map((student) => (
-                <tr key={student.id}>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>{student.name}</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>
-                    <select
-                      value={student.status}
-                      onChange={(e) => handleStatusChange(student.id, e.target.value as any)}
-                      style={{ padding: '5px' }}
-                    >
-                      <option value="PRESENT">Present</option>
-                      <option value="ABSENT">Absent</option>
-                      <option value="LATE">Late</option>
-                    </select>
+              {filteredRecords.length > 0 ? (
+                filteredRecords.map((record) => (
+                  <tr key={`${record.date}-${record.subject}`} className="rounded-3xl bg-white shadow-sm">
+                    <td className="whitespace-nowrap px-4 py-5 align-top">
+                      <div className="flex items-center gap-2 text-sm text-slate-700">
+                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">📅</span>
+                        <span>{record.date}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-5 align-top">
+                      <p className="font-medium text-slate-900">{record.subject}</p>
+                    </td>
+                    <td className="px-4 py-5 align-top">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getBadgeStyle(record.status)}`}>
+                        {record.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-5 align-top text-sm text-slate-700">{record.teacher}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">
+                    No attendance records for this month.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
-
-          <button
-            onClick={handleSaveChanges}
-            style={{
-              background: '#0070f3',
-              color: '#ffffff',
-              border: 'none',
-              padding: '10px 20px',
-              fontSize: '16px',
-              cursor: 'pointer',
-              borderRadius: '5px',
-            }}
-          >
-            Save Changes to Supabase
-          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

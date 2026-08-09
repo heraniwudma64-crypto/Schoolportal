@@ -1,29 +1,17 @@
 import React, { ReactNode, useEffect, useState } from 'react';
-import {
-  FaThLarge,
-  FaCalendarAlt,
-  FaCheckSquare,
-  FaClipboardList,
-  FaGraduationCap,
-  FaFileAlt,
-  FaBook,
-  FaChartBar,
-  FaCog,
-  FaSignOutAlt,
-  FaUserCircle,
-} from 'react-icons/fa';
 
 interface StudentLayoutProps {
   children: ReactNode;
+  currentPath: string;
+  onNavigate: (path: string) => void;
 }
 
-export default function StudentLayout({ children }: StudentLayoutProps) {
+export default function StudentLayout({ children, currentPath, onNavigate }: StudentLayoutProps) {
   const [profile, setProfile] = useState<{ name: string; role: string; profilePic?: string }>({
-    name: 'Student',
+    name: 'Abebe Kebede',
     role: 'Student',
     profilePic: '',
   });
-  const [activeTab, setActiveTab] = useState('Dashboard');
 
   useEffect(() => {
     const savedName = localStorage.getItem('userName');
@@ -56,15 +44,15 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
   }, []);
 
   const menuItems = [
-    { name: 'Dashboard', icon: <FaThLarge /> },
-    { name: 'My Classes', icon: <FaCalendarAlt /> },
-    { name: 'Attendance', icon: <FaCheckSquare /> },
-    { name: 'Assignments', icon: <FaClipboardList /> },
-    { name: 'Grades', icon: <FaGraduationCap /> },
-    { name: 'Exam Schedule', icon: <FaFileAlt /> },
-    { name: 'Materials', icon: <FaBook /> },
-    { name: 'Performance', icon: <FaChartBar /> },
-    { name: 'Settings', icon: <FaCog /> },
+    { name: 'Dashboard', icon: '🏠', path: '/student' },
+    { name: 'Registered Subjects', icon: '📖', path: '/student/registered-subjects' },
+    { name: 'Attendance', icon: '✅', path: '/student/attendance' },
+    { name: 'Assignments', icon: '📝', path: '/student/assignments' },
+    { name: 'Grades', icon: '🎓', path: '/student/grades' },
+    { name: 'Exam Schedule', icon: '📄', path: '/student/exams' },
+    { name: 'Materials', icon: '📚', path: '/student/materials' },
+    { name: 'Performance', icon: '📈', path: '/student/performance' },
+    { name: 'Settings', icon: '⚙️', path: '/student/settings' },
   ];
 
   const handleLogout = () => {
@@ -79,7 +67,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
         <div>
           <div style={{ padding: '0 20px 25px 20px', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
             <div style={{ background: '#fff', padding: '10px', borderRadius: '10px', color: '#0B2545', fontSize: '20px' }}>
-              <FaGraduationCap />
+              <span>🎓</span>
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>Student Portal</h3>
@@ -89,11 +77,12 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
 
           <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
             {menuItems.map((item) => {
-              const isActive = item.name === activeTab;
+              const activePath = currentPath === '/' ? '/student' : currentPath;
+              const isActive = activePath === item.path;
               return (
                 <div
                   key={item.name}
-                  onClick={() => setActiveTab(item.name)}
+                  onClick={() => onNavigate(item.path)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -120,7 +109,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
             {profile.profilePic ? (
               <img src={profile.profilePic} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
             ) : (
-              <FaUserCircle style={{ fontSize: '40px', color: '#9ba4b5' }} />
+              <span style={{ fontSize: '40px', color: '#9ba4b5' }}>👤</span>
             )}
             <div style={{ overflow: 'hidden' }}>
               <h4 style={{ margin: 0, fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{profile.name}</h4>
@@ -128,7 +117,7 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
             </div>
           </div>
           <div onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ff6b6b', cursor: 'pointer', padding: '8px 0' }}>
-            <FaSignOutAlt />
+            <span style={{ fontSize: '18px' }}>↩️</span>
             <span>Log Out</span>
           </div>
         </div>
@@ -136,22 +125,26 @@ export default function StudentLayout({ children }: StudentLayoutProps) {
 
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ height: '70px', background: '#fff', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 30px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', padding: '8px 15px', borderRadius: '8px', width: '300px', gap: '10px' }}>
-            <span>🔍</span>
-            <input type="text" placeholder="Search for something..." style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <span style={{ cursor: 'pointer', fontSize: '22px' }}>☰</span>
+            <div style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', padding: '8px 15px', borderRadius: '8px', width: '300px', gap: '10px' }}>
+              <span>🔍</span>
+              <input type="text" placeholder="Search for something..." style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%' }} />
+            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <span style={{ cursor: 'pointer', fontSize: '18px' }}>🔔</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {profile.profilePic ? (
-                <img src={profile.profilePic} alt="Profile" style={{ width: '35px', height: '35px', borderRadius: '50%', objectFit: 'cover' }} />
-              ) : (
-                <FaUserCircle style={{ fontSize: '35px', color: '#64748b' }} />
-              )}
-              <div>
-                <span style={{ fontWeight: 'bold', fontSize: '14px', display: 'block' }}>{profile.name}</span>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>{profile.role}</span>
-              </div>
+            <div style={{ position: 'relative', cursor: 'pointer', fontSize: '18px' }}>
+              🔔
+              <span style={{ position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
+            </div>
+            {profile.profilePic ? (
+              <img src={profile.profilePic} alt="Profile" style={{ width: '35px', height: '35px', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ fontSize: '35px', color: '#64748b' }}>👤</span>
+            )}
+            <div>
+              <span style={{ fontWeight: 'bold', fontSize: '14px', display: 'block' }}>{profile.name}</span>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>{profile.role}</span>
             </div>
           </div>
         </div>
