@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Attendance from './pages/Attendance';
+import StudentAssignments from './pages/StudentAssignments';
 import RegisteredSubjects from './pages/RegisteredSubjects';
 import StudentDashboard from './pages/StudentDashboard';
 import StudentLayout from './components/StudentLayout';
@@ -27,6 +28,8 @@ export default function App() {
     page = <RegisteredSubjects />;
   } else if (normalizedPath === '/student/attendance') {
     page = <Attendance />;
+  } else if (normalizedPath === '/student/assignments') {
+    page = <StudentAssignments />;
   }
 
   return (

@@ -1,12 +1,11 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 
-export default function TeacherDashboard() {
+export default function TeacherAssignments() {
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // State for creating a new assignment
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -17,11 +16,10 @@ export default function TeacherDashboard() {
   useEffect(() => {
     const fetchTeacherData = async () => {
       try {
-        // Fetch courses taught by or available to the teacher
-        const coursesRes = await api.get('/courses'); // Adjust endpoint if you have a specific teacher courses route
+        const coursesRes = await api.get('/courses');
         setCourses(coursesRes.data);
         if (coursesRes.data.length > 0) {
-          setCourseId(coursesRes.data[0].id); // Default to the first course
+          setCourseId(coursesRes.data[0].id);
         }
       } catch (err) {
         console.error('Failed to load teacher dashboard data', err);
@@ -40,7 +38,7 @@ export default function TeacherDashboard() {
         title,
         description,
         dueDate,
-        courseId: Number(courseId) // Ensure correct type depending on your backend (number or string/UUID)
+        courseId: Number(courseId),
       });
       alert('Assignment created successfully!');
       setTitle('');
@@ -69,41 +67,39 @@ export default function TeacherDashboard() {
 
       <hr style={{ margin: '20px 0' }} />
 
-      {/* Create Assignment Form */}
       <section style={{ marginBottom: '40px', background: '#f9f9f9', padding: '20px', borderRadius: '8px' }}>
         <h3>Create New Assignment</h3>
         <form onSubmit={handleCreateAssignment} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '15px' }}>
-          <input 
-            type="text" 
-            placeholder="Assignment Title" 
-            value={title} 
-            onChange={(e) => setTitle(e.target.value)} 
-            required 
+          <input
+            type="text"
+            placeholder="Assignment Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
           />
-          <textarea 
-            placeholder="Description" 
-            value={description} 
-            onChange={(e) => setDescription(e.target.value)} 
-            required 
+          <textarea
+            placeholder="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
           />
-          <input 
-            type="date" 
-            value={dueDate} 
-            onChange={(e) => setDueDate(e.target.value)} 
-            required 
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            required
           />
           <select value={courseId} onChange={(e) => setCourseId(e.target.value)} required>
             {courses.map((course) => (
               <option key={course.id} value={course.id}>{course.title}</option>
             ))}
           </select>
-          <button type="submit" style={{ padding: '10px', background: '#4CAF50', color: '#white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+          <button type="submit" style={{ padding: '10px', background: '#4CAF50', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
             Publish Assignment
           </button>
         </form>
       </section>
 
-      {/* Course Overview Section */}
       <section>
         <h3>Managed Courses</h3>
         {courses.length === 0 ? <p>No courses assigned.</p> : (
