@@ -4,12 +4,6 @@ export declare class TeachersController {
     constructor(teachersService: TeachersService);
     getTeacherProfile(req: any): Promise<{
         message: string;
-        teacher: {
-            id: string;
-            loginId: string;
-            email: string;
-            role: import(".prisma/client").$Enums.Role;
-            createdAt: Date;
-        };
+        teacher: any;
     }>;
 }

@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { Injectable, NotFoundException } from '@nestjs/common';
+=======
+import { Injectable } from '@nestjs/common';
+>>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -6,6 +10,7 @@ export class UsersService {
   constructor(private prisma: PrismaService) {}
 
   async findAll() {
+<<<<<<< HEAD
     return this.prisma.user.findMany({
       select: {
         id: true,
@@ -36,3 +41,8 @@ export class UsersService {
     return user;
   }
 }
+=======
+    return await this.prisma.user.findMany();
+  }
+}
+>>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b

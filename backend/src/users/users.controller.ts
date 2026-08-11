@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { AuthGuard } from '@nestjs/passport';
@@ -21,3 +22,9 @@ export class UsersController {
     return this.usersService.findOne(id);
   }
 }
+=======
+import { Controller } from '@nestjs/common';
+
+@Controller('users')
+export class UsersController {}
+>>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b

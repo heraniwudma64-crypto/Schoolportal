@@ -2,18 +2,6 @@ import { PrismaService } from '../prisma/prisma.service';
 export declare class UsersService {
     private prisma;
     constructor(prisma: PrismaService);
-    findAll(): Promise<{
-        id: string;
-        loginId: string;
-        email: string;
-        role: import(".prisma/client").$Enums.Role;
-        createdAt: Date;
-    }[]>;
-    findOne(id: string): Promise<{
-        id: string;
-        loginId: string;
-        email: string;
-        role: import(".prisma/client").$Enums.Role;
-        createdAt: Date;
-    }>;
+    findAll(): Promise<any>;
+    findOne(id: string): Promise<any>;
 }

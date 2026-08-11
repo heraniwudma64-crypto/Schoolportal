@@ -7,8 +7,5 @@ export declare class AuthService {
         message: string;
         user: any;
     }>;
-    register(dto: any): Promise<{
-        message: string;
-        userId: string;
-    }>;
+    register(dto: any): Promise<any>;
 }
