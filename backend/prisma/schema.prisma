@@ -23,13 +23,15 @@ enum AttendanceStatus {
 }
 
 model User {
-  id        String   @id @default(uuid()) // Fixed: changed from Int to String (UUID) to match foreign keys
-  loginId   String   @unique 
-  password  String
-  email     String?  @unique 
-  role      Role
+  id        String   @id @default(uuid())
+  loginId   String   @unique                  -- Used for ID number / username login
+  email     String?  @unique                  -- Optional (has a ? so it won't crash if blank)
+  password  String                            -- Required
+  name      String?                           -- Optional (has a ? so it won't crash if blank)
+  role      String   @default("TEACHER")      -- Automatically defaults to TEACHER if not provided
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   
   courses     Course[]
   enrollments Enrollment[]

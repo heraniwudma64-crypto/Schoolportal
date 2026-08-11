@@ -12,12 +12,10 @@ export default function StudentDashboard() {
   useEffect(() => {
     const fetchStudentData = async () => {
       try {
-        // Fetch student-related data from your NestJS backend endpoints
-        // Update these endpoints if your backend routes differ slightly
         const [coursesRes, assignmentsRes, attendanceRes] = await Promise.all([
-          api.get('/courses'),          // Adjust to your student course endpoint if specific
-          api.get('/assignments'),      // Adjust to your assignment endpoint
-          api.get('/attendance/my')     // Adjust to your student attendance endpoint
+          api.get('/courses'),
+          api.get('/assignments'),
+          api.get('/attendance/my')
         ]);
 
         setCourses(coursesRes.data);

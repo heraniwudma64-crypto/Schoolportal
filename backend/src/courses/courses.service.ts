@@ -1,27 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class CoursesService {
-  constructor(private prisma: PrismaService) {}
+  private courses = [
+    { id: 1, title: 'Mathematics 101', description: 'Introduction to Algebra and Geometry' },
+    { id: 2, title: 'Physics 101', description: 'Basics of mechanics and motion' }
+  ];
 
-  async findAll() {
-    return this.prisma.course.findMany({
-      include: {
-        teacher: {
-          select: { id: true, loginId: true, email: true },
-        },
-      },
-    });
+  findAll() {
+    return this.courses;
   }
 
-  async createCourse(title: string, description: string, teacherId: string) {
-    return this.prisma.course.create({
-      data: {
-        title,
-        description,
-        teacherId,
-      },
-    });
+  // Add this 'create' method to fix error TS2339
+  create(createCourseDto: any) {
+    const newCourse = { id: Date.now(), ...createCourseDto };
+    this.courses.push(newCourse);
+    return newCourse;
   }
 }

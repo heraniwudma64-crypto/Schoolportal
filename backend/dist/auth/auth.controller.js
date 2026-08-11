@@ -28,13 +28,14 @@ let AuthController = class AuthController {
         this.prisma = prisma;
     }
     async register(registerDto) {
+        console.log('Incoming Register Payload:', registerDto);
         const hashedPassword = await bcrypt.hash(registerDto.password, 10);
         return await this.prisma.user.create({
             data: {
-                loginId: registerDto.idNumber,
-                email: registerDto.email || null,
+                loginId: registerDto.idNumber || 'USER-' + Math.random().toString(36).substring(7),
+                email: registerDto.email || '',
                 password: hashedPassword,
-                role: registerDto.role,
+                role: registerDto.role || 'TEACHER',
             },
         });
     }

@@ -16,20 +16,23 @@ export class AuthController {
     private readonly prisma: PrismaService,
   ) {}
 
- @Post('register')
+@Post('register')
   async register(@Body() registerDto: RegisterDto) {
+    // 1. Log this to your backend terminal to see what the frontend is sending
+    console.log('Incoming Register Payload:', registerDto);
+
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
     
     return await this.prisma.user.create({
       data: {
-        loginId: registerDto.idNumber, // <-- MUST be registerDto.idNumber, NOT "String"
-        email: registerDto.email || null,
+        loginId: registerDto.idNumber || 'USER-' + Math.random().toString(36).substring(7),
+        email: registerDto.email || '',
         password: hashedPassword,
-        role: registerDto.role,
+        role: registerDto.role || 'TEACHER',
       },
     });
   }
-
+  
   @Post('login')
 async login(@Body() loginDto: LoginDto) {
   // 1. Find user by loginId

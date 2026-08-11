@@ -1,0 +1,293 @@
+/* Container & Layout */
+.attendance-container {
+  min-height: 100vh;
+  background-color: #F8F9FC;
+  display: flex;
+  flex-direction: column;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #1F2937;
+}
+
+.attendance-wrapper {
+  padding: 2rem;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Header Section */
+.attendance-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .attendance-header {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.attendance-title {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #111827;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.attendance-subtitle {
+  font-size: 0.75rem;
+  color: #6B7280;
+  margin-top: 0.25rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.btn-secondary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background-color: #ffffff;
+  border: 1px solid #E5E7EB;
+  color: #374151;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: background-color 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background-color: #F9FAFB;
+}
+
+.btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background-color: #1E3A8A;
+  color: #ffffff;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.15s ease;
+}
+
+.btn-primary:hover {
+  background-color: #1E40AF;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Filter Controls Bar */
+.filters-bar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  background-color: #ffffff;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  border: 1px solid #E5E7EB;
+}
+
+@media (min-width: 768px) {
+  .filters-bar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.filter-group label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  color: #9CA3AF;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.filter-input,
+.filter-select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background-color: #ffffff;
+  border: 1px solid #E5E7EB;
+  border-radius: 0.75rem;
+  color: #1F2937;
+  font-size: 0.75rem;
+  font-weight: 700;
+  outline: none;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.filter-input {
+  font-weight: 500;
+  padding-left: 2.5rem;
+}
+
+.filter-input:focus,
+.filter-select:focus {
+  border-color: #3B82F6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.search-wrapper {
+  position: relative;
+}
+
+.search-icon {
+  position: absolute;
+  inset-y: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 1rem;
+  pointer-events: none;
+  color: #9CA3AF;
+}
+
+/* Table Section */
+.table-card {
+  background-color: #ffffff;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  border: 1px solid #E5E7EB;
+  overflow: hidden;
+}
+
+.table-header-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  background-color: #ffffff;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #F3F4F6;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  color: #9CA3AF;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table-row-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  padding: 1.25rem 2rem;
+  align-items: center;
+  transition: background-color 0.15s ease;
+}
+
+.table-row-grid:hover {
+  background-color: rgba(249, 250, 251, 0.6);
+}
+
+.table-body-divider > *:not(:last-child) {
+  border-bottom: 1px solid #F3F4F6;
+}
+
+/* Grid Column Spans (4 - 3 - 5 configuration) with Aligned Header */
+.col-name-header {
+  grid-column: span 4 / span 4;
+}
+
+.col-id-header {
+  grid-column: span 3 / span 3;
+}
+
+.col-status-header {
+  grid-column: span 5 / span 5;
+  display: flex;
+  justify-content: flex-end;
+  padding-right: 2rem; /* Aligns "MARK STATUS" directly over the action buttons group */
+}
+
+.col-name {
+  grid-column: span 4 / span 4;
+  font-weight: 700;
+  color: #111827;
+  font-size: 0.875rem;
+}
+
+.col-id {
+  grid-column: span 3 / span 3;
+  font-size: 0.75rem;
+  color: #6B7280;
+  font-weight: 500;
+}
+
+.col-status {
+  grid-column: span 5 / span 5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.625rem;
+}
+
+/* Status Buttons */
+.status-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.75rem;
+  font-size: 0.625rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid #E5E7EB;
+  background-color: #ffffff;
+  color: #9CA3AF;
+}
+
+.status-btn:hover {
+  border-color: #D1D5DB;
+}
+
+/* Active Status Button Variations */
+.status-btn.present.active {
+  background-color: #ECFDF5;
+  border-color: #10B981;
+  color: #047857;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(16, 185, 129, 0.3);
+}
+
+.status-btn.absent.active {
+  background-color: #FEF2F2;
+  border-color: #EF4444;
+  color: #DC2626;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(239, 68, 68, 0.3);
+}
+
+.status-btn.late.active {
+  background-color: #FFFBEB;
+  border-color: #F59E0B;
+  color: #D97706;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(245, 158, 11, 0.3);
+}
+
+.table-message {
+  padding: 3rem;
+  text-align: center;
+  color: #9CA3AF;
+  font-size: 0.75rem;
+}

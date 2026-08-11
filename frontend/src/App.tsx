@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import StudentDashboard from './pages/StudentDashboard';
+import StudentDashboard from './pages/StudentDashboard'; 
 import AdminDashboard from './pages/AdminDashboard';
 import ParentDashboard from './pages/ParentDashboard';
 import Attendance from './pages/Attendance';

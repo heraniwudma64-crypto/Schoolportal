@@ -15,7 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CoursesController = void 0;
 const common_1 = require("@nestjs/common");
 const courses_service_1 = require("./courses.service");
-const passport_1 = require("@nestjs/passport");
+const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const roles_guard_1 = require("../auth/guards/roles.guard");
 const roles_decorator_1 = require("../auth/decorators/roles.decorator");
 let CoursesController = class CoursesController {
@@ -25,31 +25,29 @@ let CoursesController = class CoursesController {
     findAll() {
         return this.coursesService.findAll();
     }
-    createCourse(body, req) {
-        const teacherId = req.user.userId || req.user.id;
-        return this.coursesService.createCourse(body.title, body.description ?? '', String(teacherId));
+    create(createCourseDto) {
+        return this.coursesService.create(createCourseDto);
     }
 };
 exports.CoursesController = CoursesController;
 __decorate([
-    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt')),
     (0, common_1.Get)(),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], CoursesController.prototype, "findAll", null);
 __decorate([
-    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt'), roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)('TEACHER', 'ADMIN'),
     (0, common_1.Post)(),
+    (0, common_1.UseGuards)(roles_guard_1.RolesGuard),
+    (0, roles_decorator_1.Roles)('admin', 'teacher'),
     __param(0, (0, common_1.Body)()),
-    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
-], CoursesController.prototype, "createCourse", null);
+], CoursesController.prototype, "create", null);
 exports.CoursesController = CoursesController = __decorate([
     (0, common_1.Controller)('courses'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     __metadata("design:paramtypes", [courses_service_1.CoursesService])
 ], CoursesController);
 //# sourceMappingURL=courses.controller.js.map
