@@ -49,9 +49,9 @@ export default function StudentLayout({ children, currentPath, onNavigate }: Stu
     { name: 'Attendance', icon: '✅', path: '/student/attendance' },
     { name: 'Assignments', icon: '📝', path: '/student/assignments' },
     { name: 'Grades', icon: '🎓', path: '/student/grades' },
-    { name: 'Exam Schedule', icon: '📄', path: '/student/exams' },
+    { name: 'Class Schedule', icon: '🗓️', path: '/student/class-schedule' },
+    { name: 'Exam Schedule', icon: '📄', path: '/student/examinations' },
     { name: 'Materials', icon: '📚', path: '/student/materials' },
-    { name: 'Performance', icon: '📈', path: '/student/performance' },
     { name: 'Settings', icon: '⚙️', path: '/student/settings' },
   ];
 
@@ -87,11 +87,12 @@ export default function StudentLayout({ children, currentPath, onNavigate }: Stu
                     display: 'flex',
                     alignItems: 'center',
                     gap: '15px',
-                    padding: '12px 20px',
+                    padding: '12px 16px',
+                    margin: '0 12px',
                     cursor: 'pointer',
-                    background: isActive ? '#134074' : 'transparent',
+                    background: isActive ? '#1e3a8a' : 'transparent',
                     color: isActive ? '#fff' : '#c5cee0',
-                    borderLeft: isActive ? '4px solid #fff' : '4px solid transparent',
+                    borderRadius: '12px',
                     fontWeight: isActive ? 'bold' : 'normal',
                     transition: '0.2s',
                   }}

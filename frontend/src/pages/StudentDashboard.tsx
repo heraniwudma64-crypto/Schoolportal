@@ -50,28 +50,72 @@ function getStatusTone(status: string) {
   }
 }
 
+function DashboardFallback({
+  loading,
+  error,
+  showRefresh,
+  onRefresh,
+}: {
+  loading: boolean;
+  error: boolean;
+  showRefresh: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="col-span-full rounded-[16px] border border-slate-200 bg-[#f8fafc] p-8 shadow-sm">
+      <div className="mx-auto flex max-w-xl flex-col items-center justify-center gap-4 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-[16px] bg-[#1e3a8a] text-2xl text-white">
+          🎓
+        </div>
+        <div>
+          <div className="text-base font-semibold text-slate-900">Mentor Academy</div>
+          <div className="mt-1 text-sm text-slate-500">Getting your dashboard ready.</div>
+        </div>
+        <div className={`mt-4 h-3 w-28 rounded-full ${loading ? 'bg-slate-300/80 animate-pulse' : 'bg-slate-200'}`} />
+        {error && showRefresh ? (
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="mt-2 text-sm font-medium text-slate-500 underline decoration-slate-300 hover:text-slate-700"
+          >
+            Refresh
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function StudentDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRefreshLink, setShowRefreshLink] = useState(false);
+
+  const loadData = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/dashboard/student-1');
+      if (!response.ok) {
+        throw new Error('Unable to load dashboard data');
+      }
+      const payload = await response.json();
+      setData(payload);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const response = await fetch('http://localhost:3000/dashboard/student-1');
-        if (!response.ok) {
-          throw new Error('Unable to load dashboard data');
-        }
-        const payload = await response.json();
-        setData(payload);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadData();
+
+    const timeout = window.setTimeout(() => {
+      setShowRefreshLink(true);
+    }, 3000);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   const summaryCards = useMemo(() => {
@@ -132,60 +176,74 @@ export default function StudentDashboard() {
           </div>
         </header>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {loading && <div className="col-span-full rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">Loading dashboard…</div>}
-          {error && <div className="col-span-full rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700">{error}</div>}
-
-          {summaryCards.map((card) => (
-            <div key={card.key} className="relative rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-              {card.key === 'attendance' && (() => {
-                const delta = attendanceDelta;
-                const display = typeof delta === 'number' ? `${delta > 0 ? '+' : ''}${delta}%` : '+2%';
-                const tone = typeof delta === 'number' ? (delta > 0 ? 'text-emerald-700 bg-emerald-50' : delta < 0 ? 'text-rose-700 bg-rose-50' : 'text-slate-700 bg-slate-100') : 'text-emerald-700 bg-emerald-50';
-                return (
-                  <div className={`absolute top-4 right-4 flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium ${tone}`}>
-                    {display}
+        <section className="grid gap-4 xl:grid-cols-4 md:grid-cols-2">
+          {!data && (loading || error) ? (
+            <DashboardFallback
+              loading={loading}
+              error={Boolean(error)}
+              showRefresh={showRefreshLink && Boolean(error)}
+              onRefresh={() => {
+                setLoading(true);
+                setError(null);
+                setShowRefreshLink(false);
+                loadData();
+              }}
+            />
+          ) : (
+            summaryCards.map((card) => (
+              <div key={card.key} className="relative rounded-[16px] border border-slate-200 bg-white p-6 shadow-sm">
+                {card.key === 'attendance' && (
+                  <div className="absolute right-4 top-4 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    +2%
                   </div>
-                );
-              })()}
+                )}
 
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-50">
-                  {card.key === 'totalSubjects' && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                      <path d="M3 6.5L12 11l9-4.5" stroke="#0369A1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M21 6.5v10.75a.75.75 0 0 1-1.03.7L12 16l-7.97 2.95A.75.75 0 0 1 3 17.25V6.5" stroke="#0369A1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                  {card.key === 'pendingAssignments' && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                      <rect x="7" y="3" width="10" height="4" rx="1" stroke="#D97706" strokeWidth="1.5" strokeLinejoin="round" />
-                      <path d="M7 7v11a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V7" stroke="#D97706" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M9.5 12.5l1.5 1.5 3-3" stroke="#D97706" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                  {card.key === 'attendance' && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                      <path d="M20 6L9 17l-5-5" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                  {card.key === 'average' && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                      <path d="M12 2l9 4-9 4-9-4 9-4z" stroke="#7C3AED" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d="M3 10.5v5.25A2.25 2.25 0 0 0 5.25 18h13.5A2.25 2.25 0 0 0 21 15.75V10.5" stroke="#7C3AED" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </div>
+                <div className="flex items-start gap-4">
+                  <div
+                    className={`flex h-11 w-11 items-center justify-center rounded-[12px] ${
+                      card.key === 'totalSubjects'
+                        ? 'bg-sky-100 text-sky-700'
+                        : card.key === 'pendingAssignments'
+                        ? 'bg-amber-100 text-amber-700'
+                        : card.key === 'attendance'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-violet-100 text-violet-700'
+                    }`}
+                  >
+                    {card.key === 'totalSubjects' && (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                        <path d="M6 4h12v4l-6 3-6-3V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M6 8v10h12V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    {card.key === 'pendingAssignments' && (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                        <path d="M6 4h12v16H6V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M9 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        <path d="M9 12h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                      </svg>
+                    )}
+                    {card.key === 'attendance' && (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                        <path d="M6 12l4 4 8-8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    {card.key === 'average' && (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                        <path d="M12 6l8 4-8 4-8-4 8-4Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M4 10v7l8 4 8-4v-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
 
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-slate-500">{card.label}</div>
-                  <div className="mt-2 text-3xl font-semibold text-slate-900">{card.value}</div>
+                  <div>
+                    <div className="text-sm font-medium text-slate-500">{card.label}</div>
+                    <div className="mt-3 text-3xl font-semibold text-slate-900">{card.value}</div>
+                  </div>
                 </div>
               </div>
-
-              <div className={`mt-4 h-2 w-24 rounded-full bg-gradient-to-r ${card.accent}`} />
-            </div>
-          ))}
+            ))
+          )}
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
