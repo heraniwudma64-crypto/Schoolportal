@@ -17,31 +17,7 @@ let UsersService = class UsersService {
         this.prisma = prisma;
     }
     async findAll() {
-        return this.prisma.user.findMany({
-            select: {
-                id: true,
-                loginId: true,
-                email: true,
-                role: true,
-                createdAt: true,
-            },
-        });
-    }
-    async findOne(id) {
-        const user = await this.prisma.user.findUnique({
-            where: { id },
-            select: {
-                id: true,
-                loginId: true,
-                email: true,
-                role: true,
-                createdAt: true,
-            },
-        });
-        if (!user) {
-            throw new common_1.NotFoundException(`User with ID ${id} not found`);
-        }
-        return user;
+        return await this.prisma.user.findMany();
     }
 };
 exports.UsersService = UsersService;

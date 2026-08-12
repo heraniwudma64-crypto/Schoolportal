@@ -1,14 +1,8 @@
-<<<<<<< HEAD
 import { Controller, Post, Body, UnauthorizedException, Get, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthGuard } from '@nestjs/passport';
-import { Roles } from './decorators/roles.decorator';
-import { RolesGuard } from './guards/roles.guard';
 import * as bcrypt from 'bcrypt';
-import { Role } from '@prisma/client';
-import { RegisterDto } from './dto/register.dto'; // <-- Import Register DTO
-import { LoginDto } from './dto/login.dto';       // <-- Import Login DTO
 
 @Controller('auth')
 export class AuthController {
@@ -17,101 +11,73 @@ export class AuthController {
     private readonly prisma: PrismaService,
   ) {}
 
-@Post('register')
-  async register(@Body() registerDto: RegisterDto) {
-    // 1. Log this to your backend terminal to see what the frontend is sending
-    console.log('Incoming Register Payload:', registerDto);
+  @Post('register')
+  async register(@Body() body: any) {
+    console.log('Incoming Register Payload:', body);
+    const hashedPassword = await bcrypt.hash(body.password, 10);
+    const identifier = body.idNumber || body.loginId || body.email;
 
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-    
     return await this.prisma.user.create({
       data: {
-        loginId: registerDto.idNumber || 'USER-' + Math.random().toString(36).substring(7),
-        email: registerDto.email || '',
+        idNumber: body.idNumber || '',
+        loginId: identifier,
+        email: body.email || '',
         password: hashedPassword,
-        role: registerDto.role || 'TEACHER',
+        role: body.role || 'TEACHER',
+        fullName: body.fullName || '',
+        gender: body.gender || '',
+        classGrade: body.classGrade || '',
+        parentName: body.parentName || '',
+        parentPhone: body.parentPhone || '',
+        address: body.address || '',
+        medicalStatus: body.medicalStatus || '',
       },
     });
   }
-  
-  @Post('login')
-async login(@Body() loginDto: LoginDto) {
-  // 1. Find user by loginId
-  const user = await this.prisma.user.findUnique({
-    where: { loginId: loginDto.loginId },
-  });
-
-  if (!user) {
-    throw new UnauthorizedException('Invalid credentials');
-  }
-
-  // 2. Compare passwords
-  const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
-
-  if (!isPasswordValid) {
-    throw new UnauthorizedException('Invalid credentials');
-  }
-
-  // 3. Return user info or a JWT token
-  return { 
-    message: 'Login successful', 
-    role: user.role, 
-    userId: user.id 
-  };
-}
-
-  @UseGuards(AuthGuard('jwt'))
-  @Get('profile')
-  getProfile(@Req() req) {
-=======
-import { Controller, Post, Body, Get, UseGuards, Req } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { AuthGuard } from '@nestjs/passport';
-import { Roles } from './decorators/roles.decorator';
-import { RolesGuard } from './guards/roles.guard';
-
-interface RequestWithUser {
-  user: {
-    id: string;
-    email?: string;
-    role: string;
-  };
-}
-
-@Controller('auth')
-export class AuthController {
-  constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  async login(@Body() body: { loginId: string; password: string }) {
-    return this.authService.login(body.loginId, body.password);
-  }
+  async login(@Body() body: any) {
+    console.log('----------------- LOGIN ATTEMPT -----------------');
+    console.log('Incoming Login Payload:', body);
 
-  @UseGuards(AuthGuard('jwt'))
-  @Get('profile')
-  getProfile(@Req() req: RequestWithUser) {
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
-    return {
-      message: 'This is a protected route!',
-      user: req.user,
+    // This will print EVERY user stored in the database your backend is currently using
+    const allUsers = await this.prisma.user.findMany();
+    console.log('DEBUG: Users currently in THIS backend database:', allUsers.map(u => u.loginId || u.idNumber));
+
+    const identifier = body.loginId || body.email || body.username || body.idNumber;
+
+    if (!identifier) {
+      throw new UnauthorizedException('Identifier is required');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { loginId: { equals: identifier, mode: 'insensitive' } },
+          { email: { equals: identifier, mode: 'insensitive' } },
+        ],
+      },
+    });
+    
+    if (!user) {
+      console.log(`DEBUG: User '${identifier}' NOT found in this database.`);
+      throw new UnauthorizedException('Invalid ID or password');
+    }
+
+    console.log('DEBUG: User successfully found! ID:', user.id);
+
+    const isPasswordValid = await bcrypt.compare(body.password, user.password);
+
+    if (!isPasswordValid) {
+      console.log('DEBUG: Password mismatch.');
+      throw new UnauthorizedException('Invalid ID or password');
+    }
+
+    console.log('DEBUG: Login successful!');
+    return { 
+      message: 'Login successful', 
+      role: user.role, 
+      userId: user.id 
     };
   }
-
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles('ADMIN')
-  @Get('admin-dashboard')
-<<<<<<< HEAD
-  getAdminData(@Req() req) {
-=======
-  getAdminData(@Req() req: RequestWithUser) {
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
-    return {
-      message: 'Welcome to the secret admin dashboard!',
-      user: req.user,
-    };
-  }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b

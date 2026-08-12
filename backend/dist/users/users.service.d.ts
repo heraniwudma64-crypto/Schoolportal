@@ -3,5 +3,4 @@ export declare class UsersService {
     private prisma;
     constructor(prisma: PrismaService);
     findAll(): Promise<any>;
-    findOne(id: string): Promise<any>;
 }

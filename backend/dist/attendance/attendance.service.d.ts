@@ -5,7 +5,7 @@ export declare class AttendanceService {
     markAttendance(dto: {
         userId: string;
         courseId: string;
-        status: AttendanceStatus;
+        status: any;
         date?: string;
     }): Promise<any>;
     getCourseAttendance(courseId: string): Promise<any>;

@@ -16,56 +16,65 @@ exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const auth_service_1 = require("./auth.service");
 const prisma_service_1 = require("../prisma/prisma.service");
-const passport_1 = require("@nestjs/passport");
-const roles_decorator_1 = require("./decorators/roles.decorator");
-const roles_guard_1 = require("./guards/roles.guard");
 const bcrypt = require("bcrypt");
-const register_dto_1 = require("./dto/register.dto");
-const login_dto_1 = require("./dto/login.dto");
 let AuthController = class AuthController {
     constructor(authService, prisma) {
         this.authService = authService;
         this.prisma = prisma;
     }
-    async register(registerDto) {
-        console.log('Incoming Register Payload:', registerDto);
-        const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+    async register(body) {
+        console.log('Incoming Register Payload:', body);
+        const hashedPassword = await bcrypt.hash(body.password, 10);
+        const identifier = body.idNumber || body.loginId || body.email;
         return await this.prisma.user.create({
             data: {
-                loginId: registerDto.idNumber || 'USER-' + Math.random().toString(36).substring(7),
-                email: registerDto.email || '',
+                idNumber: body.idNumber || '',
+                loginId: identifier,
+                email: body.email || '',
                 password: hashedPassword,
-                role: registerDto.role || 'TEACHER',
+                role: body.role || 'TEACHER',
+                fullName: body.fullName || '',
+                gender: body.gender || '',
+                classGrade: body.classGrade || '',
+                parentName: body.parentName || '',
+                parentPhone: body.parentPhone || '',
+                address: body.address || '',
+                medicalStatus: body.medicalStatus || '',
             },
         });
     }
-    async login(loginDto) {
-        const user = await this.prisma.user.findUnique({
-            where: { loginId: loginDto.loginId },
+    async login(body) {
+        console.log('----------------- LOGIN ATTEMPT -----------------');
+        console.log('Incoming Login Payload:', body);
+        const allUsers = await this.prisma.user.findMany();
+        console.log('DEBUG: Users currently in THIS backend database:', allUsers.map(u => u.loginId || u.idNumber));
+        const identifier = body.loginId || body.email || body.username || body.idNumber;
+        if (!identifier) {
+            throw new common_1.UnauthorizedException('Identifier is required');
+        }
+        const user = await this.prisma.user.findFirst({
+            where: {
+                OR: [
+                    { loginId: { equals: identifier, mode: 'insensitive' } },
+                    { email: { equals: identifier, mode: 'insensitive' } },
+                ],
+            },
         });
         if (!user) {
-            throw new common_1.UnauthorizedException('Invalid credentials');
+            console.log(`DEBUG: User '${identifier}' NOT found in this database.`);
+            throw new common_1.UnauthorizedException('Invalid ID or password');
         }
-        const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
+        console.log('DEBUG: User successfully found! ID:', user.id);
+        const isPasswordValid = await bcrypt.compare(body.password, user.password);
         if (!isPasswordValid) {
-            throw new common_1.UnauthorizedException('Invalid credentials');
+            console.log('DEBUG: Password mismatch.');
+            throw new common_1.UnauthorizedException('Invalid ID or password');
         }
+        console.log('DEBUG: Login successful!');
         return {
             message: 'Login successful',
             role: user.role,
             userId: user.id
-        };
-    }
-    getProfile(req) {
-        return {
-            message: 'This is a protected route!',
-            user: req.user,
-        };
-    }
-    getAdminData(req) {
-        return {
-            message: 'Welcome to the secret admin dashboard!',
-            user: req.user,
         };
     }
 };
@@ -74,33 +83,16 @@ __decorate([
     (0, common_1.Post)('register'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [register_dto_1.RegisterDto]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "register", null);
 __decorate([
     (0, common_1.Post)('login'),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [login_dto_1.LoginDto]),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
-__decorate([
-    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt')),
-    (0, common_1.Get)('profile'),
-    __param(0, (0, common_1.Req)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", void 0)
-], AuthController.prototype, "getProfile", null);
-__decorate([
-    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt'), roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)('ADMIN'),
-    (0, common_1.Get)('admin-dashboard'),
-    __param(0, (0, common_1.Req)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", void 0)
-], AuthController.prototype, "getAdminData", null);
 exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService,

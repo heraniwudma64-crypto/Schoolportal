@@ -6,7 +6,7 @@ import { AttendanceStatus } from '@prisma/client';
 export class AttendanceService {
   constructor(private prisma: PrismaService) {}
 
-  async markAttendance(dto: { userId: string; courseId: string; status: AttendanceStatus; date?: string }) {
+  async markAttendance(dto: { userId: string; courseId: string; status: any; date?: string }) {
     try {
       const attendanceDate = dto.date ? new Date(dto.date) : new Date();
 

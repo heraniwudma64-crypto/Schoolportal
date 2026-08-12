@@ -13,7 +13,7 @@ export class AttendanceController {
   @Roles('TEACHER', 'ADMIN')
   @Post()
   markAttendance(
-    @Body() body: { userId: string; courseId: string; status: AttendanceStatus; date?: string }, // <-- Changed studentId to userId
+    @Body() body: { userId: string; courseId: string; status: any; date?: string }, // <-- Changed studentId to userId
   ) {
     return this.attendanceService.markAttendance(body);
   }

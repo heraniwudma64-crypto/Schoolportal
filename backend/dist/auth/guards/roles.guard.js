@@ -18,15 +18,13 @@ let RolesGuard = class RolesGuard {
         this.reflector = reflector;
     }
     canActivate(context) {
-        const requiredRoles = this.reflector.getAllAndOverride(roles_decorator_1.ROLES_KEY, [
-            context.getHandler(),
-            context.getClass(),
-        ]);
+        const requiredRoles = this.reflector.getAllAndOverride(roles_decorator_1.ROLES_KEY, [context.getHandler(), context.getClass()]);
         if (!requiredRoles) {
             return true;
         }
-        const { user } = context.switchToHttp().getRequest();
-        return requiredRoles.some((role) => user?.roles?.includes(role));
+        const request = context.switchToHttp().getRequest();
+        const user = request.user;
+        return Boolean(user && user.role && requiredRoles.includes(user.role));
     }
 };
 exports.RolesGuard = RolesGuard;

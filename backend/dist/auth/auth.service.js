@@ -11,79 +11,43 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
+const jwt_1 = require("@nestjs/jwt");
 const prisma_service_1 = require("../prisma/prisma.service");
 const bcrypt = require("bcrypt");
 let AuthService = class AuthService {
-    constructor(prisma) {
+    constructor(prisma, jwtService) {
         this.prisma = prisma;
-    }
-    async validateUser(loginId, pass) {
-        const user = await this.prisma.user.findUnique({
-            where: { email: loginId },
-        });
-        if (user && (await bcrypt.compare(pass, user.password))) {
-            const { password, ...result } = user;
-            return result;
-        }
-        return null;
+        this.jwtService = jwtService;
     }
     async login(loginId, pass) {
-        const user = await this.validateUser(loginId, pass);
+        const user = await this.prisma.findFirst('user', {
+            where: {
+                OR: [{ loginId: loginId }, { email: loginId }],
+            },
+        });
         if (!user) {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
+        const isPasswordValid = await bcrypt.compare(pass, user.password);
+        if (!isPasswordValid) {
+            throw new common_1.UnauthorizedException('Invalid credentials');
+        }
+        const payload = { sub: user.id, role: user.role, email: user.email };
         return {
-            message: 'Login successful',
-            user,
+            access_token: this.jwtService.sign(payload),
+            user: {
+                id: user.id,
+                email: user.email,
+                role: user.role,
+                loginId: user.loginId,
+            },
         };
-    }
-    async register(dto) {
-        const hashedPassword = await bcrypt.hash(dto.password, 10);
-        const nameParts = (dto.fullName || '').trim().split(' ');
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.slice(1).join(' ') || '';
-        return await this.prisma.$transaction(async (prisma) => {
-            const user = await prisma.user.create({
-                data: {
-                    loginId: dto.idNumber,
-                    email: dto.email || null,
-                    password: hashedPassword,
-                    role: dto.role,
-                },
-            });
-            if (dto.role === 'STUDENT') {
-                await prisma.student.create({
-                    data: {
-                        userId: user.id,
-                        admissionNo: dto.idNumber,
-                        firstName,
-                        lastName,
-                        classGrade: dto.classGrade || null,
-                        address: dto.address || null,
-                        parentName: dto.parentName || null,
-                        parentPhone: dto.parentPhone || null,
-                        medicalStatus: dto.medicalStatus || null,
-                    },
-                });
-            }
-            else if (dto.role === 'TEACHER' || dto.role === 'ADMIN') {
-                await prisma.teacher.create({
-                    data: {
-                        userId: user.id,
-                        firstName,
-                        lastName,
-                        address: dto.address || null,
-                        medicalStatus: dto.medicalStatus || null,
-                    },
-                });
-            }
-            return { message: 'User registered successfully', userId: user.id };
-        });
     }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        jwt_1.JwtService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

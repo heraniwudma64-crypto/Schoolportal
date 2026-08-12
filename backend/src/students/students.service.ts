@@ -10,7 +10,7 @@ export class StudentsService {
     return await this.prisma.student.findMany();
   }
 
-  async create(student: Prisma.StudentCreateInput) {
+  async create(student: any) {
     return await this.prisma.student.create({ data: student });
   }
 

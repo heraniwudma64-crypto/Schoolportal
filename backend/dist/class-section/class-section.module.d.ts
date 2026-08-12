@@ -1,2 +1,2 @@
-export declare class TimetableModule {
+export declare class ClassSectionModule {
 }
