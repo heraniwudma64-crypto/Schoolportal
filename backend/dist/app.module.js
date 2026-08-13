@@ -14,6 +14,7 @@ const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./auth/auth.module");
 const fee_module_1 = require("./fee/fee.module");
 const academic_year_module_1 = require("./academic-year/academic-year.module");
+const assignments_module_1 = require("./assignments/assignments.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -24,6 +25,7 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             fee_module_1.FeeModule,
             academic_year_module_1.AcademicYearModule,
+            assignments_module_1.AssignmentsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

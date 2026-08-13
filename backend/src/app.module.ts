@@ -12,6 +12,7 @@ import { AcademicYearModule } from './academic-year/academic-year.module';
 //import { ExportModule } from './export/export.module';
 //import { NoticeModule } from './notice/notice.module';
 //import { DashboardModule } from './dashboard/dashboard.module';
+import { AssignmentsModule } from './assignments/assignments.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AcademicYearModule } from './academic-year/academic-year.module';
     AuthModule,
     FeeModule,
     AcademicYearModule,
+    AssignmentsModule,
   // ClassSectionModule,
     //TimetableModule,
     //ExamModule,

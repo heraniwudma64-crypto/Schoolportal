@@ -1,11 +1,7 @@
 datasource db {
-<<<<<<< HEAD
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
-=======
-  provider = "postgresql"
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
 }
 
 generator client {
@@ -372,17 +368,24 @@ model Enrollment {
 }
 
 model Assignment {
-  id             String        @id @default(uuid())
-  title          String
-  courseName     String
-  dueDate        DateTime
-  status         String        @default("PENDING")
-  studentId      String?
-  student        Student?      @relation(fields: [studentId], references: [id], onDelete: SetNull)
-  classSectionId String?
-  classSection   ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
-  createdAt      DateTime      @default(now())
+  id            String               @id @default(uuid())
+  title         String
+  instructions  String
+  subject       String
+  targetClass   String
+  dueDate       DateTime
+  attachmentUrl String?
+  createdAt     DateTime             @default(now())
+  studentAssignments StudentAssignment[]
 >>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
+}
+
+model StudentAssignment {
+  id           String     @id @default(uuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentLoginId String   // References student's loginId
+  status       String     @default("PENDING") // PENDING, SUBMITTED
 }
 
 model Exam {
