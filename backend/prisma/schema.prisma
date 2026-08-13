@@ -22,71 +22,6 @@ enum AttendanceStatus {
   EXCUSED
 }
 
-<<<<<<< HEAD
-model User {
-  id        String   @id @default(uuid())
-  loginId   String   @unique                  -- Used for ID number / username login
-  email     String?  @unique                  -- Optional (has a ? so it won't crash if blank)
-  password  String                            -- Required
-  name      String?                           -- Optional (has a ? so it won't crash if blank)
-  role      String   @default("TEACHER")      -- Automatically defaults to TEACHER if not provided
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  
-  courses     Course[]
-  enrollments Enrollment[]
-  attendances Attendance[]
-
-  student     Student?
-  teacher     Teacher?
-  parent      Parent?
-  notices     Notice[]
-}
-
-model Course {
-  id           String       @id @default(uuid())
-  title        String
-  description  String?
-  teacherId    String
-  teacher      User         @relation(fields: [teacherId], references: [id])
-  createdAt    DateTime     @default(now())
-  enrollments  Enrollment[]
-  attendances  Attendance[]
-}
-
-model Enrollment {
-  id        String   @id @default(uuid())
-  studentId String
-  student   User     @relation(fields: [studentId], references: [id])
-  courseId  String
-  course    Course   @relation(fields: [courseId], references: [id])
-  createdAt DateTime @default(now())
-
-  @@unique([studentId, courseId])
-}
-
-model Student {
-  id            String        @id @default(uuid())
-  userId        String        @unique
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  admissionNo   String        @unique
-  firstName     String
-  lastName      String
-  classGrade    String?       
-  address       String?       
-  parentName    String?       
-  parentPhone   String?       
-  medicalStatus String?       
-  
-  classSectionId String?
-  classSection   ClassSection? @relation(fields: [classSectionId], references: [id])
-  parentId       String?
-  parent         Parent?       @relation(fields: [parentId], references: [id])
-  
-  examAttempts ExamAttempt[]
-  fees         Fee[]
-=======
 enum StudentStatus {
   ACTIVE
   GRADUATED
@@ -169,59 +104,34 @@ model Subject {
 }
 
 model Student {
-<<<<<<<< HEAD:prisma/schema.prisma
-  id               String         @id @default(uuid())
-  userId           String         @unique
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  admissionNo      String         @unique
+  id               String          @id @default(uuid())
+  userId           String          @unique
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admissionNo      String          @unique
   firstName        String
   lastName         String
   dob              DateTime?
   gender           String?
   address          String?
   emergencyContact String?
-  status           StudentStatus  @default(ACTIVE)
+  status           StudentStatus   @default(ACTIVE)
   classSectionId   String?
-  classSection     ClassSection?  @relation(fields: [classSectionId], references: [id])
+  classSection     ClassSection?   @relation(fields: [classSectionId], references: [id])
   parentId         String?
-  parent           Parent?        @relation(fields: [parentId], references: [id])
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  parent           Parent?         @relation(fields: [parentId], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   attendances      Attendance[]
   examAttempts     ExamAttempt[]
   feeInvoices      FeeInvoice[]
-========
-  id             String         @id @default(uuid())
-  userId         String         @unique
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  admissionNo    String         @unique
-  firstName      String
-  lastName       String
-  classSectionId String?
-  classSection   ClassSection?  @relation(fields: [classSectionId], references: [id])
-  parentId       String?
-  parent         Parent?        @relation(fields: [parentId], references: [id])
-  attendances    Attendance[]
-  examAttempts   ExamAttempt[]
-  fees           Fee[]
-  enrollments    Enrollment[]
-  assignments    Assignment[]
->>>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b:backend/prisma/schema.prisma
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
+  enrollments      Enrollment[]
 }
 
 model Teacher {
   id            String         @id @default(uuid())
   userId        String         @unique
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-<<<<<<< HEAD
-  firstName     String
-  lastName      String
-  address       String?        
-  medicalStatus String?        
-  
-=======
   staffId       String?        @unique
   firstName     String
   lastName      String
@@ -230,30 +140,11 @@ model Teacher {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
   classes       ClassSection[]
   timetables    Timetable[]
 }
 
 model Parent {
-<<<<<<< HEAD
-  id        String    @id @default(uuid())
-  userId    String    @unique
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  firstName String
-  lastName  String
-  students  Student[]
-}
-
-model ClassSection {
-  id         String      @id @default(uuid())
-  name       String      
-  teacherId  String?
-  teacher    Teacher?    @relation(fields: [teacherId], references: [id])
-  students   Student[]
-  timetables Timetable[]
-  exams      Exam[]
-=======
   id           String    @id @default(uuid())
   userId       String    @unique
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -269,7 +160,6 @@ model ClassSection {
 }
 
 model ClassSection {
-<<<<<<<< HEAD:prisma/schema.prisma
   id             String        @id @default(uuid())
   name           String        // e.g., "Grade 10-A"
   roomNumber     String?
@@ -285,18 +175,7 @@ model ClassSection {
   timetables     Timetable[]
   exams          Exam[]
   attendances    Attendance[]
-========
-  id           String        @id @default(uuid())
-  name         String        // e.g., "Grade 10-A"
-  teacherId    String?
-  teacher      Teacher?      @relation(fields: [teacherId], references: [id])
-  students     Student[]
-  timetables   Timetable[]
-  exams        Exam[]
-  enrollments  Enrollment[]
-  assignments  Assignment[]
->>>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b:backend/prisma/schema.prisma
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
+  enrollments    Enrollment[]
 }
 
 model Timetable {
@@ -305,28 +184,6 @@ model Timetable {
   classSection   ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
   teacherId      String
   teacher        Teacher      @relation(fields: [teacherId], references: [id])
-<<<<<<< HEAD
-  dayOfWeek      String       
-  startTime      String       
-  endTime        String       
-  subject        String
-}
-
-model Attendance {
-  id        String           @id @default(uuid())
-  date      DateTime         @default(now())
-  status    AttendanceStatus @default(PRESENT)
-  
-  userId    String
-  user      User             @relation(fields: [userId], references: [id]) 
-  
-  courseId  String
-  course    Course           @relation(fields: [courseId], references: [id])
-  
-  createdAt DateTime         @default(now())
-
-  @@unique([userId, courseId, date])
-=======
   subjectId      String
   subject        Subject      @relation(fields: [subjectId], references: [id])
   dayOfWeek      String       // e.g., "MONDAY"
@@ -357,46 +214,38 @@ model Attendance {
 }
 
 model Enrollment {
-  id             String        @id @default(uuid())
+  id             String       @id @default(uuid())
   studentId      String
-  student        Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   classSectionId String
-  classSection   ClassSection  @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
-  enrolledAt     DateTime      @default(now())
+  classSection   ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  enrolledAt     DateTime     @default(now())
 
   @@unique([studentId, classSectionId])
 }
 
 model Assignment {
-  id            String               @id @default(uuid())
-  title         String
-  instructions  String
-  subject       String
-  targetClass   String
-  dueDate       DateTime
-  attachmentUrl String?
-  createdAt     DateTime             @default(now())
+  id                 String              @id @default(uuid())
+  title              String
+  instructions       String
+  subject            String
+  targetClass        String
+  dueDate            DateTime
+  attachmentUrl      String?
+  createdAt          DateTime            @default(now())
   studentAssignments StudentAssignment[]
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
 }
 
 model StudentAssignment {
-  id           String     @id @default(uuid())
-  assignmentId String
-  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  studentLoginId String   // References student's loginId
-  status       String     @default("PENDING") // PENDING, SUBMITTED
+  id             String     @id @default(uuid())
+  assignmentId   String
+  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentLoginId String     // References student's loginId
+  status         String     @default("PENDING") // PENDING, SUBMITTED
 }
 
 model Exam {
   id             String        @id @default(uuid())
-<<<<<<< HEAD
-  title          String        
-  classSectionId String
-  classSection   ClassSection  @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
-  totalMarks     Float
-  examDate       DateTime
-=======
   title          String        // e.g., "Midterm Mathematics"
   type           ExamType      @default(MIDTERM)
   classSectionId String
@@ -412,7 +261,6 @@ model Exam {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
   attempts       ExamAttempt[]
 }
 
@@ -423,28 +271,6 @@ model ExamAttempt {
   studentId     String
   student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   marksObtained Float
-<<<<<<< HEAD
-  grade         String?  
-}
-
-model Fee {
-  id        String   @id @default(uuid())
-  studentId String
-  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  amount    Float
-  dueDate   DateTime
-  isPaid    Boolean  @default(false)
-  paidAt    DateTime?
-}
-
-model Notice {
-  id        String   @id @default(uuid())
-  title     String
-  content   String
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
-  createdAt DateTime @default(now())
-=======
   grade         String?  // e.g., "A", "B+"
   remarks       String?
   createdAt     DateTime @default(now())
@@ -454,18 +280,18 @@ model Notice {
 }
 
 model FeeInvoice {
-  id          String       @id @default(uuid())
-  studentId   String
-  student     Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  title       String       // e.g., "Tuition Fee - Term 1"
-  amount      Float
-  dueDate     DateTime
-  isPaid      Boolean      @default(false)
-  paidAt      DateTime?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id        String       @id @default(uuid())
+  studentId String
+  student   Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title     String       // e.g., "Tuition Fee - Term 1"
+  amount    Float
+  dueDate   DateTime
+  isPaid    Boolean      @default(false)
+  paidAt    DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
-  payments    FeePayment[]
+  payments  FeePayment[]
 }
 
 model FeePayment {
@@ -482,13 +308,12 @@ model FeePayment {
 }
 
 model Notice {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   title      String
   content    String
-  targetRole Role?    // Target specific audience: ADMIN, TEACHER, STUDENT, PARENT, or null for ALL
+  targetRole Role?     // Target specific audience: ADMIN, TEACHER, STUDENT, PARENT, or null for ALL
   authorId   String
-  author     User     @relation(fields: [authorId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
->>>>>>> e52a24ea29f3dbed57cfdb5f60aa5e20f9d2173b
+  author     User      @relation(fields: [authorId], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
