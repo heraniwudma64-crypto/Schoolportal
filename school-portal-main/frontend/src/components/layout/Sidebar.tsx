@@ -1,0 +1,138 @@
+import React from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { 
+  LayoutDashboard, 
+  BookOpen, 
+  ClipboardList, 
+  Calendar, 
+  GraduationCap, 
+  FileText, 
+  CheckSquare, 
+  Book, 
+  Users, 
+  FileCheck, 
+  Settings, 
+  Bell, 
+  LogOut,
+  ChevronRight,
+  UserCircle
+} from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { cn } from '../../lib/utils';
+import { APP_NAME, APP_DESCRIPTION } from '../../config/branding';
+
+interface SidebarProps {
+  isOpen: boolean;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}
+
+const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
+  const { user, logout } = useAuth();
+  const location = useLocation();
+
+  const getLinks = () => {
+    const role = user?.role;
+    
+    const common = [
+      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+    ];
+
+    if (role === 'student') {
+      return [
+        ...common,
+        { name: 'My Courses', href: '/courses', icon: BookOpen },
+        { name: 'Assignments', href: '/assignments', icon: ClipboardList },
+        { name: 'Class Schedule', href: '/schedule', icon: Calendar },
+        { name: 'My Results', href: '/results', icon: GraduationCap },
+        { name: 'Online Exams', href: '/exams', icon: FileText },
+        { name: 'Report Card', href: '/report-card', icon: FileCheck },
+        { name: 'Attendance', href: '/attendance', icon: CheckSquare },
+        { name: 'Materials', href: '/materials', icon: Book },
+      ];
+    }
+
+    if (role === 'teacher') {
+      return [
+        ...common,
+        { name: 'My Schedule', href: '/schedule', icon: Calendar },
+        { name: 'Attendance', href: '/attendance', icon: CheckSquare },
+        { name: 'Assignments', href: '/assignments', icon: ClipboardList },
+        { name: 'Grade Entry', href: '/results', icon: GraduationCap },
+        { name: 'Exam Creation', href: '/exams', icon: FileText },
+        { name: 'Materials', href: '/materials', icon: Book },
+        { name: 'Performance', href: '/performance', icon: Users },
+      ];
+    }
+
+    if (role === 'admin') {
+      return [
+        ...common,
+        { name: 'User Management', href: '/users', icon: Users },
+        { name: 'Exam Review', href: '/exam-review', icon: FileCheck },
+        { name: 'Academic Structure', href: '/structure', icon: Settings },
+        { name: 'Materials', href: '/materials', icon: Book },
+        { name: 'Announcements', href: '/announcements', icon: Bell },
+      ];
+    }
+
+    return common;
+  };
+
+  const links = getLinks();
+
+  return (
+    <div onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} className={cn("flex flex-col h-full bg-[#1e3a8a] text-white w-64 fixed left-0 top-0 overflow-y-auto z-50 transition-transform duration-300 ease-in-out", isOpen ? "translate-x-0" : "-translate-x-full")}>
+      <div className="p-6 flex items-center gap-3">
+        <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
+          <GraduationCap className="text-[#1e3a8a] w-6 h-6" />
+        </div>
+        <div>
+          <h1 className="text-lg font-bold leading-tight">{APP_NAME}</h1>
+          <p className="text-xs text-blue-200">{APP_DESCRIPTION}</p>
+        </div>
+      </div>
+
+      <nav className="flex-1 px-4 py-4 space-y-1">
+        {links.map((link) => {
+          const isActive = location.pathname === link.href;
+          return (
+            <Link
+              key={link.name}
+              to={link.href}
+              className={cn(
+                "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group",
+                isActive 
+                  ? "bg-white/10 text-white" 
+                  : "text-blue-100 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              <link.icon className={cn("w-5 h-5", isActive ? "text-white" : "text-blue-200 group-hover:text-white")} />
+              <span className="text-sm font-medium">{link.name}</span>
+              {isActive && <ChevronRight className="ml-auto w-4 h-4" />}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="p-4 mt-auto border-t border-white/10">
+        <div className="flex items-center gap-3 px-3 py-2 mb-4">
+          <UserCircle className="w-8 h-8 text-blue-200" />
+          <div className="overflow-hidden">
+            <p className="text-sm font-medium truncate">{user?.name}</p>
+            <p className="text-xs text-blue-300 capitalize">{user?.role}</p>
+          </div>
+        </div>
+        <button
+          onClick={logout}
+          className="flex items-center gap-3 px-3 py-2 w-full text-blue-100 hover:bg-white/5 hover:text-white rounded-lg transition-colors"
+        >
+          <LogOut className="w-5 h-5" />
+          <span className="text-sm font-medium">Log Out</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default Sidebar;
