@@ -5,6 +5,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AcademicStructureModule } from './modules/academic-structure/academic-structure.module';
 import { NoticesModule } from './modules/notices/notices.module';
+import { MaterialsModule } from './modules/materials/materials.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { NoticesModule } from './modules/notices/notices.module';
     UsersModule,
     AcademicStructureModule,
     NoticesModule,
+    MaterialsModule,
     ScheduleModule.forRoot(),
   ],
 })
