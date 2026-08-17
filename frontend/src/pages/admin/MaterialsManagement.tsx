@@ -1,34 +1,135 @@
-import React, { useState } from 'react';
-import { FileText, Plus, Download, Trash2, Search, Filter, ShieldAlert, Book, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { FileText, Plus, Download, Trash2, Search, Filter, ShieldAlert, Book, X, Edit, UploadCloud } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
+import { getMaterials, createMaterial, deleteMaterial, updateMaterial, Material } from '../../api/materials';
 
 const MaterialsManagement = () => {
-  const [materials, setMaterials] = useState([
-    { id: 1, title: 'Student Handbook 2024', cat: 'rule', desc: 'Comprehensive guide to school policies and student conduct rules.', date: 'Jan 01, 2024' },
-    { id: 2, title: 'Q2 Exam Timetable', cat: 'notice', desc: 'Official schedule for all grade levels for Quarter 2 exams.', date: 'May 10, 2024' },
-    { id: 3, title: 'Math Formulas Library', cat: 'material', desc: 'A collection of all formulas required for high school mathematics.', date: 'Feb 15, 2024' },
-  ]);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
-  const [newMaterial, setNewMaterial] = useState({ title: '', cat: 'material', desc: '' });
+  const [isEditing, setIsEditing] = useState<Material | null>(null);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  const handleUpload = (e: React.FormEvent) => {
+  const [newMaterial, setNewMaterial] = useState({ title: '', category: 'material', description: '', targetRole: 'all' });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('All Categories');
+
+  useEffect(() => {
+    fetchMaterials();
+  }, []);
+
+  const fetchMaterials = async () => {
+    setIsLoading(true);
+    try {
+      const response = await getMaterials();
+      setMaterials(response);
+    } catch (error) {
+      toast.error('Failed to fetch materials');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'image/png', 'image/jpeg'];
+      if (!validTypes.includes(file.type)) {
+        toast.error('Invalid file type. Only PDF, DOCX, XLSX, PNG, and JPG are allowed.');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast.error('File too large. Maximum size is 10MB.');
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    const material = {
-      ...newMaterial,
-      id: Date.now(),
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
-    };
-    setMaterials([material, ...materials]);
-    setIsUploading(false);
-    setNewMaterial({ title: '', cat: 'material', desc: '' });
-    toast.success('Material uploaded successfully!');
+    if (!isEditing && !selectedFile) {
+      toast.error('Please select a file to upload');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('title', newMaterial.title);
+    formData.append('category', newMaterial.category);
+    formData.append('description', newMaterial.description);
+    formData.append('targetRole', newMaterial.targetRole);
+    if (selectedFile) {
+      formData.append('file', selectedFile);
+    }
+
+    try {
+      if (isEditing) {
+        toast.loading('Updating material...', { id: 'upload' });
+        await updateMaterial(isEditing.id, formData);
+        toast.success('Material updated successfully!', { id: 'upload' });
+      } else {
+        toast.loading('Uploading material...', { id: 'upload' });
+        await createMaterial(formData);
+        toast.success('Material uploaded successfully!', { id: 'upload' });
+      }
+      
+      setIsUploading(false);
+      setIsEditing(null);
+      setNewMaterial({ title: '', category: 'material', description: '', targetRole: 'all' });
+      setSelectedFile(null);
+      fetchMaterials();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save material', { id: 'upload' });
+    }
   };
 
-  const handleDelete = (id: number) => {
-    setMaterials(materials.filter(m => m.id !== id));
-    toast.success('Material deleted successfully');
+  const confirmDelete = async () => {
+    if (!isDeleting) return;
+    toast.loading('Deleting material...', { id: 'delete' });
+    try {
+      await deleteMaterial(isDeleting);
+      toast.success('Material deleted successfully', { id: 'delete' });
+      setMaterials(materials.filter(m => m.id !== isDeleting));
+    } catch (error) {
+      toast.error('Failed to delete material', { id: 'delete' });
+    } finally {
+      setIsDeleting(null);
+    }
   };
+
+  const handleDownload = (fileUrl: string) => {
+    window.open(fileUrl, '_blank');
+  };
+
+  const openEditModal = (material: Material) => {
+    setIsEditing(material);
+    setNewMaterial({
+      title: material.title,
+      category: material.category || 'material',
+      description: material.description || '',
+      targetRole: material.targetRole || 'all'
+    });
+    setSelectedFile(null);
+    setIsUploading(true);
+  };
+
+  const filteredMaterials = materials.filter(item => {
+    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    let categoryMatchStr = '';
+    if (filterCategory === 'School Notices') categoryMatchStr = 'notice';
+    else if (filterCategory === 'Learning Materials') categoryMatchStr = 'material';
+    else if (filterCategory === 'Rules & Regulations') categoryMatchStr = 'rule';
+
+    const matchesCategory = filterCategory === 'All Categories' || item.category === categoryMatchStr;
+
+    return matchesSearch && matchesCategory;
+  });
 
   return (
     <div className="space-y-8">
@@ -37,7 +138,12 @@ const MaterialsManagement = () => {
           <h2 className="text-3xl font-black text-gray-900">Materials Management</h2>
         </div>
         <button
-          onClick={() => setIsUploading(true)}
+          onClick={() => {
+            setIsEditing(null);
+            setNewMaterial({ title: '', category: 'material', description: '', targetRole: 'all' });
+            setSelectedFile(null);
+            setIsUploading(true);
+          }}
           className="flex items-center gap-3 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20"
         >
           <Plus className="w-4 h-4" />
@@ -51,7 +157,7 @@ const MaterialsManagement = () => {
             <button onClick={() => setIsUploading(false)} className="absolute right-8 top-8 text-gray-400 hover:text-gray-900">
               <X className="w-6 h-6" />
             </button>
-            <h3 className="text-2xl font-black text-gray-900 mb-6">Upload Material</h3>
+            <h3 className="text-2xl font-black text-gray-900 mb-6">{isEditing ? 'Edit Material' : 'Upload Material'}</h3>
             <form onSubmit={handleUpload} className="space-y-6">
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Title</label>
@@ -64,17 +170,32 @@ const MaterialsManagement = () => {
                   onChange={e => setNewMaterial({...newMaterial, title: e.target.value})}
                 />
               </div>
-              <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Category</label>
-                <select
-                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
-                  value={newMaterial.cat}
-                  onChange={e => setNewMaterial({...newMaterial, cat: e.target.value})}
-                >
-                  <option value="material">Learning Material</option>
-                  <option value="notice">School Notice</option>
-                  <option value="rule">Rule &amp; Regulation</option>
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Category</label>
+                  <select
+                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
+                    value={newMaterial.category}
+                    onChange={e => setNewMaterial({...newMaterial, category: e.target.value})}
+                  >
+                    <option value="material">Learning Material</option>
+                    <option value="notice">School Notice</option>
+                    <option value="rule">Rule &amp; Regulation</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Target Audience</label>
+                  <select
+                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
+                    value={newMaterial.targetRole}
+                    onChange={e => setNewMaterial({...newMaterial, targetRole: e.target.value})}
+                  >
+                    <option value="all">All Users</option>
+                    <option value="teacher">Teachers Only</option>
+                    <option value="student">Students Only</option>
+                    <option value="parent">Parents Only</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Description</label>
@@ -83,14 +204,48 @@ const MaterialsManagement = () => {
                   rows={3}
                   className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 resize-none"
                   placeholder="Brief description..."
-                  value={newMaterial.desc}
-                  onChange={e => setNewMaterial({...newMaterial, desc: e.target.value})}
+                  value={newMaterial.description}
+                  onChange={e => setNewMaterial({...newMaterial, description: e.target.value})}
                 />
               </div>
-              <button type="submit" className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-900/20">
-                Confirm Upload
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">File</label>
+                <div 
+                  className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <UploadCloud className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-gray-700">
+                    {selectedFile ? selectedFile.name : (isEditing ? 'Click to replace file (optional)' : 'Click to select file')}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-widest">PDF, DOCX, XLSX, PNG, JPG (MAX 10MB)</p>
+                  <input
+                    type="file"
+                    className="hidden"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
+                  />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-900/20 disabled:opacity-50">
+                {isEditing ? 'Confirm Changes' : 'Confirm Upload'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isDeleting && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center">
+            <Trash2 className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-xl font-bold mb-2">Delete Material?</h3>
+            <p className="text-gray-500 mb-6">Are you sure you want to delete this material? This action cannot be undone.</p>
+            <div className="flex gap-4">
+              <button onClick={() => setIsDeleting(null)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold">Cancel</button>
+              <button onClick={confirmDelete} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold">Delete</button>
+            </div>
           </div>
         </div>
       )}
@@ -101,11 +256,17 @@ const MaterialsManagement = () => {
           <input
             type="text"
             placeholder="Search materials..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold transition-all"
           />
         </div>
         <div className="flex gap-4">
-          <select className="bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold appearance-none min-w-[180px]">
+          <select 
+            className="bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold appearance-none min-w-[180px]"
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+          >
             <option>All Categories</option>
             <option>School Notices</option>
             <option>Learning Materials</option>
@@ -117,46 +278,62 @@ const MaterialsManagement = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {materials.map((item) => (
-          <div key={item.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 group overflow-hidden hover:border-blue-900/20 transition-all flex flex-col">
-            <div className={cn(
-              "p-8 flex items-center gap-6",
-              item.cat === 'rule' ? "bg-amber-50" : item.cat === 'notice' ? "bg-indigo-50" : "bg-blue-50"
-            )}>
+      {isLoading ? (
+        <div className="text-center py-12 text-gray-500 font-bold">Loading materials...</div>
+      ) : filteredMaterials.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-[2rem] shadow-sm border border-gray-100">
+          <Book className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <p className="text-lg font-bold text-gray-600">No materials found.</p>
+          <p className="text-sm text-gray-400">Upload a new material or clear your search filters.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {filteredMaterials.map((item) => (
+            <div key={item.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 group overflow-hidden hover:border-blue-900/20 transition-all flex flex-col relative">
               <div className={cn(
-                "w-16 h-16 rounded-[1.5rem] flex items-center justify-center shrink-0 shadow-lg shadow-black/5",
-                item.cat === 'rule' ? "bg-amber-600 text-white" : item.cat === 'notice' ? "bg-indigo-600 text-white" : "bg-blue-600 text-white"
+                "p-8 flex items-center gap-6",
+                item.category === 'rule' ? "bg-amber-50" : item.category === 'notice' ? "bg-indigo-50" : "bg-blue-50"
               )}>
-                {item.cat === 'rule' ? <ShieldAlert className="w-8 h-8" /> : <Book className="w-8 h-8" />}
+                <div className={cn(
+                  "w-16 h-16 rounded-[1.5rem] flex items-center justify-center shrink-0 shadow-lg shadow-black/5",
+                  item.category === 'rule' ? "bg-amber-600 text-white" : item.category === 'notice' ? "bg-indigo-600 text-white" : "bg-blue-600 text-white"
+                )}>
+                  {item.category === 'rule' ? <ShieldAlert className="w-8 h-8" /> : <Book className="w-8 h-8" />}
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">{item.category}s</span>
+                  <h3 className="text-lg font-black text-gray-900 line-clamp-1">{item.title}</h3>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{item.targetRole} • {item.fileType?.toUpperCase()}</span>
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">{item.cat}s</span>
-                <h3 className="text-lg font-black text-gray-900 line-clamp-1">{item.title}</h3>
-              </div>
-            </div>
 
-            <div className="p-8 flex-1 flex flex-col">
-              <p className="text-sm text-gray-500 leading-relaxed mb-8 flex-1">
-                {item.desc}
-              </p>
+              <div className="p-8 flex-1 flex flex-col">
+                <p className="text-sm text-gray-500 leading-relaxed mb-8 flex-1">
+                  {item.description}
+                </p>
 
-              <div className="flex items-center justify-between pt-8 border-t border-gray-100">
-                <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{item.date}</span>
-                <div className="flex items-center gap-3">
-                  <button onClick={() => handleDelete(item.id)} className="p-3 bg-gray-50 text-gray-400 hover:text-red-600 rounded-xl transition-all">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => toast.info('PDF download will be available soon')} className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-colors">
-                    <Download className="w-3 h-3" />
-                    Download
-                  </button>
+                <div className="flex items-center justify-between pt-8 border-t border-gray-100">
+                  <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                    {new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setIsDeleting(item.id)} className="p-3 bg-gray-50 text-gray-400 hover:text-red-600 rounded-xl transition-all" title="Delete">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => openEditModal(item)} className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 rounded-xl transition-all" title="Edit">
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDownload(item.fileUrl)} className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-colors">
+                      <Download className="w-3 h-3" />
+                      Download
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       <Toaster position="top-right" />
     </div>
   );

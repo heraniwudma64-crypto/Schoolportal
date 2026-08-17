@@ -480,3 +480,18 @@ model Notice {
   Student      Student?      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   Parent       Parent?       @relation(fields: [parentId], references: [id], onDelete: Cascade)
 }
+
+// ─── Materials ────────────────────────────────────────────────────────────────
+
+model Material {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String   @db.VarChar(255)
+  description String?  @db.Text
+  fileUrl     String   @map("file_url") @db.Text
+  fileType    String?  @map("file_type") @db.VarChar(50)
+  targetRole  String?  @map("target_role") @db.VarChar(50)
+  category    String?  @default("material") @db.VarChar(50)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("materials")
+}
