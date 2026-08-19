@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { 
   BookOpen, 
   ClipboardList, 
@@ -9,9 +10,15 @@ import {
   Clock
 } from 'lucide-react';
 import StatCard from './StatCard';
-import { MOCK_SUBJECTS, MOCK_ASSIGNMENTS, MOCK_ANNOUNCEMENTS } from '../../data/mockData';
+import { MOCK_SUBJECTS, MOCK_ASSIGNMENTS } from '../../data/mockData';
+import { getUserNotices } from '../../api/notices';
 
 const StudentOverview = () => {
+  const { data: notices = [], isLoading: noticesLoading } = useQuery({
+    queryKey: ['student-notices'],
+    queryFn: getUserNotices,
+  });
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -53,13 +60,19 @@ const StudentOverview = () => {
             <button className="text-sm text-blue-600 font-medium hover:underline">View All</button>
           </div>
           <div className="divide-y divide-gray-100">
-            {MOCK_ANNOUNCEMENTS.map((ann) => (
+            {noticesLoading && (
+              <p className="p-6 text-sm text-gray-500">Loading announcements...</p>
+            )}
+            {!noticesLoading && notices.length === 0 && (
+              <p className="p-6 text-sm text-gray-500">No announcements for you yet.</p>
+            )}
+            {notices.slice(0, 5).map((ann) => (
               <div key={ann.id} className="p-6 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-semibold text-gray-900">{ann.title}</h4>
                   <span className="text-xs text-gray-400 flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
-                    {ann.date}
+                    {new Date(ann.publishedAt ?? ann.createdAt).toLocaleDateString()}
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 line-clamp-2">{ann.content}</p>

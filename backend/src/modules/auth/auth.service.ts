@@ -55,21 +55,41 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(registerDto.password, 12);
+    const userId = randomUUID();
+    const [firstName, ...lastNameParts] = registerDto.name.trim().split(/\s+/);
 
-    const createdUser = await this.prisma.user.create({
-      data: {
-        id: randomUUID(),
-        loginId,
-        email,
-        password: passwordHash,
-        role,
-      },
-      select: {
-        id: true,
-        loginId: true,
-        email: true,
-        role: true,
-      },
+    const createdUser = await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          id: userId,
+          loginId,
+          email,
+          password: passwordHash,
+          role,
+        },
+        select: {
+          id: true,
+          loginId: true,
+          email: true,
+          role: true,
+        },
+      });
+
+      if (role === Role.STUDENT) {
+        await tx.student.create({
+          data: {
+            id: randomUUID(),
+            userId,
+            admissionNo: loginId,
+            firstName,
+            lastName: lastNameParts.join(' '),
+            gender: registerDto.gender,
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      return user;
     });
 
     const safeUser = this.toSafeUser(createdUser, registerDto.name);
