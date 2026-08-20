@@ -27,7 +27,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
+  async register(registerDto: RegisterDto & { classId?: string; classSectionId?: string; grade?: string }) {
     if (registerDto.password !== registerDto.confirmPassword) {
       throw new BadRequestException('Password confirmation does not match');
     }
@@ -55,21 +55,84 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(registerDto.password, 12);
+    const userId = randomUUID();
 
-    const createdUser = await this.prisma.user.create({
-      data: {
-        id: randomUUID(),
-        loginId,
-        email,
-        password: passwordHash,
-        role,
+    // Split name into first and last name for profile records
+    const nameParts = registerDto.name ? registerDto.name.trim().split(' ') : ['User'];
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || firstName;
+
+    // Use a transaction to create the user and their profile table record atomically
+    const createdUser = await this.prisma.$transaction(async (prisma: any) => {
+      // 1. Create the base user
+      const user = await prisma.user.create({
+        data: {
+          id: userId,
+          loginId,
+          email,
+          password: passwordHash,
+          role,
+        },
+        select: {
+          id: true,
+          loginId: true,
+          email: true,
+          role: true,
+        },
+      });
+
+      // 2. Create the role-specific profile record with required schema fields
+      if (role === Role.TEACHER) {
+        await prisma.teacher.create({
+          data: {
+            id: randomUUID(),
+            userId: user.id,
+            firstName,
+            lastName,
+            updatedAt: new Date(),
+          },
+        });
+     } else if (role === Role.STUDENT) {
+  // This looks for whatever key your frontend sends the class/grade text under
+  const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
+  let resolvedClassSectionId: string | null = null;
+
+  if (classInput) {
+    let sectionRecord = await prisma.classSection.findFirst({
+      where: {
+        OR: [
+          { id: classInput },
+          { name: classInput },
+        ],
       },
-      select: {
-        id: true,
-        loginId: true,
-        email: true,
-        role: true,
-      },
+    });
+
+    if (!sectionRecord) {
+      sectionRecord = await prisma.classSection.create({
+        data: {
+          id: randomUUID(),
+          name: classInput,
+          updatedAt: new Date(),
+        },
+      });
+    }
+    resolvedClassSectionId = sectionRecord.id;
+  }
+
+  await prisma.student.create({
+    data: {
+      id: randomUUID(),
+      admissionNo: loginId,
+      firstName,
+      lastName,
+      userId: user.id,
+      updatedAt: new Date(),
+      // This assigns the resolved UUID so it is never NULL again
+      ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
+    },
+  });
+}
+      return user;
     });
 
     const safeUser = this.toSafeUser(createdUser, registerDto.name);
@@ -168,7 +231,7 @@ export class AuthService {
     return Role.STUDENT;
   }
 
-  private toSafeUser(
+    private toSafeUser(
     user: { id: string; loginId: string; email: string | null; role: Role },
     nameOverride?: string,
   ): SafeAuthUser {

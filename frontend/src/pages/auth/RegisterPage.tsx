@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../../lib/api';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { GraduationCap, User, Mail, Lock, Building2, BookOpen, ArrowRight, Users } from 'lucide-react'; import { UserRole } from '../../types';
+import { GraduationCap, User, Mail, Lock, Building2, BookOpen, ArrowRight, Users } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { APP_DESCRIPTION } from '../../config/branding';
 
@@ -18,7 +19,7 @@ const RegisterPage = () => {
     department: '',
   });
   const [isLoading, setIsLoading] = useState(false);
-  const { register, user } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -33,22 +34,23 @@ const RegisterPage = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
     setIsLoading(true);
     try {
-      const result = await register({ ...formData, role: formData.role as UserRole });
-      if (result.success) {
-        toast.success('Registration successful!');
-        navigate('/dashboard', { replace: true });
-      } else {
-        toast.error(result.error || 'Registration failed');
-      }
-    } catch {
-      toast.error('Registration failed. Please try again.');
+      await api.post('/auth/register', {
+        idNumber: formData.idNumber.trim(),
+        name: formData.name.trim(),
+        email: formData.email ? formData.email.trim() : undefined,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        role: formData.role.toUpperCase(), // Maps 'student' -> 'STUDENT', etc.
+        grade: formData.grade.trim(),     // Sends class/grade section correctly to backend
+      });
+      
+      toast.success('Account created successfully!');
+      navigate('/login', { replace: true });
+    } catch (error: any) {
+      console.error('Registration failed', error);
+      toast.error(error.response?.data?.message || 'Registration failed');
     } finally {
       setIsLoading(false);
     }
@@ -76,6 +78,7 @@ const RegisterPage = () => {
                 <input
                   name="name"
                   type="text"
+                  value={formData.name}
                   onChange={handleChange}
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   required
@@ -90,6 +93,7 @@ const RegisterPage = () => {
                 <input
                   name="idNumber"
                   type="text"
+                  value={formData.idNumber}
                   onChange={handleChange}
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   required
@@ -104,6 +108,7 @@ const RegisterPage = () => {
                 <input
                   name="email"
                   type="email"
+                  value={formData.email}
                   onChange={handleChange}
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
@@ -152,6 +157,7 @@ const RegisterPage = () => {
                   <input
                     name="grade"
                     type="text"
+                    value={formData.grade}
                     onChange={handleChange}
                     placeholder="e.g. Grade 10A"
                     className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -167,6 +173,7 @@ const RegisterPage = () => {
                   <input
                     name="grade"
                     type="text"
+                    value={formData.grade}
                     onChange={handleChange}
                     placeholder="e.g. Grade 8B"
                     className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -181,6 +188,7 @@ const RegisterPage = () => {
                   <input
                     name="department"
                     type="text"
+                    value={formData.department}
                     onChange={handleChange}
                     placeholder="e.g. Mathematics"
                     className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -197,6 +205,7 @@ const RegisterPage = () => {
                 <input
                   name="password"
                   type="password"
+                  value={formData.password}
                   onChange={handleChange}
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   required
@@ -211,6 +220,7 @@ const RegisterPage = () => {
                 <input
                   name="confirmPassword"
                   type="password"
+                  value={formData.confirmPassword}
                   onChange={handleChange}
                   className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   required
