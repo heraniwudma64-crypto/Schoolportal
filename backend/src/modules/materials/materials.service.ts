@@ -38,13 +38,13 @@ export class MaterialsService {
     const where: any = {};
     if (role && role !== Role.ADMIN) {
       where.OR = [
-        { targetRole: 'all' },
-        { targetRole: role.toLowerCase() }
+        { target_role: 'ALL' },
+        { target_role: role.toUpperCase() }
       ];
     }
     return prisma.material.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { created_at: 'desc' },
     });
   }
 
@@ -85,18 +85,17 @@ export class MaterialsService {
       data: {
         title: createMaterialDto.title,
         description: createMaterialDto.description,
-        category: createMaterialDto.category || 'material',
-        targetRole: createMaterialDto.targetRole || 'all',
-        fileType: file.originalname.split('.').pop() || null,
-        fileUrl: publicUrlData.publicUrl,
+        target_role: createMaterialDto.target_role || 'STUDENT',
+        file_type: file.originalname.split('.').pop() || 'unknown',
+        file_url: publicUrlData.publicUrl,
       },
     });
   }
 
   async update(id: string, updateMaterialDto: UpdateMaterialDto, file?: Express.Multer.File) {
     const material = await this.findOne(id);
-    let fileUrl = material.fileUrl;
-    let fileType = material.fileType;
+    let fileUrl = material.file_url;
+    let fileType = material.file_type;
 
     if (file) {
       const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '').toLowerCase();
@@ -122,10 +121,10 @@ export class MaterialsService {
         .getPublicUrl(fileName);
 
       fileUrl = publicUrlData.publicUrl;
-      fileType = file.originalname.split('.').pop() || null;
+      fileType = file.originalname.split('.').pop() || 'unknown';
 
       // Extract old file path and remove it (optional cleanup)
-      const oldFilePathMatch = material.fileUrl.match(/\/materials\/(.*)$/);
+      const oldFilePathMatch = material.file_url.match(/\/materials\/(.*)$/);
       if (oldFilePathMatch) {
         await this.supabase.storage.from('materials').remove([oldFilePathMatch[1]]);
       }
@@ -136,10 +135,9 @@ export class MaterialsService {
       data: {
         title: updateMaterialDto.title,
         description: updateMaterialDto.description,
-        category: updateMaterialDto.category,
-        targetRole: updateMaterialDto.targetRole,
-        fileUrl,
-        fileType,
+        target_role: updateMaterialDto.target_role,
+        file_url: fileUrl,
+        file_type: fileType,
       },
     });
   }
@@ -147,7 +145,7 @@ export class MaterialsService {
   async remove(id: string) {
     const material = await this.findOne(id);
     
-    const oldFilePathMatch = material.fileUrl.match(/\/materials\/(.*)$/);
+    const oldFilePathMatch = material.file_url.match(/\/materials\/(.*)$/);
     if (oldFilePathMatch) {
       await this.supabase.storage.from('materials').remove([oldFilePathMatch[1]]);
     }

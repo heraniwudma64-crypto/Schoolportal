@@ -4,11 +4,10 @@ export interface Material {
   id: string;
   title: string;
   description?: string;
-  fileUrl: string;
-  fileType?: string;
-  targetRole?: string;
-  category?: string;
-  createdAt: string;
+  file_url: string;
+  file_type?: string;
+  target_role: string;
+  created_at: string;
 }
 
 export const getMaterials = () => api.get<Material[]>('/materials');

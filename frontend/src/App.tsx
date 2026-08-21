@@ -23,6 +23,7 @@ import ReportCard from './pages/student/ReportCard';
 import UserManagement from './pages/admin/UserManagement';
 import ExamReviewApproval from './pages/admin/ExamReviewApproval';
 import AcademicStructure from './pages/admin/AcademicStructure';
+import ClassRoster from './pages/admin/ClassRoster';
 import AnnouncementCenter from './pages/admin/AnnouncementCenter';
 import AuditLogs from './pages/admin/AuditLogs';
 
@@ -59,6 +60,7 @@ function App() {
 
             {/* Admin Only */}
             <Route path="users" element={<RequireRole allowedRoles={['admin']}><UserManagement /></RequireRole>} />
+            <Route path="roster" element={<RequireRole allowedRoles={['admin']}><ClassRoster /></RequireRole>} />
             <Route path="exam-review" element={<RequireRole allowedRoles={['admin']}><ExamReviewApproval /></RequireRole>} />
             <Route path="structure" element={<RequireRole allowedRoles={['admin']}><AcademicStructure /></RequireRole>} />
             <Route path="announcements" element={<RequireRole allowedRoles={['admin']}><AnnouncementCenter /></RequireRole>} />
