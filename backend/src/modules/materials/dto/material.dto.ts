@@ -10,13 +10,7 @@ export class CreateMaterialDto {
 
   @IsString()
   @IsOptional()
-  @IsIn(['material', 'notice', 'rule', 'syllabus'])
-  category?: string;
-
-  @IsString()
-  @IsOptional()
-  @IsIn(['all', 'teacher', 'student', 'parent'])
-  targetRole?: string;
+  target_role?: string;
 }
 
 export class UpdateMaterialDto {
@@ -30,11 +24,5 @@ export class UpdateMaterialDto {
 
   @IsString()
   @IsOptional()
-  @IsIn(['material', 'notice', 'rule', 'syllabus'])
-  category?: string;
-
-  @IsString()
-  @IsOptional()
-  @IsIn(['all', 'teacher', 'student', 'parent'])
-  targetRole?: string;
+  target_role?: string;
 }

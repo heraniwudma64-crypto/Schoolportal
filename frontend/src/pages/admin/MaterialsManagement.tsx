@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, Plus, Download, Trash2, Search, Filter, ShieldAlert, Book, X, Edit, UploadCloud } from 'lucide-react';
+import { FileText, Plus, Download, Trash2, Search, Filter, ShieldAlert, Book, X, Edit, UploadCloud, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
 import { getMaterials, createMaterial, deleteMaterial, updateMaterial, Material } from '../../api/materials';
@@ -8,10 +8,11 @@ const MaterialsManagement = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditing, setIsEditing] = useState<Material | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
-  const [newMaterial, setNewMaterial] = useState({ title: '', category: 'material', description: '', targetRole: 'all' });
+  const [newMaterial, setNewMaterial] = useState({ title: '', target_role: 'STUDENT', description: '' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,11 +58,11 @@ const MaterialsManagement = () => {
       return;
     }
 
+    setIsSubmitting(true);
     const formData = new FormData();
     formData.append('title', newMaterial.title);
-    formData.append('category', newMaterial.category);
+    formData.append('target_role', newMaterial.target_role);
     formData.append('description', newMaterial.description);
-    formData.append('targetRole', newMaterial.targetRole);
     if (selectedFile) {
       formData.append('file', selectedFile);
     }
@@ -79,11 +80,13 @@ const MaterialsManagement = () => {
       
       setIsUploading(false);
       setIsEditing(null);
-      setNewMaterial({ title: '', category: 'material', description: '', targetRole: 'all' });
+      setNewMaterial({ title: '', target_role: 'STUDENT', description: '' });
       setSelectedFile(null);
       fetchMaterials();
     } catch (error: any) {
       toast.error(error.message || 'Failed to save material', { id: 'upload' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -109,9 +112,8 @@ const MaterialsManagement = () => {
     setIsEditing(material);
     setNewMaterial({
       title: material.title,
-      category: material.category || 'material',
       description: material.description || '',
-      targetRole: material.targetRole || 'all'
+      target_role: material.target_role || 'STUDENT'
     });
     setSelectedFile(null);
     setIsUploading(true);
@@ -121,12 +123,12 @@ const MaterialsManagement = () => {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    let categoryMatchStr = '';
-    if (filterCategory === 'School Notices') categoryMatchStr = 'notice';
-    else if (filterCategory === 'Learning Materials') categoryMatchStr = 'material';
-    else if (filterCategory === 'Rules & Regulations') categoryMatchStr = 'rule';
+    let targetRoleMatchStr = '';
+    if (filterCategory === 'School Notices') targetRoleMatchStr = 'ALL';
+    else if (filterCategory === 'Learning Materials') targetRoleMatchStr = 'STUDENT';
+    else if (filterCategory === 'Rules & Regulations') targetRoleMatchStr = 'TEACHER';
 
-    const matchesCategory = filterCategory === 'All Categories' || item.category === categoryMatchStr;
+    const matchesCategory = filterCategory === 'All Categories' || item.target_role === targetRoleMatchStr;
 
     return matchesSearch && matchesCategory;
   });
@@ -140,7 +142,7 @@ const MaterialsManagement = () => {
         <button
           onClick={() => {
             setIsEditing(null);
-            setNewMaterial({ title: '', category: 'material', description: '', targetRole: 'all' });
+            setNewMaterial({ title: '', target_role: 'STUDENT', description: '' });
             setSelectedFile(null);
             setIsUploading(true);
           }}
@@ -154,7 +156,7 @@ const MaterialsManagement = () => {
       {isUploading && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl relative animate-in fade-in zoom-in duration-200">
-            <button onClick={() => setIsUploading(false)} className="absolute right-8 top-8 text-gray-400 hover:text-gray-900">
+            <button onClick={() => setIsUploading(false)} className="absolute right-8 top-8 text-gray-400 hover:text-gray-900" disabled={isSubmitting}>
               <X className="w-6 h-6" />
             </button>
             <h3 className="text-2xl font-black text-gray-900 mb-6">{isEditing ? 'Edit Material' : 'Upload Material'}</h3>
@@ -168,34 +170,21 @@ const MaterialsManagement = () => {
                   placeholder="Enter material title"
                   value={newMaterial.title}
                   onChange={e => setNewMaterial({...newMaterial, title: e.target.value})}
+                  disabled={isSubmitting}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Category</label>
-                  <select
-                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
-                    value={newMaterial.category}
-                    onChange={e => setNewMaterial({...newMaterial, category: e.target.value})}
-                  >
-                    <option value="material">Learning Material</option>
-                    <option value="notice">School Notice</option>
-                    <option value="rule">Rule &amp; Regulation</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Target Audience</label>
-                  <select
-                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
-                    value={newMaterial.targetRole}
-                    onChange={e => setNewMaterial({...newMaterial, targetRole: e.target.value})}
-                  >
-                    <option value="all">All Users</option>
-                    <option value="teacher">Teachers Only</option>
-                    <option value="student">Students Only</option>
-                    <option value="parent">Parents Only</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Category (Target Role)</label>
+                <select
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
+                  value={newMaterial.target_role}
+                  onChange={e => setNewMaterial({...newMaterial, target_role: e.target.value})}
+                  disabled={isSubmitting}
+                >
+                  <option value="STUDENT">Learning Material (Students)</option>
+                  <option value="ALL">School Notice (All)</option>
+                  <option value="TEACHER">Rule &amp; Regulation (Teachers)</option>
+                </select>
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Description</label>
@@ -206,13 +195,14 @@ const MaterialsManagement = () => {
                   placeholder="Brief description..."
                   value={newMaterial.description}
                   onChange={e => setNewMaterial({...newMaterial, description: e.target.value})}
+                  disabled={isSubmitting}
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">File</label>
                 <div 
-                  className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
+                  className={cn("border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center transition-colors", isSubmitting ? "opacity-50" : "cursor-pointer hover:bg-gray-50")}
+                  onClick={() => !isSubmitting && fileInputRef.current?.click()}
                 >
                   <UploadCloud className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                   <p className="text-sm font-bold text-gray-700">
@@ -225,11 +215,16 @@ const MaterialsManagement = () => {
                     ref={fileInputRef}
                     onChange={handleFileChange}
                     accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg"
+                    disabled={isSubmitting}
                   />
                 </div>
               </div>
-              <button type="submit" className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-900/20 disabled:opacity-50">
-                {isEditing ? 'Confirm Changes' : 'Confirm Upload'}
+              <button 
+                type="submit" 
+                disabled={isSubmitting}
+                className="w-full py-5 bg-blue-900 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-blue-900/20 flex items-center justify-center disabled:opacity-70"
+              >
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (isEditing ? 'Confirm Changes' : 'Confirm Upload')}
               </button>
             </form>
           </div>
@@ -288,50 +283,55 @@ const MaterialsManagement = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredMaterials.map((item) => (
-            <div key={item.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 group overflow-hidden hover:border-blue-900/20 transition-all flex flex-col relative">
-              <div className={cn(
-                "p-8 flex items-center gap-6",
-                item.category === 'rule' ? "bg-amber-50" : item.category === 'notice' ? "bg-indigo-50" : "bg-blue-50"
-              )}>
+          {filteredMaterials.map((item) => {
+            const isRule = item.target_role === 'TEACHER';
+            const isNotice = item.target_role === 'ALL';
+            const catName = isRule ? 'rule' : isNotice ? 'notice' : 'material';
+
+            return (
+              <div key={item.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 group overflow-hidden hover:border-blue-900/20 transition-all flex flex-col relative">
                 <div className={cn(
-                  "w-16 h-16 rounded-[1.5rem] flex items-center justify-center shrink-0 shadow-lg shadow-black/5",
-                  item.category === 'rule' ? "bg-amber-600 text-white" : item.category === 'notice' ? "bg-indigo-600 text-white" : "bg-blue-600 text-white"
+                  "p-8 flex items-center gap-6",
+                  isRule ? "bg-amber-50" : isNotice ? "bg-indigo-50" : "bg-blue-50"
                 )}>
-                  {item.category === 'rule' ? <ShieldAlert className="w-8 h-8" /> : <Book className="w-8 h-8" />}
+                  <div className={cn(
+                    "w-16 h-16 rounded-[1.5rem] flex items-center justify-center shrink-0 shadow-lg shadow-black/5",
+                    isRule ? "bg-amber-600 text-white" : isNotice ? "bg-indigo-600 text-white" : "bg-blue-600 text-white"
+                  )}>
+                    {isRule ? <ShieldAlert className="w-8 h-8" /> : <Book className="w-8 h-8" />}
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">{catName}s</span>
+                    <h3 className="text-lg font-black text-gray-900 line-clamp-1">{item.title}</h3>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">{item.category}s</span>
-                  <h3 className="text-lg font-black text-gray-900 line-clamp-1">{item.title}</h3>
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{item.targetRole} • {item.fileType?.toUpperCase()}</span>
-                </div>
-              </div>
 
-              <div className="p-8 flex-1 flex flex-col">
-                <p className="text-sm text-gray-500 leading-relaxed mb-8 flex-1">
-                  {item.description}
-                </p>
+                <div className="p-8 flex-1 flex flex-col">
+                  <p className="text-sm text-gray-500 leading-relaxed mb-8 flex-1">
+                    {item.description}
+                  </p>
 
-                <div className="flex items-center justify-between pt-8 border-t border-gray-100">
-                  <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                    {new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setIsDeleting(item.id)} className="p-3 bg-gray-50 text-gray-400 hover:text-red-600 rounded-xl transition-all" title="Delete">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => openEditModal(item)} className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 rounded-xl transition-all" title="Edit">
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleDownload(item.fileUrl)} className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-colors">
-                      <Download className="w-3 h-3" />
-                      Download
-                    </button>
+                  <div className="flex items-center justify-between pt-8 border-t border-gray-100">
+                    <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                      {new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setIsDeleting(item.id)} className="p-3 bg-gray-50 text-gray-400 hover:text-red-600 rounded-xl transition-all" title="Delete">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => openEditModal(item)} className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 rounded-xl transition-all" title="Edit">
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDownload(item.file_url)} className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-colors">
+                        <Download className="w-3 h-3" />
+                        Download
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       <Toaster position="top-right" />

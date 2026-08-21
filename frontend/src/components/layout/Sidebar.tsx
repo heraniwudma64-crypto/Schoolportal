@@ -69,6 +69,7 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
       return [
         ...common,
         { name: 'User Management', href: '/users', icon: Users },
+        { name: 'Class Roster', href: '/roster', icon: ClipboardList },
         { name: 'Exam Review', href: '/exam-review', icon: FileCheck },
         { name: 'Academic Structure', href: '/structure', icon: Settings },
         { name: 'Materials', href: '/materials', icon: Book },
