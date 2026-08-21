@@ -1,28 +1,43 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, XCircle, Clock, Calendar } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getMyAttendance } from '../../api/students';
 
 const Attendance = () => {
+  const [selectedMonth, setSelectedMonth] = useState('all');
   const { data: attendance = [], isLoading, isError } = useQuery({
     queryKey: ['my-attendance'],
     queryFn: getMyAttendance,
   });
 
-  const present = attendance.filter((record) => record.status === 'PRESENT').length;
-  const absent = attendance.filter((record) => record.status === 'ABSENT').length;
-  const late = attendance.filter((record) => record.status === 'LATE').length;
+  const months = useMemo(() => {
+    const uniqueMonths = new Map<string, string>();
+    attendance.forEach((record) => {
+      const date = new Date(record.date);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      uniqueMonths.set(key, date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }));
+    });
+    return [...uniqueMonths.entries()].sort(([a], [b]) => b.localeCompare(a));
+  }, [attendance]);
+  const displayedAttendance = selectedMonth === 'all'
+    ? attendance
+    : attendance.filter((record) => {
+      const date = new Date(record.date);
+      return `${date.getFullYear()}-${date.getMonth()}` === selectedMonth;
+    });
+  const present = displayedAttendance.filter((record) => record.status === 'PRESENT').length;
+  const absent = displayedAttendance.filter((record) => record.status === 'ABSENT').length;
+  const late = displayedAttendance.filter((record) => record.status === 'LATE').length;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Attendance Records</h2>
         <div className="flex gap-2">
-          <select className="bg-white border border-gray-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
-            <option>All Months</option>
-            <option>May 2024</option>
-            <option>April 2024</option>
+          <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="bg-white border border-gray-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
+            <option value="all">All Months</option>
+            {months.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </div>
       </div>
@@ -78,10 +93,10 @@ const Attendance = () => {
               {isError && (
                 <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-red-600">Could not load attendance records.</td></tr>
               )}
-              {!isLoading && !isError && attendance.length === 0 && (
+              {!isLoading && !isError && displayedAttendance.length === 0 && (
                 <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">No attendance records yet.</td></tr>
               )}
-              {attendance.map((row) => (
+              {displayedAttendance.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
                     <div className="flex items-center gap-2">

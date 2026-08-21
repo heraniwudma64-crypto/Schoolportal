@@ -17,7 +17,7 @@ const Results = () => {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Academic Results</h2>
-        <p className="text-sm text-gray-500">Your published exam results.</p>
+        <p className="text-sm text-gray-500">Your recorded exam results.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -39,10 +39,16 @@ const Results = () => {
               {!isLoading && !isError && results.length === 0 && <TableRow><TableCell colSpan={6} className="py-8 text-center text-gray-500">No results have been published yet.</TableCell></TableRow>}
               {results.map((result) => (
                 <TableRow key={result.id} className="hover:bg-gray-50/50 transition-colors">
-                  <TableCell className="font-semibold text-gray-900">{result.Exam.title}</TableCell>
+                  <TableCell className="font-semibold text-gray-900">
+                    <div>{result.Exam.title}</div>
+                    {result.remarks && <p className="mt-1 text-xs font-normal text-gray-500">{result.remarks}</p>}
+                  </TableCell>
                   <TableCell>{result.Exam.Subject.name}</TableCell>
                   <TableCell>{result.Exam.Term?.name ?? '—'}</TableCell>
-                  <TableCell className="text-center font-medium">{result.marksObtained} / {result.Exam.totalMarks}</TableCell>
+                  <TableCell className="text-center font-medium">
+                    <div>{result.marksObtained} / {result.Exam.totalMarks}</div>
+                    <div className="text-xs text-gray-500">{result.Exam.totalMarks ? `${((result.marksObtained / result.Exam.totalMarks) * 100).toFixed(1)}%` : '—'}</div>
+                  </TableCell>
                   <TableCell className="text-center">{result.grade ?? '—'}</TableCell>
                   <TableCell className="text-right">{new Date(result.Exam.examDate).toLocaleDateString()}</TableCell>
                 </TableRow>
