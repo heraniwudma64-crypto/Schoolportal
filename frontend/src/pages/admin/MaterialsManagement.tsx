@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FileText, Plus, Download, Trash2, Search, Filter, ShieldAlert, Book, X, Edit, UploadCloud, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
-import { getMaterials, createMaterial, deleteMaterial, updateMaterial, Material } from '../../api/materials';
+import { getMaterials, createMaterial, deleteMaterial, updateMaterial, getMaterialDownloadUrl, Material } from '../../api/materials';
 
 const MaterialsManagement = () => {
   const [materials, setMaterials] = useState<Material[]>([]);
@@ -11,8 +11,9 @@ const MaterialsManagement = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEditing, setIsEditing] = useState<Material | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  const [newMaterial, setNewMaterial] = useState({ title: '', target_role: 'STUDENT', description: '' });
+  const [newMaterial, setNewMaterial] = useState({ title: '', category: 'Materials', target_role: 'All Users', description: '' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +62,7 @@ const MaterialsManagement = () => {
     setIsSubmitting(true);
     const formData = new FormData();
     formData.append('title', newMaterial.title);
+    formData.append('category', newMaterial.category);
     formData.append('target_role', newMaterial.target_role);
     formData.append('description', newMaterial.description);
     if (selectedFile) {
@@ -80,7 +82,7 @@ const MaterialsManagement = () => {
       
       setIsUploading(false);
       setIsEditing(null);
-      setNewMaterial({ title: '', target_role: 'STUDENT', description: '' });
+      setNewMaterial({ title: '', category: 'Materials', target_role: 'All Users', description: '' });
       setSelectedFile(null);
       fetchMaterials();
     } catch (error: any) {
@@ -104,16 +106,34 @@ const MaterialsManagement = () => {
     }
   };
 
-  const handleDownload = (fileUrl: string) => {
-    window.open(fileUrl, '_blank');
+  const handleDownload = async (id: string) => {
+    if (downloadingId) return;
+    setDownloadingId(id);
+    try {
+      toast.loading('Preparing download...', { id: 'download' });
+      const { url } = await getMaterialDownloadUrl(id);
+      toast.success('Download ready!', { id: 'download' });
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (e) {
+      toast.error('Unable to download this material. Please try again.', { id: 'download' });
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const openEditModal = (material: Material) => {
     setIsEditing(material);
     setNewMaterial({
       title: material.title,
+      category: material.category || 'Materials',
       description: material.description || '',
-      target_role: material.target_role || 'STUDENT'
+      target_role: material.target_role || 'All Users'
     });
     setSelectedFile(null);
     setIsUploading(true);
@@ -121,14 +141,11 @@ const MaterialsManagement = () => {
 
   const filteredMaterials = materials.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+                          (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                          (item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    let targetRoleMatchStr = '';
-    if (filterCategory === 'School Notices') targetRoleMatchStr = 'ALL';
-    else if (filterCategory === 'Learning Materials') targetRoleMatchStr = 'STUDENT';
-    else if (filterCategory === 'Rules & Regulations') targetRoleMatchStr = 'TEACHER';
-
-    const matchesCategory = filterCategory === 'All Categories' || item.target_role === targetRoleMatchStr;
+    const matchesCategory = filterCategory === 'All Categories' || 
+                            (item.category && item.category.toLowerCase() === filterCategory.toLowerCase());
 
     return matchesSearch && matchesCategory;
   });
@@ -142,7 +159,7 @@ const MaterialsManagement = () => {
         <button
           onClick={() => {
             setIsEditing(null);
-            setNewMaterial({ title: '', target_role: 'STUDENT', description: '' });
+            setNewMaterial({ title: '', category: 'Materials', target_role: 'All Users', description: '' });
             setSelectedFile(null);
             setIsUploading(true);
           }}
@@ -174,16 +191,30 @@ const MaterialsManagement = () => {
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Category (Target Role)</label>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Category</label>
+                <select
+                  className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
+                  value={newMaterial.category}
+                  onChange={e => setNewMaterial({...newMaterial, category: e.target.value})}
+                  disabled={isSubmitting}
+                >
+                  <option value="Rules">Rules</option>
+                  <option value="Notices">Notices</option>
+                  <option value="Materials">Materials</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Target Audience</label>
                 <select
                   className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 appearance-none"
                   value={newMaterial.target_role}
                   onChange={e => setNewMaterial({...newMaterial, target_role: e.target.value})}
                   disabled={isSubmitting}
                 >
-                  <option value="STUDENT">Learning Material (Students)</option>
-                  <option value="ALL">School Notice (All)</option>
-                  <option value="TEACHER">Rule &amp; Regulation (Teachers)</option>
+                  <option value="All Users">All Users</option>
+                  <option value="Teachers Only">Teachers Only</option>
+                  <option value="Students Only">Students Only</option>
+                  <option value="Parents Only">Parents Only</option>
                 </select>
               </div>
               <div>
@@ -263,9 +294,9 @@ const MaterialsManagement = () => {
             onChange={(e) => setFilterCategory(e.target.value)}
           >
             <option>All Categories</option>
-            <option>School Notices</option>
-            <option>Learning Materials</option>
-            <option>Rules &amp; Regulations</option>
+            <option>Rules</option>
+            <option>Notices</option>
+            <option>Materials</option>
           </select>
           <button className="p-4 bg-gray-50 border border-gray-100 rounded-2xl text-gray-400 hover:text-blue-900 transition-all">
             <Filter className="w-5 h-5" />
@@ -284,9 +315,9 @@ const MaterialsManagement = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredMaterials.map((item) => {
-            const isRule = item.target_role === 'TEACHER';
-            const isNotice = item.target_role === 'ALL';
-            const catName = isRule ? 'rule' : isNotice ? 'notice' : 'material';
+            const isRule = item.category === 'Rules';
+            const isNotice = item.category === 'Notices';
+            const catName = isRule ? 'RULE' : isNotice ? 'NOTICE' : 'MATERIAL';
 
             return (
               <div key={item.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 group overflow-hidden hover:border-blue-900/20 transition-all flex flex-col relative">
@@ -301,7 +332,7 @@ const MaterialsManagement = () => {
                     {isRule ? <ShieldAlert className="w-8 h-8" /> : <Book className="w-8 h-8" />}
                   </div>
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">{catName}s</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">{catName}</span>
                     <h3 className="text-lg font-black text-gray-900 line-clamp-1">{item.title}</h3>
                   </div>
                 </div>
@@ -322,9 +353,13 @@ const MaterialsManagement = () => {
                       <button onClick={() => openEditModal(item)} className="p-3 bg-gray-50 text-gray-400 hover:text-blue-600 rounded-xl transition-all" title="Edit">
                         <Edit className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleDownload(item.file_url)} className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-colors">
-                        <Download className="w-3 h-3" />
-                        Download
+                      <button 
+                        onClick={() => handleDownload(item.id)} 
+                        disabled={downloadingId === item.id}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-800 transition-colors disabled:opacity-50"
+                      >
+                        {downloadingId === item.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                        {downloadingId === item.id ? 'Downloading...' : 'Download'}
                       </button>
                     </div>
                   </div>

@@ -1,8 +1,11 @@
-import { IsString, IsOptional, IsIn } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class CreateMaterialDto {
   @IsString()
   title!: string;
+
+  @IsString()
+  category!: string;
 
   @IsString()
   @IsOptional()
@@ -17,6 +20,10 @@ export class UpdateMaterialDto {
   @IsString()
   @IsOptional()
   title?: string;
+
+  @IsString()
+  @IsOptional()
+  category?: string;
 
   @IsString()
   @IsOptional()

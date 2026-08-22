@@ -54,6 +54,21 @@ export class MaterialsService {
     return material;
   }
 
+  private mapCategory(category: string): string {
+    const c = category?.toLowerCase() || '';
+    if (c.includes('rule')) return 'rules';
+    if (c.includes('notice')) return 'notices';
+    return 'materials';
+  }
+
+  private mapTargetRole(role: string): string {
+    const r = role?.toLowerCase() || '';
+    if (r.includes('teacher')) return 'teacher';
+    if (r.includes('student')) return 'student';
+    if (r.includes('parent')) return 'parent';
+    return 'all';
+  }
+
   async create(createMaterialDto: CreateMaterialDto, file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('File is required');
@@ -77,25 +92,33 @@ export class MaterialsService {
       throw new InternalServerErrorException(`Storage Error: ${uploadError.message || 'Failed to upload file'}`);
     }
 
-    const { data: publicUrlData } = this.supabase.storage
-      .from('materials')
-      .getPublicUrl(fileName);
-
-    return prisma.material.create({
-      data: {
-        title: createMaterialDto.title,
-        description: createMaterialDto.description,
-        target_role: createMaterialDto.target_role || 'STUDENT',
-        file_type: file.originalname.split('.').pop() || 'unknown',
-        file_url: publicUrlData.publicUrl,
-      },
-    });
+    try {
+      return await prisma.material.create({
+        data: {
+          title: createMaterialDto.title,
+          category: this.mapCategory(createMaterialDto.category),
+          description: createMaterialDto.description,
+          target_role: this.mapTargetRole(createMaterialDto.target_role || 'All Users'),
+          file_type: file.mimetype,
+          file_name: file.originalname,
+          file_size: file.size,
+          file_url: `materials/${fileName}`,
+        },
+      });
+    } catch (dbError: any) {
+      // If DB insert fails, clean up the uploaded file
+      console.error('Database Insert Error:', dbError);
+      await this.supabase.storage.from('materials').remove([fileName]);
+      throw new InternalServerErrorException(`Failed to save material to database. File was cleaned up. Error: ${dbError.message || dbError}`);
+    }
   }
 
   async update(id: string, updateMaterialDto: UpdateMaterialDto, file?: Express.Multer.File) {
     const material = await this.findOne(id);
     let fileUrl = material.file_url;
     let fileType = material.file_type;
+    let fileNameStr = material.file_name;
+    let fileSize = material.file_size;
 
     if (file) {
       const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '').toLowerCase();
@@ -116,15 +139,13 @@ export class MaterialsService {
         throw new InternalServerErrorException(`Storage Error: ${uploadError.message || 'Failed to upload new file'}`);
       }
 
-      const { data: publicUrlData } = this.supabase.storage
-        .from('materials')
-        .getPublicUrl(fileName);
+      fileUrl = `materials/${fileName}`;
+      fileType = file.mimetype;
+      fileNameStr = file.originalname;
+      fileSize = BigInt(file.size);
 
-      fileUrl = publicUrlData.publicUrl;
-      fileType = file.originalname.split('.').pop() || 'unknown';
-
-      // Extract old file path and remove it (optional cleanup)
-      const oldFilePathMatch = material.file_url.match(/\/materials\/(.*)$/);
+      // Extract old file path and remove it
+      const oldFilePathMatch = material.file_url.match(/materials\/(.*)$/);
       if (oldFilePathMatch) {
         await this.supabase.storage.from('materials').remove([oldFilePathMatch[1]]);
       }
@@ -134,10 +155,13 @@ export class MaterialsService {
       where: { id },
       data: {
         title: updateMaterialDto.title,
+        category: updateMaterialDto.category ? this.mapCategory(updateMaterialDto.category) : undefined,
         description: updateMaterialDto.description,
-        target_role: updateMaterialDto.target_role,
+        target_role: updateMaterialDto.target_role ? this.mapTargetRole(updateMaterialDto.target_role) : undefined,
         file_url: fileUrl,
         file_type: fileType,
+        file_name: fileNameStr,
+        file_size: fileSize,
       },
     });
   }
@@ -145,12 +169,36 @@ export class MaterialsService {
   async remove(id: string) {
     const material = await this.findOne(id);
     
-    const oldFilePathMatch = material.file_url.match(/\/materials\/(.*)$/);
+    const oldFilePathMatch = material.file_url.match(/materials\/(.*)$/);
     if (oldFilePathMatch) {
-      await this.supabase.storage.from('materials').remove([oldFilePathMatch[1]]);
+      const { error } = await this.supabase.storage.from('materials').remove([oldFilePathMatch[1]]);
+      if (error) {
+        throw new InternalServerErrorException(`Failed to delete file from storage: ${error.message}`);
+      }
     }
 
     await prisma.material.delete({ where: { id } });
     return { success: true };
+  }
+
+  async getDownloadUrl(id: string) {
+    const material = await this.findOne(id);
+    const oldFilePathMatch = material.file_url.match(/materials\/(.*)$/);
+    const pathInBucket = oldFilePathMatch ? oldFilePathMatch[1] : material.file_url;
+    
+    const { data, error } = await this.supabase.storage.from('materials').createSignedUrl(pathInBucket, 60, {
+      download: material.file_name || true,
+    });
+    
+    if (error || !data) {
+      // If it's a public bucket, createSignedUrl might fail or not be needed, but the prompt says:
+      // "If the bucket is private, generate an appropriate signed URL from the backend."
+      // Let's fallback to public URL if signed URL fails, just in case.
+      const { data: publicData } = this.supabase.storage.from('materials').getPublicUrl(pathInBucket, {
+        download: material.file_name || true,
+      });
+      return { url: publicData.publicUrl };
+    }
+    return { url: data.signedUrl };
   }
 }
