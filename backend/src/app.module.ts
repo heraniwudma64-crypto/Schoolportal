@@ -7,6 +7,7 @@ import { AcademicStructureModule } from './modules/academic-structure/academic-s
 import { NoticesModule } from './modules/notices/notices.module';
 import { RosterModule } from './modules/roster/roster.module';
 import { MaterialsModule } from './modules/materials/materials.module';
+import { ReportCardsModule } from './modules/report-cards/report-cards.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { MaterialsModule } from './modules/materials/materials.module';
     NoticesModule,
     RosterModule,
     MaterialsModule,
+    ReportCardsModule,
     ScheduleModule.forRoot(),
   ],
 })

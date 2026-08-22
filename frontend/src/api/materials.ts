@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 export interface Material {
   id: string;
   title: string;
+  category: string;
   description?: string;
   file_url: string;
   file_type?: string;
@@ -20,3 +21,6 @@ export const updateMaterial = (id: string, data: FormData) =>
 
 export const deleteMaterial = (id: string) => 
   api.delete<{ success: boolean }>(`/materials/${id}`);
+
+export const getMaterialDownloadUrl = (id: string) => 
+  api.get<{ url: string }>(`/materials/${id}/download`);

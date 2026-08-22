@@ -26,6 +26,8 @@ import AcademicStructure from './pages/admin/AcademicStructure';
 import ClassRoster from './pages/admin/ClassRoster';
 import AnnouncementCenter from './pages/admin/AnnouncementCenter';
 import AuditLogs from './pages/admin/AuditLogs';
+import AdminReportCards from './pages/admin/AdminReportCards';
+import AdminMyAccount from './pages/admin/AdminMyAccount';
 
 // Teacher Specific
 import Performance from './pages/teacher/Performance';
@@ -62,9 +64,11 @@ function App() {
             <Route path="users" element={<RequireRole allowedRoles={['admin']}><UserManagement /></RequireRole>} />
             <Route path="roster" element={<RequireRole allowedRoles={['admin']}><ClassRoster /></RequireRole>} />
             <Route path="exam-review" element={<RequireRole allowedRoles={['admin']}><ExamReviewApproval /></RequireRole>} />
+            <Route path="report-cards" element={<RequireRole allowedRoles={['admin']}><AdminReportCards /></RequireRole>} />
             <Route path="structure" element={<RequireRole allowedRoles={['admin']}><AcademicStructure /></RequireRole>} />
             <Route path="announcements" element={<RequireRole allowedRoles={['admin']}><AnnouncementCenter /></RequireRole>} />
             <Route path="logs" element={<RequireRole allowedRoles={['admin']}><AuditLogs /></RequireRole>} />
+            <Route path="admin/account" element={<RequireRole allowedRoles={['admin']}><AdminMyAccount /></RequireRole>} />
           </Route>
 
           {/* Fallback */}

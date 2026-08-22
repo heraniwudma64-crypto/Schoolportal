@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Bell, Search, Menu, UserCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSearchQuery }: { onMenuClick?: () => void; onSidebarOpen?: () => void; onSidebarClose?: () => void; searchQuery: string; setSearchQuery: (query: string) => void; }) => {
   const { user } = useAuth();
@@ -34,13 +35,17 @@ const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSe
           <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
         </button>
         <div className="h-8 w-px bg-gray-200 mx-2"></div>
-        <div className="flex items-center gap-3">
+        <Link to={user?.role === 'admin' ? '/admin/account' : '/account'} className="flex items-center gap-3 hover:bg-gray-50 p-1.5 rounded-lg transition-colors cursor-pointer">
           <div className="text-right hidden sm:block">
             <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
             <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
           </div>
-          <UserCircle className="w-9 h-9 text-gray-400" />
-        </div>
+          {user?.avatar ? (
+            <img src={user.avatar} alt="Profile" className="w-9 h-9 rounded-full object-cover border border-gray-200" />
+          ) : (
+            <UserCircle className="w-9 h-9 text-gray-400" />
+          )}
+        </Link>
       </div>
     </header>
   );

@@ -54,6 +54,12 @@ export class MaterialsController {
     return this.materialsService.update(id, updateMaterialDto, file);
   }
 
+  @Roles(Role.ADMIN, Role.STUDENT, Role.TEACHER, Role.PARENT)
+  @Get(':id/download')
+  download(@Param('id') id: string) {
+    return this.materialsService.getDownloadUrl(id);
+  }
+
   @Roles(Role.ADMIN)
   @Delete(':id')
   remove(@Param('id') id: string) {
