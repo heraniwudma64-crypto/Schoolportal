@@ -1,18 +1,43 @@
-import React from 'react';
-import { MOCK_SUBJECTS } from '../../data/mockData';
+import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, XCircle, Clock, Calendar } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getMyAttendance } from '../../api/students';
 
 const Attendance = () => {
+  const [selectedMonth, setSelectedMonth] = useState('all');
+  const { data: attendance = [], isLoading, isError } = useQuery({
+    queryKey: ['my-attendance'],
+    queryFn: getMyAttendance,
+  });
+
+  const months = useMemo(() => {
+    const uniqueMonths = new Map<string, string>();
+    attendance.forEach((record) => {
+      const date = new Date(record.date);
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      uniqueMonths.set(key, date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }));
+    });
+    return [...uniqueMonths.entries()].sort(([a], [b]) => b.localeCompare(a));
+  }, [attendance]);
+  const displayedAttendance = selectedMonth === 'all'
+    ? attendance
+    : attendance.filter((record) => {
+      const date = new Date(record.date);
+      return `${date.getFullYear()}-${date.getMonth()}` === selectedMonth;
+    });
+  const present = displayedAttendance.filter((record) => record.status === 'PRESENT').length;
+  const absent = displayedAttendance.filter((record) => record.status === 'ABSENT').length;
+  const late = displayedAttendance.filter((record) => record.status === 'LATE').length;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Attendance Records</h2>
         <div className="flex gap-2">
-          <select className="bg-white border border-gray-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
-            <option>All Months</option>
-            <option>May 2024</option>
-            <option>April 2024</option>
+          <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="bg-white border border-gray-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
+            <option value="all">All Months</option>
+            {months.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </div>
       </div>
@@ -24,7 +49,7 @@ const Attendance = () => {
           </div>
           <div>
             <p className="text-sm font-medium text-gray-500">Present</p>
-            <p className="text-2xl font-bold text-gray-900">172 Days</p>
+            <p className="text-2xl font-bold text-gray-900">{present} Days</p>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
@@ -33,7 +58,7 @@ const Attendance = () => {
           </div>
           <div>
             <p className="text-sm font-medium text-gray-500">Absent</p>
-            <p className="text-2xl font-bold text-gray-900">5 Days</p>
+            <p className="text-2xl font-bold text-gray-900">{absent} Days</p>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
@@ -42,7 +67,7 @@ const Attendance = () => {
           </div>
           <div>
             <p className="text-sm font-medium text-gray-500">Late</p>
-            <p className="text-2xl font-bold text-gray-900">3 Days</p>
+            <p className="text-2xl font-bold text-gray-900">{late} Days</p>
           </div>
         </div>
       </div>
@@ -56,37 +81,42 @@ const Attendance = () => {
             <thead>
               <tr className="bg-gray-50 text-xs font-bold text-gray-400 uppercase tracking-widest">
                 <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Subject</th>
+                <th className="px-6 py-4">Class / Section</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Teacher</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {[
-                { date: '2024-05-18', subject: 'Mathematics', status: 'present', teacher: 'Meron Tadesse' },
-                { date: '2024-05-18', subject: 'Physics', status: 'present', teacher: 'Meron Tadesse' },
-                { date: '2024-05-17', subject: 'English', status: 'late', teacher: 'Dawit Gebre' },
-                { date: '2024-05-17', subject: 'Mathematics', status: 'present', teacher: 'Meron Tadesse' },
-                { date: '2024-05-16', subject: 'Physics', status: 'absent', teacher: 'Meron Tadesse' },
-              ].map((row, i) => (
-                <tr key={i} className="hover:bg-gray-50/50 transition-colors">
+              {isLoading && (
+                <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">Loading attendance records...</td></tr>
+              )}
+              {isError && (
+                <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-red-600">Could not load attendance records.</td></tr>
+              )}
+              {!isLoading && !isError && displayedAttendance.length === 0 && (
+                <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">No attendance records yet.</td></tr>
+              )}
+              {displayedAttendance.map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-gray-400" />
-                      {row.date}
+                      {new Date(row.date).toLocaleDateString()}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{row.subject}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">{row.ClassSection.name}</td>
                   <td className="px-6 py-4">
                     <span className={cn(
                       "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
-                      row.status === 'present' ? "bg-green-50 text-green-600" :
-                      row.status === 'absent' ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
+                      row.status === 'PRESENT' ? "bg-green-50 text-green-600" :
+                      row.status === 'ABSENT' ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
                     )}>
                       {row.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{row.teacher}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    {row.User.Teacher ? `${row.User.Teacher.firstName} ${row.User.Teacher.lastName}` : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>

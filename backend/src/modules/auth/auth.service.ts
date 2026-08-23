@@ -57,15 +57,15 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(registerDto.password, 12);
     const userId = randomUUID();
 
-    // Split name into first and last name for profile records
-    const nameParts = registerDto.name ? registerDto.name.trim().split(' ') : ['User'];
+    // Split name into first and last name safely with fallbacks
+    const nameParts = registerDto.name ? registerDto.name.trim().split(/\s+/) : ['User'];
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || firstName;
 
     // Use a transaction to create the user and their profile table record atomically
-    const createdUser = await this.prisma.$transaction(async (prisma: any) => {
+    const createdUser = await this.prisma.$transaction(async (tx) => {
       // 1. Create the base user
-      const user = await prisma.user.create({
+      const user = await tx.user.create({
         data: {
           id: userId,
           loginId,
@@ -81,9 +81,9 @@ export class AuthService {
         },
       });
 
-      // 2. Create the role-specific profile record with required schema fields
+      // 2. Create the role-specific profile record
       if (role === Role.TEACHER) {
-        await prisma.teacher.create({
+        await tx.teacher.create({
           data: {
             id: randomUUID(),
             userId: user.id,
@@ -92,46 +92,48 @@ export class AuthService {
             updatedAt: new Date(),
           },
         });
-     } else if (role === Role.STUDENT) {
-  // This looks for whatever key your frontend sends the class/grade text under
-  const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
-  let resolvedClassSectionId: string | null = null;
+      } else if (role === Role.STUDENT) {
+        // Resolve class section logic from Heran's branch
+        const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
+        let resolvedClassSectionId: string | null = null;
 
-  if (classInput) {
-    let sectionRecord = await prisma.classSection.findFirst({
-      where: {
-        OR: [
-          { id: classInput },
-          { name: classInput },
-        ],
-      },
-    });
+        if (classInput) {
+          let sectionRecord = await tx.classSection.findFirst({
+            where: {
+              OR: [
+                { id: classInput },
+                { name: classInput },
+              ],
+            },
+          });
 
-    if (!sectionRecord) {
-      sectionRecord = await prisma.classSection.create({
-        data: {
-          id: randomUUID(),
-          name: classInput,
-          updatedAt: new Date(),
-        },
-      });
-    }
-    resolvedClassSectionId = sectionRecord.id;
-  }
+          if (!sectionRecord) {
+            sectionRecord = await tx.classSection.create({
+              data: {
+                id: randomUUID(),
+                name: classInput,
+                updatedAt: new Date(),
+              },
+            });
+          }
+          resolvedClassSectionId = sectionRecord.id;
+        }
 
-  await prisma.student.create({
-    data: {
-      id: randomUUID(),
-      admissionNo: loginId,
-      firstName,
-      lastName,
-      userId: user.id,
-      updatedAt: new Date(),
-      // This assigns the resolved UUID so it is never NULL again
-      ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
-    },
-  });
-}
+        // Create student profile combining KB's fields and Heran's class section resolution
+        await tx.student.create({
+          data: {
+            id: randomUUID(),
+            userId: user.id,
+            admissionNo: loginId,
+            firstName,
+            lastName,
+            gender: registerDto.gender,
+            updatedAt: new Date(),
+            ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
+          },
+        });
+      }
+
       return user;
     });
 
@@ -231,7 +233,7 @@ export class AuthService {
     return Role.STUDENT;
   }
 
-    private toSafeUser(
+  private toSafeUser(
     user: { id: string; loginId: string; email: string | null; role: Role },
     nameOverride?: string,
   ): SafeAuthUser {

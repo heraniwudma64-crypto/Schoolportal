@@ -1,18 +1,29 @@
 import React from 'react';
-import { BookOpen, User, Tag, Download } from 'lucide-react';
-import { MOCK_SUBJECTS } from '../../data/mockData';
+import { useQuery } from '@tanstack/react-query';
+import { BookOpen, Tag, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { getMyCourses } from '../../api/students';
 
 const MyCourses = () => {
+  const { data: courses = [], isLoading, isError } = useQuery({
+    queryKey: ['my-courses'],
+    queryFn: getMyCourses,
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">My Registered Subjects</h2>
-        <span className="text-sm text-gray-500">{MOCK_SUBJECTS.length} Subjects</span>
+        <span className="text-sm text-gray-500">{courses.length} Subjects</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {MOCK_SUBJECTS.map((subject) => (
+        {isLoading && <p className="text-sm text-gray-500">Loading subjects...</p>}
+        {isError && <p className="text-sm text-red-600">Could not load subjects.</p>}
+        {!isLoading && !isError && courses.length === 0 && (
+          <p className="text-sm text-gray-500">No subjects are assigned to your grade yet.</p>
+        )}
+        {courses.map((subject) => (
           <div key={subject.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
             <div className="h-24 bg-blue-900 flex items-center justify-center">
               <BookOpen className="text-white/20 w-16 h-16" />
@@ -28,13 +39,10 @@ const MyCourses = () => {
               
               <div className="space-y-3">
                 <div className="flex items-center gap-3 text-sm text-gray-600">
-                  <User className="w-4 h-4 text-gray-400" />
-                  <span>{subject.teacherName}</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-gray-600">
                   <Tag className="w-4 h-4 text-gray-400" />
-                  <span>Core Subject</span>
+                  <span>{subject.type ?? 'CORE'} Subject</span>
                 </div>
+                {subject.description && <p className="text-sm text-gray-600">{subject.description}</p>}
               </div>
 
               <div className="mt-6 pt-6 border-t border-gray-100 flex gap-2">
