@@ -27,7 +27,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(registerDto: RegisterDto) {
+  async register(registerDto: RegisterDto & { classId?: string; classSectionId?: string; grade?: string }) {
     if (registerDto.password !== registerDto.confirmPassword) {
       throw new BadRequestException('Password confirmation does not match');
     }
@@ -56,9 +56,15 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(registerDto.password, 12);
     const userId = randomUUID();
-    const [firstName, ...lastNameParts] = registerDto.name.trim().split(/\s+/);
 
+    // Split name into first and last name safely with fallbacks
+    const nameParts = registerDto.name ? registerDto.name.trim().split(/\s+/) : ['User'];
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || firstName;
+
+    // Use a transaction to create the user and their profile table record atomically
     const createdUser = await this.prisma.$transaction(async (tx) => {
+      // 1. Create the base user
       const user = await tx.user.create({
         data: {
           id: userId,
@@ -75,16 +81,55 @@ export class AuthService {
         },
       });
 
-      if (role === Role.STUDENT) {
+      // 2. Create the role-specific profile record
+      if (role === Role.TEACHER) {
+        await tx.teacher.create({
+          data: {
+            id: randomUUID(),
+            userId: user.id,
+            firstName,
+            lastName,
+            updatedAt: new Date(),
+          },
+        });
+      } else if (role === Role.STUDENT) {
+        // Resolve class section logic from Heran's branch
+        const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
+        let resolvedClassSectionId: string | null = null;
+
+        if (classInput) {
+          let sectionRecord = await tx.classSection.findFirst({
+            where: {
+              OR: [
+                { id: classInput },
+                { name: classInput },
+              ],
+            },
+          });
+
+          if (!sectionRecord) {
+            sectionRecord = await tx.classSection.create({
+              data: {
+                id: randomUUID(),
+                name: classInput,
+                updatedAt: new Date(),
+              },
+            });
+          }
+          resolvedClassSectionId = sectionRecord.id;
+        }
+
+        // Create student profile combining KB's fields and Heran's class section resolution
         await tx.student.create({
           data: {
             id: randomUUID(),
-            userId,
+            userId: user.id,
             admissionNo: loginId,
             firstName,
-            lastName: lastNameParts.join(' '),
+            lastName,
             gender: registerDto.gender,
             updatedAt: new Date(),
+            ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
           },
         });
       }

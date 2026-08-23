@@ -52,4 +52,16 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   department?: string;
+
+  @IsOptional()
+  @IsString()
+  classId?: string;
+
+  @IsOptional()
+  @IsString()
+  classSectionId?: string;
+
+  @IsOptional()
+  @IsString()
+  grades?: string;
 }

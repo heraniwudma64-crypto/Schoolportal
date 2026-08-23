@@ -80,7 +80,7 @@ model User {
   phoneNumber String?
 
   // Relations
-  Attendance        Attendance[]
+  
   Course            Course[]
   Enrollment        Enrollment[]
   Notice            Notice[]
@@ -116,7 +116,7 @@ model Term {
   createdAt      DateTime @default(now())
   updatedAt      DateTime
 
-  Exam         Exam[]
+  Examination        Examination[]
   AcademicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
 }
 
@@ -152,12 +152,23 @@ model ClassSection {
   AcademicYear      AcademicYear?       @relation(fields: [academicYearId], references: [id])
   Teacher           Teacher?            @relation(fields: [teacherId], references: [id])
   GradeLevel        GradeLevel?         @relation(fields: [gradeLevelId], references: [id])
-  Exam              Exam[]
+  Examination         Examination[]
   Student           Student[]
   StudentAttendance StudentAttendance[]
   Timetable         Timetable[]
   StudentEnrollment StudentEnrollment[]
   Notice            Notice[]
+}
+
+model Class {
+  id          String         @id @default(uuid())
+  name        String         
+  section     String?
+  teachers    ClassTeacher[]
+  examinations       Examination[]
+  assignments Assignment[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 }
 
 // ─── People ───────────────────────────────────────────────────────────────────
@@ -187,6 +198,8 @@ model Student {
   StudentAttendance StudentAttendance[]
   StudentEnrollment StudentEnrollment[]
   Notice            Notice[]
+  submissions       Submission[]
+  grades           Grade[]
 }
 
 model Teacher {
@@ -204,6 +217,18 @@ model Teacher {
   ClassSection ClassSection[]
   User         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   Timetable    Timetable[]
+  classes     ClassTeacher[] 
+  subjects    Subject[]
+  assignments Assignment[]
+  exams       Examination[]
+}
+
+model ClassTeacher {
+  id        String   @id @default(uuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id])
+  teacherId String
+  teacher   Teacher  @relation(fields: [teacherId], references: [id])
 }
 
 model Parent {
@@ -231,7 +256,7 @@ model Course {
   teacherId   String
   createdAt   DateTime @default(now())
 
-  Attendance Attendance[]
+  
   User       User         @relation(fields: [teacherId], references: [id])
   Enrollment Enrollment[]
 }
@@ -279,9 +304,11 @@ model Subject {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  Exam         Exam[]
+  Examination        Examination[]
   Timetable    Timetable[]
   GradeSubject GradeSubject[]
+  teacherId   String?
+  teacher     Teacher? @relation(fields: [teacherId], references: [id])
 }
 
 model GradeSubject {
@@ -318,7 +345,7 @@ model Timetable {
 
 // ─── Exams & Attempts ─────────────────────────────────────────────────────────
 
-model Exam {
+model Examination {
   id             String   @id
   title          String
   classSectionId String
@@ -336,6 +363,11 @@ model Exam {
   Subject      Subject       @relation(fields: [subjectId], references: [id])
   Term         Term?         @relation(fields: [termId], references: [id])
   ExamAttempt  ExamAttempt[]
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id])
+  teacherId String?  // Using String? makes it optional in case older rows don't have a teacher yet
+  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+  grades    Grade[] 
 }
 
 model ExamAttempt {
@@ -348,7 +380,7 @@ model ExamAttempt {
   remarks       String?
   updatedAt     DateTime
 
-  Exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  Examination    Examination    @relation(fields: [examId], references: [id], onDelete: Cascade)
   Student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([examId, studentId])
@@ -356,19 +388,7 @@ model ExamAttempt {
 
 // ─── Attendance ───────────────────────────────────────────────────────────────
 
-model Attendance {
-  id        String           @id
-  date      DateTime         @default(now())
-  status    AttendanceStatus @default(PRESENT)
-  courseId  String
-  createdAt DateTime         @default(now())
-  userId    String
 
-  Course Course @relation(fields: [courseId], references: [id])
-  User   User   @relation(fields: [userId], references: [id])
-
-  @@unique([userId, courseId, date])
-}
 
 model StudentAttendance {
   id             String           @id
@@ -394,18 +414,34 @@ model StudentAttendance {
 // ─── Assignments ──────────────────────────────────────────────────────────────
 
 model Assignment {
-  id             String   @id
-  title          String
-  instructions   String
-  subject        String
-  targetClass    String
-  dueDate        DateTime
-  attachmentUrl  String?
-  classSectionId String?
-  createdAt      DateTime @default(now())
-
+  id                String              @id @default(uuid())
+  title             String
+  instructions      String?
+  subject           String?
+  targetClass       String?
+  dueDate           DateTime
+  attachmentUrl     String?
+  classSectionId    String?
+  createdAt         DateTime            @default(now())
+  description       String?
   ClassSection      ClassSection?       @relation(fields: [classSectionId], references: [id])
   StudentAssignment StudentAssignment[]
+  classId           String?
+  class             Class?              @relation(fields: [classId], references: [id]) // ⚠️ Notice the '?' right after Class
+  teacherId         String
+  teacher           Teacher             @relation(fields: [teacherId], references: [id])
+  submissions       Submission[]
+  updatedAt         DateTime         @updatedAt @default(now())
+   grades           Grade[]
+}
+model Submission {
+  id           String     @id @default(uuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+   grades           Grade[]
 }
 
 model StudentAssignment {
@@ -479,4 +515,35 @@ model Notice {
   ClassSection ClassSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   Student      Student?      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   Parent       Parent?       @relation(fields: [parentId], references: [id], onDelete: Cascade)
+}
+model Grade {
+  id             String       @id @default(uuid())
+  score          Float        @default(0)
+  maxScore       Float        @default(100)
+  
+  // Assessment components matching your entry form
+  mid            Float?       @default(0)
+  assignment     Float?       @default(0)
+  quiz           Float?       @default(0)
+  classwork      Float?       @default(0)
+  final          Float?       @default(0)
+  
+  quarter        String?
+  subject        String?
+  
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id])
+  
+  // Opposite relation fields required by Examination, Assignment, and Submission
+  assignmentId   String?      
+  Assignment     Assignment?  @relation(fields: [assignmentId], references: [id])
+  
+  submissionId   String?      
+  Submission     Submission?  @relation(fields: [submissionId], references: [id])
+  
+  examinationId  String?      
+  Examination    Examination? @relation(fields: [examinationId], references: [id])
+  
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
