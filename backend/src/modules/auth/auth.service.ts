@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
+import { Role, Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import { randomUUID } from 'node:crypto';
@@ -322,15 +322,27 @@ export class AuthService {
   }
 
   private toSafeUser(
-    user: { id: string; loginId: string; email: string | null; role: Role },
+    user: any,
     nameOverride?: string,
-  ): SafeAuthUser {
+  ) {
+    let name = (user as any).name || user.loginId; // Fallback to User.name, then loginId
+
+    if (nameOverride) {
+      name = nameOverride.trim();
+    } else if (user.Student) {
+      name = `${user.Student.firstName} ${user.Student.lastName}`;
+    } else if (user.Teacher) {
+      name = `${user.Teacher.firstName} ${user.Teacher.lastName}`;
+    } else if (user.Parent) {
+      name = `${user.Parent.firstName} ${user.Parent.lastName}`;
+    }
+
     return {
       id: user.id,
-      name: nameOverride?.trim() || user.loginId,
       loginId: user.loginId,
       email: user.email,
       role: user.role.toLowerCase() as Lowercase<Role>,
+      name,
     };
   }
 }

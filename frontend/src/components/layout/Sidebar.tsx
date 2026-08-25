@@ -11,11 +11,12 @@ import {
   Book, 
   Users, 
   FileCheck, 
-  Settings, 
-  Bell, 
+  Settings,
+  Bell,
   LogOut,
   ChevronRight,
-  UserCircle
+  UserCircle,
+  UserCog
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
@@ -71,7 +72,9 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
       return [
         ...common,
         { name: 'User Management', href: '/users', icon: Users },
+        { name: 'Class Roster', href: '/roster', icon: ClipboardList },
         { name: 'Exam Review', href: '/exam-review', icon: FileCheck },
+        { name: 'Report Cards', href: '/report-cards', icon: FileCheck },
         { name: 'Academic Structure', href: '/structure', icon: Settings },
         { name: 'Materials', href: '/materials', icon: Book },
         { name: 'Announcements', href: '/announcements', icon: Bell },
@@ -118,13 +121,27 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
       </nav>
 
       <div className="p-4 mt-auto border-t border-white/10">
-        <div className="flex items-center gap-3 px-3 py-2 mb-4">
-          <UserCircle className="w-8 h-8 text-blue-200" />
+        <div className="flex items-center gap-3 px-3 py-2 mb-2">
+          {user?.avatar ? (
+            <img src={user.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-white/20" />
+          ) : (
+            <UserCircle className="w-8 h-8 text-blue-200" />
+          )}
           <div className="overflow-hidden">
             <p className="text-sm font-medium truncate">{user?.name}</p>
             <p className="text-xs text-blue-300 capitalize">{user?.role}</p>
           </div>
         </div>
+        <Link
+          to={user?.role === 'admin' ? '/admin/account' : '/account'}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2 w-full text-blue-100 hover:bg-white/5 hover:text-white rounded-lg transition-colors mb-1",
+            location.pathname.includes('/account') ? "bg-white/10 text-white" : ""
+          )}
+        >
+          <UserCog className="w-5 h-5" />
+          <span className="text-sm font-medium">My Account</span>
+        </Link>
         <button
           onClick={logout}
           className="flex items-center gap-3 px-3 py-2 w-full text-blue-100 hover:bg-white/5 hover:text-white rounded-lg transition-colors"

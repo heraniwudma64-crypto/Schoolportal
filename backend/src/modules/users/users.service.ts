@@ -13,6 +13,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { createClient } from '@supabase/supabase-js';
 
 // ─── Safe user shape returned to the frontend ────────────────────────────────
 
@@ -20,6 +21,7 @@ const USER_SELECT = {
   id: true,
   loginId: true,
   email: true,
+  name: true,
   role: true,
   phoneNumber: true,
   avatarUrl: true,
@@ -83,6 +85,27 @@ const USER_SELECT = {
 
 @Injectable()
 export class UsersService {
+  private supabaseUrl = process.env.DIRECT_URL ? process.env.DIRECT_URL.replace('postgres://', 'https://').split(':')[0] : '';
+  private supabase = createClient(
+    process.env.SUPABASE_URL || this.extractSupabaseUrl(),
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'fake-key-for-now',
+    { auth: { persistSession: false } }
+  );
+
+  private extractSupabaseUrl() {
+    const dbUrl = process.env.DATABASE_URL || '';
+    const match = dbUrl.match(/@(.*?)\.pooler/);
+    if (match) {
+      const parts = match[1].split('-');
+      const ref = parts.length > 2 ? parts[0] : match[1];
+      const userMatch = dbUrl.match(/postgres\.(.*?):/);
+      if (userMatch) {
+        return `https://${userMatch[1]}.supabase.co`;
+      }
+    }
+    return '';
+  }
+
   constructor(private readonly prisma: PrismaService) {}
 
   // ─── LIST with search / filter / sort / pagination ──────────────────────────
@@ -418,6 +441,117 @@ export class UsersService {
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
+  }
+
+  // ─── ACCOUNT MANAGEMENT FOR AUTHENTICATED USER ─────────────────────────────
+
+  async getAccount(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: USER_SELECT,
+    });
+    if (!user) throw new NotFoundException('Account not found');
+    return user;
+  }
+
+  async updateAccount(userId: string, data: { name?: string; loginId?: string; email?: string }) {
+    // Check if loginId is unique if changing
+    if (data.loginId) {
+      const existing = await this.prisma.user.findUnique({ where: { loginId: data.loginId } });
+      if (existing && existing.id !== userId) {
+        throw new ConflictException('Login ID is already in use by another account');
+      }
+    }
+    // Check if email is unique if changing
+    if (data.email) {
+      const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
+      if (existing && existing.id !== userId) {
+        throw new ConflictException('Email is already in use by another account');
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name,
+        loginId: data.loginId,
+        email: data.email,
+      },
+      select: USER_SELECT,
+    });
+    return updatedUser;
+  }
+
+  async updatePassword(userId: string, data: { currentPassword?: string; newPassword?: string }) {
+    if (!data.currentPassword || !data.newPassword) {
+      throw new BadRequestException('Current and new password are required');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Account not found');
+
+    const isValid = await bcrypt.compare(data.currentPassword, user.password);
+    if (!isValid) {
+      throw new ForbiddenException('Incorrect current password');
+    }
+
+    const passwordHash = await bcrypt.hash(data.newPassword, 12);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: passwordHash },
+    });
+    return { success: true };
+  }
+
+  async uploadAvatar(userId: string, file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('Image file is required');
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Account not found');
+
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '').toLowerCase();
+    const fileName = `${userId}-${Date.now()}-${sanitizedName}`;
+
+    const { error: uploadError } = await this.supabase.storage
+      .from('avatars')
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new BadRequestException(`Avatar upload failed: ${uploadError.message}`);
+    }
+
+    // Get public URL
+    const { data: publicData } = this.supabase.storage.from('avatars').getPublicUrl(fileName);
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: publicData.publicUrl },
+      select: USER_SELECT,
+    });
+
+    return updatedUser;
+  }
+
+  async removeAvatar(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Account not found');
+
+    if (user.avatarUrl) {
+      // Extract filename from the URL assuming standard supabase storage URL structure
+      const match = user.avatarUrl.match(/\/avatars\/(.*)$/);
+      if (match) {
+        await this.supabase.storage.from('avatars').remove([match[1]]);
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: null },
+      select: USER_SELECT,
+    });
+
+    return updatedUser;
   }
 
   // ─── SANITIZE — strip password from result ───────────────────────────────────

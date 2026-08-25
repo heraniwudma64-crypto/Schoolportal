@@ -8,6 +8,7 @@ interface AuthContextType {
   register: (userData: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   isLoading: boolean;
+  updateProfile: (updates: Partial<User>) => void;
 }
 
 interface RegisterPayload {
@@ -28,6 +29,7 @@ interface AuthApiUser {
   loginId: string;
   email: string | null;
   role: UserRole;
+  avatarUrl?: string | null;
 }
 
 interface AuthApiResponse {
@@ -47,6 +49,7 @@ const normalizeUser = (apiUser: AuthApiUser): User => ({
   name: apiUser.name || apiUser.loginId,
   email: apiUser.email || undefined,
   role: apiUser.role,
+  avatar: apiUser.avatarUrl || undefined,
 });
 
 const parseApiErrorMessage = async (response: Response) => {
@@ -88,9 +91,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const profile = (await response.json()) as AuthApiUser;
-        setUser(normalizeUser(profile));
+        const normalized = normalizeUser(profile);
+        setUser(normalized);
         setToken(savedToken);
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(normalizeUser(profile)));
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(normalized));
       } catch {
         localStorage.removeItem(USER_STORAGE_KEY);
         localStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -167,8 +171,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(TOKEN_STORAGE_KEY);
   };
 
+  const updateProfile = (updates: Partial<User>) => {
+    if (user) {
+      const updated = { ...user, ...updates };
+      setUser(updated);
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updated));
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, register, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, register, logout, isLoading, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

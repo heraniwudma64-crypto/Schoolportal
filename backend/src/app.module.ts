@@ -13,6 +13,9 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
 import { ExaminationsModule } from './modules/examinations/examinations.module';
 import { GradesModule } from './modules/grades/grades.module';
+import { RosterModule } from './modules/roster/roster.module';
+import { MaterialsModule } from './modules/materials/materials.module';
+import { ReportCardsModule } from './modules/report-cards/report-cards.module';
 
 @Module({
   controllers: [AppController],
@@ -28,6 +31,9 @@ import { GradesModule } from './modules/grades/grades.module';
     AssignmentsModule,
     ExaminationsModule,
     GradesModule,
+    RosterModule,
+    MaterialsModule,
+    ReportCardsModule,
     ScheduleModule.forRoot(),
    
   ],
