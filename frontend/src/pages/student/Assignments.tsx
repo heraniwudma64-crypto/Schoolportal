@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { MOCK_ASSIGNMENTS } from '../../data/mockData';
 import { Badge } from '../../components/ui/badge';
 import { FileText, Calendar, Paperclip, ExternalLink, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
+import { api } from '../../lib/api'; // Import your authenticated api client
+
 import {
   Empty,
   EmptyDescription,
@@ -13,19 +14,56 @@ import {
 } from '../../components/ui/empty';
 
 const Assignments = ({ searchQuery }: { searchQuery: string }) => {
-  const [filteredAssignments, setFilteredAssignments] = useState(MOCK_ASSIGNMENTS);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [filteredAssignments, setFilteredAssignments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    async function fetchRealAssignments() {
+      try {
+        // Use your custom 'api' client to send the Bearer token correctly
+        const data = await api.get<any[]>('/students/my-assignments');
+        
+        // Handle potential wrapper structures (array vs nested data properties)
+        const rawList = Array.isArray(data) ? data : (data?.data || data?.records || []);
+
+        const formattedData = rawList.map((item: any) => ({
+          id: item.id || Math.random().toString(),
+          title: item.title || 'Untitled',
+          subjectName: item.subject?.name || item.subjectName || 'General',
+          description: item.instructions || item.description || '',
+          dueDate: item.dueDate ? new Date(item.dueDate).toLocaleDateString() : 'No date',
+          status: 'pending',
+          attachmentUrl: item.attachmentUrl,
+          teacherName: item.teacher ? `${item.teacher.firstName || ''} ${item.teacher.lastName || ''}`.trim() : 'Teacher',
+        }));
+
+        setAssignments(formattedData);
+        setFilteredAssignments(formattedData);
+      } catch (error) {
+        console.error('Failed to fetch assignments:', error);
+        toast.error('Could not load assignments from server.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchRealAssignments();
+  }, []);
+  
+  useEffect(() => {
     const lowercasedQuery = searchQuery.toLowerCase();
-    const filtered = MOCK_ASSIGNMENTS.filter(assignment => 
-      (assignment.published !== false) && (
-        assignment.title.toLowerCase().includes(lowercasedQuery) ||
-        assignment.subjectName.toLowerCase().includes(lowercasedQuery) ||
-        assignment.description.toLowerCase().includes(lowercasedQuery)
-      )
+    const filtered = assignments.filter(assignment => 
+      assignment.title.toLowerCase().includes(lowercasedQuery) ||
+      assignment.subjectName.toLowerCase().includes(lowercasedQuery) ||
+      assignment.description.toLowerCase().includes(lowercasedQuery)
     );
     setFilteredAssignments(filtered);
-  }, [searchQuery]);
+  }, [searchQuery, assignments]);
+
+  if (loading) {
+    return <div className="p-8 text-center text-gray-500">Loading your assignments...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -77,7 +115,7 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
                     {assignment.status.toUpperCase()}
                   </Badge>
                 </div>
-                <p className="text-sm text-gray-500 mb-2">{assignment.subjectName} • Prof. Meron Tadesse</p>
+                <p className="text-sm text-gray-500 mb-2">{assignment.subjectName} • Prof. {assignment.teacherName}</p>
                 <p className="text-sm text-gray-600 line-clamp-1">{assignment.description}</p>
               </div>
             </div>
@@ -94,10 +132,14 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
                 <div className="w-px h-8 bg-gray-100"></div>
                 <div className="text-right">
                   <p className="text-xs text-gray-400 font-medium">MATERIAL</p>
-                  <a href="#" className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
-                    <Paperclip className="w-4 h-4" />
-                    Resources
-                  </a>
+                  {assignment.attachmentUrl ? (
+                    <a href={assignment.attachmentUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
+                      <Paperclip className="w-4 h-4" />
+                      Resources
+                    </a>
+                  ) : (
+                    <span className="text-sm text-gray-400">None</span>
+                  )}
                 </div>
               </div>
               

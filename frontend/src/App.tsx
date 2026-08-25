@@ -28,6 +28,7 @@ import AuditLogs from './pages/admin/AuditLogs';
 
 // Teacher Specific
 import Performance from './pages/teacher/Performance';
+import TeacherProfile from './pages/teacher/Profile';
 
 function App() {
   return (
@@ -56,7 +57,7 @@ function App() {
 
             {/* Teacher Only */}
             <Route path="performance" element={<RequireRole allowedRoles={['teacher']}><Performance /></RequireRole>} />
-
+            <Route path="/teacher/profile" element={<TeacherProfile />} />
             {/* Admin Only */}
             <Route path="users" element={<RequireRole allowedRoles={['admin']}><UserManagement /></RequireRole>} />
             <Route path="exam-review" element={<RequireRole allowedRoles={['admin']}><ExamReviewApproval /></RequireRole>} />

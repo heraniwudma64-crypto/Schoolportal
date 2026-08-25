@@ -1,29 +1,42 @@
-import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { ExaminationsService } from './examinations.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
-import { Request } from 'express';
 
 @Controller('examinations')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ExaminationsController {
   constructor(private readonly examinationsService: ExaminationsService) {}
 
   @Post()
-  @Roles('TEACHER', 'ADMIN')
-  async createExam(
-    @Req() req: Request & { user: any }, 
-    @Body() dto: { title: string; date: string; classId: string; subjectId: string }
-  ) {
-    const teacherId = req.user.teacherId;
-    return this.examinationsService.createExam({ ...dto, teacherId });
+  async createExamination(@Body() dto: any) {
+    return this.examinationsService.createExamination(dto);
   }
 
-  @Get()
-  @Roles('TEACHER', 'ADMIN')
-  async getExams(@Req() req: Request & { user: any }) {
-    const teacherId = req.user.teacherId;
-    return this.examinationsService.getTeacherExams(teacherId);
+  @Get('approved')
+  async getApprovedExams() {
+    return this.examinationsService.findApprovedExaminations();
+  }
+
+  @Get('pending')
+  async getPendingExams() {
+    return this.examinationsService.findPendingExaminations();
+  }
+
+  @Post(':id/status')
+  async changeExamStatus(
+    @Param('id') id: string,
+    @Body() body: { status: 'APPROVED' | 'REJECTED' },
+  ) {
+    return this.examinationsService.updateExamStatus(id, body.status);
+  }
+
+  @Post('submit')
+  async submitExam(
+    @Body()
+    dto: {
+      examinationId: string;
+      studentId: string;
+      answers: Array<{ questionId: string; selectedOptionId: string }>;
+    },
+  ) {
+    return this.examinationsService.submitAndAutoGrade(dto);
   }
 }

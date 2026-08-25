@@ -29,6 +29,25 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
+  @Post('forgot-password')
+  async forgotPassword(@Body('email') email: string) {
+    return this.authService.forgotPassword(email);
+  }
+
+  @Post('verify-otp')
+  async verifyOtp(@Body('email') email: string, @Body('otp') otp: string) {
+    return this.authService.verifyOtp(email, otp);
+  }
+
+  @Post('reset-password')
+  async resetPassword(
+    @Body('email') email: string, 
+    @Body('otp') otp: string, 
+    @Body('newPassword') newPassword: string
+  ) {
+    return this.authService.resetPassword(email, otp, newPassword);
+  }
+  
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Req() request: Request & { user: { id: string } }) {

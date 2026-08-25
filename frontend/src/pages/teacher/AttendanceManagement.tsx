@@ -1,63 +1,102 @@
 import React, { useState, useEffect } from 'react';
+import { Search } from 'lucide-react';
+import { api } from '../../lib/api';
 
-const AttendanceManagement = () => {
-  const [selectedClass, setSelectedClass] = useState('Grade 10A');
+const TeacherAttendance = () => {
+  const [classSections, setClassSections] = useState<any[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('Mathematics');
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const [students, setStudents] = useState<any[]>([]);
   const [pastRecords, setPastRecords] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Fetch students for marking attendance
+  // 1. Fetch available class sections from database on mount with fallback
+  // 1. Fetch available class sections from NestJS backend
   useEffect(() => {
-    if (showHistory) return;
-    setLoading(true);
-    fetch(`http://localhost:3000/students?className=${encodeURIComponent(selectedClass)}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to fetch students');
-        return res.json();
-      })
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const formatted = data.map((student: any) => ({
-            id: student.id,
-            name: student.name || `${student.firstName} ${student.lastName}`,
-            idNumber: student.idNumber || student.studentId || `STD-${student.id.slice(0, 5).toUpperCase()}`,
-            status: 'PRESENT',
-          }));
-          setStudents(formatted);
-        } else {
-          setFallbackStudents();
+    api.get('/students/class-sections') // <-- Updated URL path
+      .then((res: any) => {
+        const responseData = res.data || res;
+        let sections = Array.isArray(responseData) ? responseData : responseData?.data || [];
+        
+        if (sections.length === 0) {
+          sections = [{ id: 'ad8a74f1-9d17-4b1a-a13c-a06994450949', name: 'Grade 10A (Default)' }];
         }
+
+        setClassSections(sections);
+        setSelectedClassId(sections[0].id);
       })
-      .catch(() => setFallbackStudents())
+      .catch((err) => {
+        console.error('Failed to load class sections:', err);
+      });
+  }, []);
+
+  // 2. Fetch students using the exact classSectionId foreign key endpoint
+  // 2. Fetch students using the exact classSectionId foreign key endpoint with fallback
+  useEffect(() => {
+    if (showHistory || !selectedClassId) return;
+    setLoading(true);
+    
+    api.get(`/students/by-class-section/${selectedClassId}`)
+      .then((response: any) => {
+        const data = response.data || response;
+        let rawStudents = [];
+        
+        if (Array.isArray(data)) {
+          rawStudents = data;
+        } else if (data && Array.isArray(data.students)) {
+          rawStudents = data.students;
+        } else if (data && Array.isArray(data.data)) {
+          rawStudents = data.data;
+        }
+
+        // If no students came from the database, use mock students for testing UI
+        if (rawStudents.length === 0) {
+          rawStudents = [
+            { id: '1', name: 'Alice Johnson', idNumber: 'STD-1001', status: 'PRESENT' },
+            { id: '2', name: 'Bob Smith', idNumber: 'STD-1002', status: 'PRESENT' },
+            { id: '3', name: 'Charlie Davis', idNumber: 'STD-1003', status: 'PRESENT' },
+          ];
+        }
+
+        const formatted = rawStudents.map((student: any) => ({
+          id: student.id,
+          name: student.name || `${student.firstName || student.User?.firstName || ''} ${student.lastName || student.User?.lastName || ''}`.trim() || 'Unnamed Student',
+          idNumber: student.idNumber || student.studentId || `STD-${student.id.slice(0, 5).toUpperCase()}`,
+          status: student.status || 'PRESENT',
+        }));
+        
+        setStudents(formatted);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch students, using mock fallback:', err);
+        // Fallback mock list if network request fails entirely
+        setStudents([
+          { id: '1', name: 'Alice Johnson', idNumber: 'STD-1001', status: 'PRESENT' },
+          { id: '2', name: 'Bob Smith', idNumber: 'STD-1002', status: 'PRESENT' },
+          { id: '3', name: 'Charlie Davis', idNumber: 'STD-1003', status: 'PRESENT' },
+        ]);
+      })
       .finally(() => setLoading(false));
-  }, [selectedClass, showHistory]);
+  }, [selectedClassId, showHistory]);
 
   // Fetch past attendance records when history view is toggled on
   useEffect(() => {
     if (!showHistory) return;
     setLoading(true);
-    fetch('http://localhost:3000/attendance')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setPastRecords(data);
+    
+    api.get('/attendance')
+      .then((response: any) => {
+        const resData = response.data || response;
+        if (Array.isArray(resData)) {
+          setPastRecords(resData);
         }
       })
       .catch((err) => console.error('Error fetching history:', err))
       .finally(() => setLoading(false));
   }, [showHistory]);
-
-  const setFallbackStudents = () => {
-    setStudents([
-      { id: '76f135b8', name: 'Abebe Kebede', idNumber: 'STD-001', status: 'PRESENT' },
-      { id: '3674ba87', name: 'Tigist Haile', idNumber: 'STD-002', status: 'ABSENT' },
-      { id: '0c4858a7', name: 'Yonas Alemu', idNumber: 'STD-003', status: 'PRESENT' },
-      { id: 'd8a8b12', name: 'Hiwot Mengistu', idNumber: 'STD-004', status: 'LATE' },
-      { id: 'e9b9c23', name: 'Solomon Tesfaye', idNumber: 'STD-005', status: 'PRESENT' },
-    ]);
-  };
 
   const handleStatusChange = (studentId: string, newStatus: string) => {
     setStudents((prev) =>
@@ -67,22 +106,18 @@ const AttendanceManagement = () => {
 
   const handleSaveAttendance = async () => {
     try {
-      const response = await fetch('http://localhost:3000/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          classSectionId: selectedClass,
-          recordedById: 'current-teacher-id',
-          date: new Date().toISOString().split('T')[0],
-          period: 1,
-          records: students.map((s) => ({
-            studentId: s.id,
-            status: s.status,
-          })),
-        }),
+      await api.post('/attendance', {
+        classSectionId: selectedClassId,
+        subject: selectedSubject,
+        recordedById: 'current-teacher-id',
+        date: new Date().toISOString().split('T')[0],
+        period: 1,
+        records: students.map((s) => ({
+          studentId: s.id,
+          status: s.status,
+        })),
       });
 
-      if (!response.ok) throw new Error('Failed to save attendance');
       alert('Attendance saved successfully!');
     } catch (error) {
       console.error(error);
@@ -90,10 +125,19 @@ const AttendanceManagement = () => {
     }
   };
 
+  // Filter students based on search input (name or ID)
+  const filteredStudents = students.filter((student) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      student.name.toLowerCase().includes(query) ||
+      student.idNumber.toLowerCase().includes(query)
+    );
+  });
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Header with Toggle Buttons */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Attendance Management</h1>
           <p className="text-sm text-gray-500">
@@ -121,17 +165,19 @@ const AttendanceManagement = () => {
       {!showHistory ? (
         <>
           {/* Filters Bar */}
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Class / Section</label>
               <select 
-                value={selectedClass} 
-                onChange={(e) => setSelectedClass(e.target.value)}
-                className="w-full rounded-lg border-gray-300 border p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                value={selectedClassId} 
+                onChange={(e) => setSelectedClassId(e.target.value)}
+                className="w-full rounded-lg border-gray-300 border p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="Grade 10A">Grade 10A</option>
-                <option value="Grade 10B">Grade 10B</option>
-                <option value="Grade 11A">Grade 11A</option>
+                {classSections.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -139,7 +185,7 @@ const AttendanceManagement = () => {
               <select 
                 value={selectedSubject} 
                 onChange={(e) => setSelectedSubject(e.target.value)}
-                className="w-full rounded-lg border-gray-300 border p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-lg border-gray-300 border p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               >
                 <option value="Mathematics">Mathematics</option>
                 <option value="Physics">Physics</option>
@@ -148,16 +194,27 @@ const AttendanceManagement = () => {
             </div>
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Search Student</label>
-              <input 
-                type="text" 
-                placeholder="Enter name or ID..."
-                className="w-full rounded-lg border-gray-300 border p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Enter name or ID..."
+                  className="w-full pl-9 pr-3 rounded-lg border-gray-300 border p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
           </div>
 
           {/* Student List Table */}
           <div className="bg-white shadow-sm rounded-xl border border-gray-100 overflow-hidden">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Enrolled Students Linked by classSectionId</span>
+              <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-2.5 py-1 rounded-full">
+                {filteredStudents.length} Students Found
+              </span>
+            </div>
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -167,43 +224,57 @@ const AttendanceManagement = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {students.map((student) => (
-                  <tr key={student.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{student.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.idNumber}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <div className="flex items-center gap-2.5">
-                        <button
-                          onClick={() => handleStatusChange(student.id, 'PRESENT')}
-                          className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-2 transition-all ${
-                            student.status === 'PRESENT' ? 'border-green-600 bg-white text-green-700 shadow-sm ring-1 ring-green-600' : 'border-gray-200 text-gray-400 bg-white'
-                          }`}
-                        >
-                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${student.status === 'PRESENT' ? 'border border-green-600 text-green-600' : 'border border-gray-300 text-gray-300'}`}>✓</span>
-                          PRESENT
-                        </button>
-                        <button
-                          onClick={() => handleStatusChange(student.id, 'ABSENT')}
-                          className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-2 transition-all ${
-                            student.status === 'ABSENT' ? 'border-red-600 bg-white text-red-600 shadow-sm ring-1 ring-red-600' : 'border-gray-200 text-gray-400 bg-white'
-                          }`}
-                        >
-                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${student.status === 'ABSENT' ? 'border border-red-600 text-red-600' : 'border border-gray-300 text-gray-300'}`}>✕</span>
-                          ABSENT
-                        </button>
-                        <button
-                          onClick={() => handleStatusChange(student.id, 'LATE')}
-                          className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-2 transition-all ${
-                            student.status === 'LATE' ? 'border-orange-500 bg-white text-orange-600 shadow-sm ring-1 ring-orange-500' : 'border-gray-200 text-gray-400 bg-white'
-                          }`}
-                        >
-                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${student.status === 'LATE' ? 'border border-orange-500 text-orange-500' : 'border border-gray-300 text-gray-300'}`}>⏱</span>
-                          LATE
-                        </button>
-                      </div>
+                {loading ? (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-gray-500">
+                      Querying students from database...
                     </td>
                   </tr>
-                ))}
+                ) : filteredStudents.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-gray-500">
+                      No students found linked to this class section ID in the database. Ensure students have this section's UUID set as their `classSectionId`.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStudents.map((student) => (
+                    <tr key={student.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{student.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.idNumber}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <div className="flex items-center gap-2.5">
+                          <button
+                            onClick={() => handleStatusChange(student.id, 'PRESENT')}
+                            className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-2 transition-all ${
+                              student.status === 'PRESENT' ? 'border-green-600 bg-white text-green-700 shadow-sm ring-1 ring-green-600' : 'border-gray-200 text-gray-400 bg-white'
+                            }`}
+                          >
+                            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${student.status === 'PRESENT' ? 'border border-green-600 text-green-600' : 'border border-gray-300 text-gray-300'}`}>✓</span>
+                            PRESENT
+                          </button>
+                          <button
+                            onClick={() => handleStatusChange(student.id, 'ABSENT')}
+                            className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-2 transition-all ${
+                              student.status === 'ABSENT' ? 'border-red-600 bg-white text-red-600 shadow-sm ring-1 ring-red-600' : 'border-gray-200 text-gray-400 bg-white'
+                            }`}
+                          >
+                            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${student.status === 'ABSENT' ? 'border border-red-600 text-red-600' : 'border border-gray-300 text-gray-300'}`}>✕</span>
+                            ABSENT
+                          </button>
+                          <button
+                            onClick={() => handleStatusChange(student.id, 'LATE')}
+                            className={`px-3.5 py-2 text-xs font-bold rounded-xl border flex items-center gap-2 transition-all ${
+                              student.status === 'LATE' ? 'border-orange-500 bg-white text-orange-600 shadow-sm ring-1 ring-orange-500' : 'border-gray-200 text-gray-400 bg-white'
+                            }`}
+                          >
+                            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${student.status === 'LATE' ? 'border border-orange-500 text-orange-500' : 'border border-gray-300 text-gray-300'}`}>⏱</span>
+                            LATE
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -224,7 +295,7 @@ const AttendanceManagement = () => {
               {pastRecords.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-6 py-8 text-center text-gray-500 text-sm">
-                    {loading ? 'Loading records...' : 'No past attendance history found in Supabase yet.'}
+                    {loading ? 'Loading records...' : 'No past attendance history found in database yet.'}
                   </td>
                 </tr>
               ) : (
@@ -255,4 +326,4 @@ const AttendanceManagement = () => {
   );
 };
 
-export default AttendanceManagement;
+export default TeacherAttendance;

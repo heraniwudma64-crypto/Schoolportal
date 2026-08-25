@@ -3,6 +3,7 @@ import { MOCK_SUBJECTS } from '../../data/mockData';
 import { GraduationCap, Search, Save, Calculator, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
+import { api } from '../../lib/api'; // Import your authenticated api client
 
 const ResultsGradeEntry = () => {
   const [selectedQuarter, setSelectedQuarter] = useState('Quarter 1');
@@ -14,42 +15,44 @@ const ResultsGradeEntry = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Fetch students dynamically when class changes
- useEffect(() => {
-  fetch(`http://localhost:3000/students?className=${encodeURIComponent(selectedClass)}`)
-    .then((res) => {
-      if (!res.ok) throw new Error('API route not found or failed');
-      return res.json();
-    })
-    .then((data) => {
-      if (Array.isArray(data) && data.length > 0) {
-        const formattedData = data.map((student: any) => ({
-          id: student.id,
-          name: student.name || `${student.firstName} ${student.lastName}`,
-          mid: 0,
-          assignment: 0,
-          quiz: 0,
-          classwork: 0,
-          final: 0,
-        }));
-        setGrades(formattedData);
-      } else {
-        // Fallback demo data if no students are returned from database
-        setGrades([
-          { id: '1', name: 'Abebe Kebede', mid: 15, assignment: 18, quiz: 8, classwork: 9, final: 35 },
-          { id: '2', name: 'Tigist Haile', mid: 14, assignment: 16, quiz: 7, classwork: 8, final: 32 },
-        ]);
+  // Fetch real enrolled students dynamically using your api client and section endpoint
+  useEffect(() => {
+    async function fetchStudents() {
+      if (!selectedClass) return;
+      setLoading(true);
+      try {
+        // Use your backend's flexible section/class lookup endpoint
+        const data = await api.get<any[]>(`/students/by-section?section=${encodeURIComponent(selectedClass)}`);
+        
+        const rawList = Array.isArray(data) ? data : (data?.data || data?.records || []);
+
+        if (rawList.length > 0) {
+          const formattedData = rawList.map((student: any) => ({
+            id: student.id,
+            name: student.name || `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Student',
+            mid: 0,
+            assignment: 0,
+            quiz: 0,
+            classwork: 0,
+            final: 0,
+          }));
+          setGrades(formattedData);
+        } else {
+          // Empty state if the section has no registered students yet
+          setGrades([]);
+          toast.info(`No students found enrolled in ${selectedClass}`);
+        }
+      } catch (err) {
+        console.error('Failed to fetch students from server:', err);
+        toast.error('Could not load students for this class.');
+        setGrades([]);
+      } finally {
+        setLoading(false);
       }
-    })
-    .catch((err) => {
-      console.warn('Using fallback mock data due to API error:', err);
-      // Fallback demo data so your page renders fine while testing
-      setGrades([
-        { id: '1', name: 'Abebe Kebede', mid: 15, assignment: 18, quiz: 8, classwork: 9, final: 35 },
-        { id: '2', name: 'Tigist Haile', mid: 14, assignment: 16, quiz: 7, classwork: 8, final: 32 },
-      ]);
-    });
-}, [selectedClass]);
+    }
+
+    fetchStudents();
+  }, [selectedClass]);
 
   const handleGradeChange = (id: string, field: string, value: string) => {
     const rawVal = Number(value);
@@ -66,25 +69,17 @@ const ResultsGradeEntry = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Loop and post scores for each student to your NestJS backend
       const savePromises = grades.map((studentGrade) =>
-        fetch('http://localhost:3000/grades', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            // 'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            studentId: studentGrade.id,
-            subjectId: selectedSubject,
-            quarter: selectedQuarter,
-            mid: studentGrade.mid,
-            assignment: studentGrade.assignment,
-            quiz: studentGrade.quiz,
-            classwork: studentGrade.classwork,
-            final: studentGrade.final,
-            score: calculateTotal(studentGrade),
-          }),
+        api.post('/grades', {
+          studentId: studentGrade.id,
+          subjectId: selectedSubject,
+          quarter: selectedQuarter,
+          mid: studentGrade.mid,
+          assignment: studentGrade.assignment,
+          quiz: studentGrade.quiz,
+          classwork: studentGrade.classwork,
+          final: studentGrade.final,
+          score: calculateTotal(studentGrade),
         })
       );
 
@@ -98,7 +93,6 @@ const ResultsGradeEntry = () => {
     }
   };
 
-  // Filter list based on search query
   const filteredGrades = grades.filter(g => 
     g.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     g.id.toLowerCase().includes(searchQuery.toLowerCase())
@@ -114,7 +108,7 @@ const ResultsGradeEntry = () => {
         <div className="flex gap-2">
           <button 
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || grades.length === 0}
             className="flex items-center gap-2 px-6 py-2 bg-blue-900 text-white rounded-xl text-sm font-bold hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
@@ -189,37 +183,51 @@ const ResultsGradeEntry = () => {
               </tr>
             </thead>
 
-<tbody className="divide-y divide-gray-100">
-  {filteredGrades.map((grade) => (
-    <tr key={grade.id} className="hover:bg-gray-50/50 transition-colors">
-      <td className="px-6 py-4">
-        <p className="text-sm font-bold text-gray-900">{grade.name}</p>
-        <p className="text-[10px] text-gray-400 font-bold">ID: {grade.id}</p>
-      </td>
-      {['mid', 'assignment', 'quiz', 'classwork', 'final'].map((field) => (
-        <td key={field} className="px-6 py-4">
-          <div className="flex justify-center">
-            <input
-              type="number"
-              value={grade[field]}
-              onChange={(e) => handleGradeChange(grade.id, field, e.target.value)}
-              className="w-16 text-center bg-gray-50 border border-gray-100 rounded-lg py-2 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition-all"
-            />
-          </div>
-        </td>
-      ))}
-      <td className="px-6 py-4 text-right">
-        <span className={cn(
-          "inline-flex items-center justify-center min-w-[3rem] px-3 py-1 rounded-full text-sm font-black",
-          calculateTotal(grade) >= 90 ? "bg-green-100 text-green-700" :
-          calculateTotal(grade) >= 70 ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
-        )}>
-          {calculateTotal(grade)}
-        </span>
-      </td>
-    </tr>
-  ))}
-</tbody>
+            <tbody className="divide-y divide-gray-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500 font-medium">
+                    Loading enrolled students for {selectedClass}...
+                  </td>
+                </tr>
+              ) : filteredGrades.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-400 font-medium">
+                    No students found for this class section.
+                  </td>
+                </tr>
+              ) : (
+                filteredGrades.map((grade) => (
+                  <tr key={grade.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-sm font-bold text-gray-900">{grade.name}</p>
+                      <p className="text-[10px] text-gray-400 font-bold">ID: {grade.id}</p>
+                    </td>
+                    {['mid', 'assignment', 'quiz', 'classwork', 'final'].map((field) => (
+                      <td key={field} className="px-6 py-4">
+                        <div className="flex justify-center">
+                          <input
+                            type="number"
+                            value={grade[field]}
+                            onChange={(e) => handleGradeChange(grade.id, field, e.target.value)}
+                            className="w-16 text-center bg-gray-50 border border-gray-100 rounded-lg py-2 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition-all"
+                          />
+                        </div>
+                      </td>
+                    ))}
+                    <td className="px-6 py-4 text-right">
+                      <span className={cn(
+                        "inline-flex items-center justify-center min-w-[3rem] px-3 py-1 rounded-full text-sm font-black",
+                        calculateTotal(grade) >= 90 ? "bg-green-100 text-green-700" :
+                        calculateTotal(grade) >= 70 ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+                      )}>
+                        {calculateTotal(grade)}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
           </table>
         </div>
       </div>

@@ -32,6 +32,13 @@ enum ExamType {
   PROJECT
 }
 
+enum ExamStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum PaymentMethod {
   CASH
   BANK_TRANSFER
@@ -78,6 +85,8 @@ model User {
   isDeleted   Boolean   @default(false)
   lastLoginAt DateTime?
   phoneNumber String?
+  otpCode       String?
+  otpExpiresAt  DateTime?
 
   // Relations
   
@@ -368,6 +377,40 @@ model Examination {
   teacherId String?  // Using String? makes it optional in case older rows don't have a teacher yet
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
   grades    Grade[] 
+  questions   Question[]
+  results     StudentExamResult[]
+  duration    Int
+  status      ExamStatus @default(DRAFT) // Added status tracking
+ 
+}
+
+
+model Option {
+  id          String   @id @default(uuid())
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  optionText  String
+  isCorrect   Boolean  @default(false) // Determines if this option is the correct answer
+}
+
+model StudentExamResult {
+  id          String   @id @default(uuid())
+  examId      String
+  exam        Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId   String
+  score       Int      // Total points earned
+  totalMarks  Int      // Maximum possible points
+  submittedAt DateTime @default(now())
+  answers     StudentAnswer[]
+}
+
+model StudentAnswer {
+  id          String   @id @default(uuid())
+  resultId    String
+  result      StudentExamResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  questionId  String
+  selectedOptionId String // What the student chose
+  isCorrect   Boolean  // Auto-graded true/false
 }
 
 model ExamAttempt {
@@ -433,6 +476,7 @@ model Assignment {
   submissions       Submission[]
   updatedAt         DateTime         @updatedAt @default(now())
    grades           Grade[]
+   @@map("Assignment")
 }
 model Submission {
   id           String     @id @default(uuid())
@@ -546,4 +590,18 @@ model Grade {
   
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+}
+model Question {
+  id        String   @id @default(uuid())
+  // Add whatever fields your questions need, plus the relation fields:
+  grades    Grade[]
+  // matches line 391 relation
+  answers   // (or whatever your relation field is named in the other model)
+}
+
+model Exam {
+  id        String   @id @default(uuid())
+  title     String
+  // matches line 399 relation
+  // add any other fields required for your exams
 }

@@ -49,6 +49,7 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
         { name: 'Report Card', href: '/report-card', icon: FileCheck },
         { name: 'Attendance', href: '/attendance', icon: CheckSquare },
         { name: 'Materials', href: '/materials', icon: Book },
+        { name: 'Settings', href: '/teacher/profile', icon: Settings },
       ];
     }
 
@@ -62,6 +63,7 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
         { name: 'Exam Creation', href: '/exams', icon: FileText },
         { name: 'Materials', href: '/materials', icon: Book },
         { name: 'Performance', href: '/performance', icon: Users },
+        { name: 'Settings', href: '/teacher/profile', icon: Settings },
       ];
     }
 

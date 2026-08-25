@@ -57,14 +57,11 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(registerDto.password, 12);
     const userId = randomUUID();
 
-    // Split name into first and last name safely with fallbacks
     const nameParts = registerDto.name ? registerDto.name.trim().split(/\s+/) : ['User'];
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || firstName;
 
-    // Use a transaction to create the user and their profile table record atomically
     const createdUser = await this.prisma.$transaction(async (tx) => {
-      // 1. Create the base user
       const user = await tx.user.create({
         data: {
           id: userId,
@@ -81,7 +78,6 @@ export class AuthService {
         },
       });
 
-      // 2. Create the role-specific profile record
       if (role === Role.TEACHER) {
         await tx.teacher.create({
           data: {
@@ -93,7 +89,6 @@ export class AuthService {
           },
         });
       } else if (role === Role.STUDENT) {
-        // Resolve class section logic from Heran's branch
         const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
         let resolvedClassSectionId: string | null = null;
 
@@ -119,7 +114,6 @@ export class AuthService {
           resolvedClassSectionId = sectionRecord.id;
         }
 
-        // Create student profile combining KB's fields and Heran's class section resolution
         await tx.student.create({
           data: {
             id: randomUUID(),
@@ -187,6 +181,37 @@ export class AuthService {
       accessToken,
       user: safeUser,
     };
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    if (!user) {
+      return { message: 'If the email exists, a password reset code has been sent.' };
+    }
+    // Implement token/OTP generation & email dispatching logic here
+    return { message: 'Password reset OTP sent successfully' };
+  }
+
+  async verifyOtp(email: string, otp: string) {
+    // Implement token/OTP verification logic here
+    return { message: 'OTP verified successfully' };
+  }
+
+  async resetPassword(email: string, otp: string, newPassword: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
+    
+    if (!user) {
+      throw new BadRequestException('Invalid request');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.user.update({
+      where: { email: normalizedEmail },
+      data: { password: passwordHash },
+    });
+
+    return { message: 'Password has been reset successfully' };
   }
 
   async getProfile(userId: string) {

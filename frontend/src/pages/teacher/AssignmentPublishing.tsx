@@ -30,11 +30,16 @@ export default function PublishAssignmentPage() {
     setMessage('');
 
     try {
+      // Get the stored auth token and user info if available
+      const token = localStorage.getItem('token');
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : {};
+
       const response = await fetch('http://localhost:3000/assignments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // 'Authorization': `Bearer ${localStorage.getItem('token')}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           title: formData.title,
@@ -44,7 +49,7 @@ export default function PublishAssignmentPage() {
           instructions: formData.instructions,
           dueDate: formData.dueDate,
           attachmentUrl: formData.attachmentUrl,
-          teacherId: 'CURRENT_TEACHER_ID', // Replace or pull from user auth context
+          userId: user.id || user.sub, // Send real user ID so backend can find the teacher profile
         }),
       });
 
@@ -52,7 +57,6 @@ export default function PublishAssignmentPage() {
 
       const newAssignment = await response.json();
       
-      // Update local recent publications list dynamically
       setRecentPublications([
         { id: newAssignment.id || Date.now(), title: formData.title, targetClass: formData.targetClass.toUpperCase(), time: 'JUST NOW' },
         ...recentPublications,
@@ -69,7 +73,7 @@ export default function PublishAssignmentPage() {
       });
     } catch (error) {
       console.error(error);
-      alert('Error publishing assignment. Ensure the backend server is running.');
+      alert('Error publishing assignment. Ensure you are logged in and the backend server is running.');
     } finally {
       setLoading(false);
     }

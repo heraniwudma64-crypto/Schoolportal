@@ -5,6 +5,25 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class GradesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getMyResults(userId: string) {
+    // 1. Find the student linked to this user ID
+    const student = await this.prisma.student.findFirst({
+      where: { OR: [{ id: userId }, { userId: userId }] },
+    });
+    
+    if (!student) return [];
+
+    // 2. Query the 'grade' table directly, matching how GradesService saves them
+    return await this.prisma.grade.findMany({
+      where: { studentId: student.id },
+      include: {
+        // Include relations if you have them configured in schema.prisma, 
+        // e.g., Subject: true (adjust based on your actual schema relation name)
+      },
+    });
+  }
+  
+
   async submitBatchGrades(dto: any) {
     console.log('--- RECEIVED DTO FROM FRONTEND ---', JSON.stringify(dto, null, 2));
 
