@@ -47,7 +47,7 @@ export class StudentsService {
       return this.prisma.assignment.findMany({
         orderBy: { dueDate: 'asc' },
         include: {
-          teacher: {
+          Teacher: {
             select: { firstName: true, lastName: true },
           },
         },
@@ -71,7 +71,7 @@ export class StudentsService {
       },
       include: {
         ClassSection: true,
-        teacher: {
+        Teacher: {
           select: { firstName: true, lastName: true },
         },
       },
@@ -170,6 +170,7 @@ async getMyResults(userId: string) {
       where: { studentId: student.id },
     });
   }
+
   // --- Heran's Method ---
   async getStudentsBySection(sectionIdentifier: string) {
     const decodedIdentifier = decodeURIComponent(sectionIdentifier).trim();
