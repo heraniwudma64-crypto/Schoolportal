@@ -37,22 +37,15 @@ async function request<T>(
   body?: unknown,
 ): Promise<T> {
   const token = getToken();
-<<<<<<< ours
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-=======
   const isFormData = body instanceof FormData;
   
   const headers: Record<string, string> = {};
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
   }
-  if (token) headers['Authorization'] = `Bearer ${token}`;
->>>>>>> theirs
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,

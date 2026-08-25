@@ -44,7 +44,7 @@ export class MaterialsService {
     }
     return prisma.material.findMany({
       where,
-      orderBy: { created_at: 'desc' },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -98,11 +98,11 @@ export class MaterialsService {
           title: createMaterialDto.title,
           category: this.mapCategory(createMaterialDto.category),
           description: createMaterialDto.description,
-          target_role: this.mapTargetRole(createMaterialDto.target_role || 'All Users'),
-          file_type: file.mimetype,
-          file_name: file.originalname,
-          file_size: file.size,
-          file_url: `materials/${fileName}`,
+          targetRole: this.mapTargetRole(createMaterialDto.target_role || 'All Users'),
+          fileType: file.mimetype,
+          fileName: file.originalname,
+          fileSize: file.size,
+          fileUrl: `materials/${fileName}`,
         },
       });
     } catch (dbError: any) {
@@ -115,10 +115,10 @@ export class MaterialsService {
 
   async update(id: string, updateMaterialDto: UpdateMaterialDto, file?: Express.Multer.File) {
     const material = await this.findOne(id);
-    let fileUrl = material.file_url;
-    let fileType = material.file_type;
-    let fileNameStr = material.file_name;
-    let fileSize = material.file_size;
+   let fileUrl = material.fileUrl;
+let fileType = material.fileType;
+let fileNameStr = material.fileName;
+let fileSize = material.fileSize;
 
     if (file) {
       const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '').toLowerCase();
@@ -142,10 +142,10 @@ export class MaterialsService {
       fileUrl = `materials/${fileName}`;
       fileType = file.mimetype;
       fileNameStr = file.originalname;
-      fileSize = BigInt(file.size);
+      fileSize = Number(file.size);
 
       // Extract old file path and remove it
-      const oldFilePathMatch = material.file_url.match(/materials\/(.*)$/);
+      const oldFilePathMatch = material.fileUrl?.match(/materials\/(.*)$/);
       if (oldFilePathMatch) {
         await this.supabase.storage.from('materials').remove([oldFilePathMatch[1]]);
       }
@@ -157,11 +157,11 @@ export class MaterialsService {
         title: updateMaterialDto.title,
         category: updateMaterialDto.category ? this.mapCategory(updateMaterialDto.category) : undefined,
         description: updateMaterialDto.description,
-        target_role: updateMaterialDto.target_role ? this.mapTargetRole(updateMaterialDto.target_role) : undefined,
-        file_url: fileUrl,
-        file_type: fileType,
-        file_name: fileNameStr,
-        file_size: fileSize,
+        targetRole: updateMaterialDto.target_role ? this.mapTargetRole(updateMaterialDto.target_role) : undefined,
+        fileUrl: fileUrl,
+        fileType: fileType,
+        fileName: fileNameStr,
+        fileSize: fileSize,
       },
     });
   }
@@ -169,7 +169,7 @@ export class MaterialsService {
   async remove(id: string) {
     const material = await this.findOne(id);
     
-    const oldFilePathMatch = material.file_url.match(/materials\/(.*)$/);
+    const oldFilePathMatch = material.fileUrl?.match(/materials\/(.*)$/);
     if (oldFilePathMatch) {
       const { error } = await this.supabase.storage.from('materials').remove([oldFilePathMatch[1]]);
       if (error) {
@@ -183,11 +183,11 @@ export class MaterialsService {
 
   async getDownloadUrl(id: string) {
     const material = await this.findOne(id);
-    const oldFilePathMatch = material.file_url.match(/materials\/(.*)$/);
-    const pathInBucket = oldFilePathMatch ? oldFilePathMatch[1] : material.file_url;
+    const oldFilePathMatch = material.fileUrl?.match(/materials\/(.*)$/);
+const pathInBucket = (oldFilePathMatch ? oldFilePathMatch[1] : material.fileUrl) || '';
     
     const { data, error } = await this.supabase.storage.from('materials').createSignedUrl(pathInBucket, 60, {
-      download: material.file_name || true,
+      download: material.fileName || true,
     });
     
     if (error || !data) {
@@ -195,7 +195,7 @@ export class MaterialsService {
       // "If the bucket is private, generate an appropriate signed URL from the backend."
       // Let's fallback to public URL if signed URL fails, just in case.
       const { data: publicData } = this.supabase.storage.from('materials').getPublicUrl(pathInBucket, {
-        download: material.file_name || true,
+        download: material.fileName || true,
       });
       return { url: publicData.publicUrl };
     }
