@@ -1,27 +1,57 @@
-import React, { useState } from 'react';
-import { MOCK_SUBJECTS } from '../../data/mockData';
-import { Plus, Trash2, Clock, CheckCircle2, Save, Send, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Clock, CheckCircle2, Save, Send, HelpCircle, AlertCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
+import { api } from '../../lib/api';
 
 interface Question {
   id: string;
   text: string;
   options: string[];
-  correctAnswer: number; // 0 for A, 1 for B, 2 for C, 3 for D
+  correctAnswer: number;
 }
 
-const ExamCreation = () => {
+export default function ExamCreation() {
+  const [formData, setFormData] = useState<{
+    subjects: any[];
+    classes: any[];
+    sections: any[];
+  }>({ subjects: [], classes: [], sections: [] });
+
+  const [teacherExams, setTeacherExams] = useState<any[]>([]);
+
   const [examData, setExamData] = useState({
     title: '',
-    subjectId: MOCK_SUBJECTS[0].id,
+    subjectId: '',
+    classId: '',
+    classSectionId: '',
     duration: 60,
-    instructions: '',
   });
 
   const [questions, setQuestions] = useState<Question[]>([
     { id: '1', text: '', options: ['', '', '', ''], correctAnswer: 0 }
   ]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Fetch options for the form and teacher's history
+    api.get<any>('/examinations/form-data')
+      .then((data) => {
+        setFormData(data);
+        if (data.subjects.length > 0) setExamData(prev => ({ ...prev, subjectId: data.subjects[0].id }));
+        if (data.classes.length > 0) setExamData(prev => ({ ...prev, classId: data.classes[0].id }));
+        if (data.sections.length > 0) setExamData(prev => ({ ...prev, classSectionId: data.sections[0].id }));
+      })
+      .catch(err => toast.error('Failed to load form data: ' + err.message));
+
+    loadTeacherExams();
+  }, []);
+
+  const loadTeacherExams = () => {
+    api.get<any[]>('/examinations/teacher')
+      .then(setTeacherExams)
+      .catch(err => toast.error('Failed to load your examinations'));
+  };
 
   const addQuestion = () => {
     setQuestions([...questions, { 
@@ -53,37 +83,48 @@ const ExamCreation = () => {
     setQuestions(questions.map(q => q.id === qId ? { ...q, correctAnswer: idx } : q));
   };
 
-  const handleSubmit = async (status: 'draft' | 'pending') => {
+  const handleSubmit = async (status: 'DRAFT' | 'PENDING') => {
+    if (!examData.title || !examData.subjectId || !examData.classId || !examData.classSectionId) {
+      toast.error('Please fill in all exam details (Title, Subject, Class, Section)');
+      return;
+    }
+
+    if (questions.some(q => !q.text || q.options.some(opt => !opt))) {
+      toast.error('Please fill in all questions and options');
+      return;
+    }
+
+    setIsSubmitting(true);
+
     const payload = {
-      title: examData.title || 'Untitled Examination',
-      subject: examData.subjectId,
+      title: examData.title,
+      subjectId: examData.subjectId,
+      classId: examData.classId,
+      classSectionId: examData.classSectionId,
       duration: Number(examData.duration),
-      status: status === 'draft' ? 'DRAFT' : 'PENDING',
+      status: status,
       questions: questions.map((q) => ({
         questionText: q.text,
-        marks: 10,
         options: q.options.map((optText, optIdx) => ({
           optionText: optText,
-          isCorrect: q.correctAnswer === optIdx, // 👈 Now correctly identifies if B, C, or D is selected!
+          isCorrect: q.correctAnswer === optIdx,
         })),
       })),
     };
 
     try {
-      const response = await fetch('http://localhost:3000/examinations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        toast.success(status === 'draft' ? 'Exam saved as draft' : 'Exam submitted to admin for review!');
-      } else {
-        toast.error('Failed to save examination to the server.');
+      await api.post('/examinations', payload);
+      toast.success(status === 'DRAFT' ? 'Exam saved as draft' : 'Exam submitted for review');
+      loadTeacherExams();
+      if (status === 'PENDING') {
+        // Reset form on submit
+        setExamData(prev => ({ ...prev, title: '' }));
+        setQuestions([{ id: '1', text: '', options: ['', '', '', ''], correctAnswer: 0 }]);
       }
-    } catch (error) {
-      console.error('API Error:', error);
-      toast.error('Network error. Could not connect to backend.');
+    } catch (error: any) {
+      toast.error(`Failed to create examination: ${error.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -96,15 +137,17 @@ const ExamCreation = () => {
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={() => handleSubmit('draft')}
-            className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-black text-gray-700 uppercase tracking-widest hover:bg-gray-50 transition-colors shadow-sm"
+            disabled={isSubmitting}
+            onClick={() => handleSubmit('DRAFT')}
+            className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-black text-gray-700 uppercase tracking-widest hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             Save Draft
           </button>
           <button 
-            onClick={() => handleSubmit('pending')}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20"
+            disabled={isSubmitting}
+            onClick={() => handleSubmit('PENDING')}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
           >
             <Send className="w-4 h-4" />
             Submit for Review
@@ -112,9 +155,8 @@ const ExamCreation = () => {
         </div>
       </div>
 
-      {/* Exam Details Card */}
       <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-4">
           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Exam Title</label>
           <input
             type="text"
@@ -131,7 +173,27 @@ const ExamCreation = () => {
             value={examData.subjectId}
             onChange={(e) => setExamData({ ...examData, subjectId: e.target.value })}
           >
-            {MOCK_SUBJECTS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {formData.subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Class</label>
+          <select 
+            className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900 appearance-none"
+            value={examData.classId}
+            onChange={(e) => setExamData({ ...examData, classId: e.target.value })}
+          >
+            {formData.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Section</label>
+          <select 
+            className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900 appearance-none"
+            value={examData.classSectionId}
+            onChange={(e) => setExamData({ ...examData, classSectionId: e.target.value })}
+          >
+            {formData.sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
         <div>
@@ -148,7 +210,6 @@ const ExamCreation = () => {
         </div>
       </div>
 
-      {/* Questions Section */}
       <div className="space-y-8">
         <div className="flex items-center justify-between px-4">
           <h3 className="text-xl font-black text-gray-900 flex items-center gap-3">
@@ -226,24 +287,11 @@ const ExamCreation = () => {
                         "absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
                         question.correctAnswer === oIdx ? "bg-green-600 text-white" : "bg-gray-200 text-gray-400 hover:bg-gray-300"
                       )}
-                      title={`Mark Option ${String.fromCharCode(65 + oIdx)} as correct`}
                     >
                       <CheckCircle2 className="w-5 h-5" />
                     </button>
                   </div>
                 ))}
-              </div>
-            </div>
-            
-            <div className="px-12 py-6 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Auto-Grading Active</span>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Marks:</span>
-                <input 
-                  type="number" 
-                  defaultValue={10} 
-                  className="w-12 bg-transparent border-none outline-none font-black text-blue-900 text-center"
-                />
               </div>
             </div>
           </div>
@@ -259,9 +307,40 @@ const ExamCreation = () => {
           <span className="text-sm font-black uppercase tracking-[0.2em]">Add Another Question</span>
         </button>
       </div>
+
+      <div className="mt-16 bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100">
+        <h3 className="text-xl font-black text-gray-900 mb-6 flex items-center gap-3">
+          <AlertCircle className="w-6 h-6 text-blue-600" />
+          Your Submitted Examinations
+        </h3>
+        {teacherExams.length === 0 ? (
+          <p className="text-gray-400 italic">No exams found. Your created exams will appear here.</p>
+        ) : (
+          <div className="space-y-4">
+            {teacherExams.map((exam) => (
+              <div key={exam.id} className="p-4 bg-gray-50 rounded-2xl flex items-center justify-between border border-gray-100">
+                <div>
+                  <h4 className="font-bold text-gray-900">{exam.title}</h4>
+                  <p className="text-xs text-gray-500">
+                    {exam.Subject?.name} • {exam.Class?.name} ({exam.ClassSection?.name}) • {exam.duration} mins
+                  </p>
+                </div>
+                <div className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-black tracking-widest uppercase",
+                  exam.status === 'DRAFT' ? "bg-gray-200 text-gray-600" :
+                  exam.status === 'PENDING' ? "bg-amber-100 text-amber-700" :
+                  exam.status === 'APPROVED' ? "bg-green-100 text-green-700" :
+                  "bg-red-100 text-red-700"
+                )}>
+                  {exam.status === 'PENDING' ? 'PENDING REVIEW' : exam.status}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <Toaster position="top-right" />
     </div>
   );
-};
-
-export default ExamCreation;
+}

@@ -1,20 +1,44 @@
-import React, { useState } from 'react';
-import { MOCK_EXAMS } from '../../data/mockData';
+import React, { useState, useEffect } from 'react';
 import { Badge } from '../../components/ui/badge';
 import { FileCheck, Eye, CheckCircle2, XCircle, MessageSquare, Clock } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
-import { Exam, ExamQuestion } from '../../types';
+import { api } from '../../lib/api';
 
-const ExamReviewApproval = () => {
-  const [exams, setExams] = useState<Exam[]>(MOCK_EXAMS.map(e => e.id === 'e1' ? { ...e, status: 'pending_approval' as const } : e));
-  const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
+export default function ExamReviewApproval() {
+  const [exams, setExams] = useState<any[]>([]);
+  const [selectedExam, setSelectedExam] = useState<any | null>(null);
   const [remarks, setRemarks] = useState('');
-  const handleStatusUpdate = (id: string, status: 'approved' | 'rejected') => {
-    setExams(exams.map(e => e.id === id ? { ...e, status, adminRemarks: remarks } : e));
-    toast.success(`Exam ${status === 'approved' ? 'approved and published' : 'rejected'} successfully!`);
-    setSelectedExam(null);
-    setRemarks('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchPendingExams();
+  }, []);
+
+  const fetchPendingExams = () => {
+    setIsLoading(true);
+    api.get<any[]>('/examinations/pending')
+      .then(data => {
+        setExams(data);
+        if (selectedExam) {
+          const stillPending = data.find(e => e.id === selectedExam.id);
+          if (!stillPending) setSelectedExam(null);
+        }
+      })
+      .catch(err => toast.error('Failed to load pending exams: ' + err.message))
+      .finally(() => setIsLoading(false));
+  };
+
+  const handleStatusUpdate = async (id: string, status: 'APPROVED' | 'REJECTED') => {
+    try {
+      await api.post(`/examinations/${id}/status`, { status });
+      toast.success(`Exam ${status === 'APPROVED' ? 'approved and published' : 'rejected'} successfully!`);
+      setSelectedExam(null);
+      setRemarks('');
+      fetchPendingExams();
+    } catch (err: any) {
+      toast.error('Failed to update exam status: ' + err.message);
+    }
   };
 
   return (
@@ -28,7 +52,9 @@ const ExamReviewApproval = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          {exams.filter(e => e.status === 'pending_approval').length === 0 ? (
+          {isLoading ? (
+            <div className="py-12 text-center text-gray-400">Loading pending exams...</div>
+          ) : exams.length === 0 ? (
             <div className="bg-white p-12 rounded-[2rem] border border-gray-100 flex flex-col items-center justify-center text-center">
               <div className="w-20 h-20 bg-green-50 rounded-[2rem] flex items-center justify-center text-green-600 mb-6">
                 <CheckCircle2 className="w-10 h-10" />
@@ -37,7 +63,7 @@ const ExamReviewApproval = () => {
               <p className="text-gray-500">All submitted exams have been reviewed and processed.</p>
             </div>
           ) : (
-            exams.filter(e => e.status === 'pending_approval').map((exam) => (
+            exams.map((exam) => (
               <div 
                 key={exam.id} 
                 className={cn(
@@ -56,7 +82,9 @@ const ExamReviewApproval = () => {
                         <h3 className="text-xl font-black text-gray-900">{exam.title}</h3>
                         <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-3 py-1 rounded-full uppercase tracking-widest">Pending Review</span>
                       </div>
-                      <p className="text-sm text-gray-500 mb-4">Submitted by <span className="font-bold text-gray-900">{exam.teacherName}</span> • {exam.subjectName}</p>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Submitted by <span className="font-bold text-gray-900">{exam.Teacher?.User?.name || 'Teacher'}</span> • {exam.Subject?.name || 'Subject'} • {exam.Class?.name} ({exam.ClassSection?.name})
+                      </p>
                       <div className="flex gap-4">
                         <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
                           <Clock className="w-3 h-3" />
@@ -64,7 +92,7 @@ const ExamReviewApproval = () => {
                         </div>
                         <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
                           <MessageSquare className="w-3 h-3" />
-                          {exam.questions.length} Questions
+                          {exam.questions?.length || 0} Questions
                         </div>
                       </div>
                     </div>
@@ -87,24 +115,27 @@ const ExamReviewApproval = () => {
                 <div className="space-y-4">
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Exam Content Preview</label>
                   <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                    {selectedExam.questions.map((q: ExamQuestion, idx: number) => (
-                      <div key={q.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                        <p className="text-sm font-bold text-gray-900 mb-3">
-                          <span className="text-blue-900 mr-2">Q{idx + 1}.</span>
-                          {q.text}
-                        </p>
-                        <div className="grid grid-cols-1 gap-2">
-                          {q.options.map((opt: string) => (
-                            <div key={opt} className={cn(
-                              "px-4 py-2 rounded-xl text-xs font-medium border transition-all",
-                              opt === q.correctAnswer ? "bg-green-50 border-green-200 text-green-700" : "bg-white border-gray-100 text-gray-500"
-                            )}>
-                              {opt} {opt === q.correctAnswer && "✓"}
-                            </div>
-                          ))}
+                    {selectedExam.questions?.map((q: any, idx: number) => {
+                      const correctAnswer = q.options.find((o: any) => o.isCorrect)?.optionText;
+                      return (
+                        <div key={q.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                          <p className="text-sm font-bold text-gray-900 mb-3">
+                            <span className="text-blue-900 mr-2">Q{idx + 1}.</span>
+                            {q.text}
+                          </p>
+                          <div className="grid grid-cols-1 gap-2">
+                            {q.options.map((opt: any) => (
+                              <div key={opt.id} className={cn(
+                                "px-4 py-2 rounded-xl text-xs font-medium border transition-all",
+                                opt.optionText === correctAnswer ? "bg-green-50 border-green-200 text-green-700" : "bg-white border-gray-100 text-gray-500"
+                              )}>
+                                {opt.optionText} {opt.optionText === correctAnswer && "✓"}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 <div>
@@ -119,14 +150,14 @@ const ExamReviewApproval = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <button 
-                    onClick={() => handleStatusUpdate(selectedExam.id, 'rejected')}
+                    onClick={() => handleStatusUpdate(selectedExam.id, 'REJECTED')}
                     className="flex flex-col items-center justify-center p-6 bg-red-50 text-red-600 rounded-2xl border-2 border-transparent hover:border-red-600 transition-all gap-2"
                   >
                     <XCircle className="w-6 h-6" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Reject</span>
                   </button>
                   <button 
-                    onClick={() => handleStatusUpdate(selectedExam.id, 'approved')}
+                    onClick={() => handleStatusUpdate(selectedExam.id, 'APPROVED')}
                     className="flex flex-col items-center justify-center p-6 bg-green-50 text-green-600 rounded-2xl border-2 border-transparent hover:border-green-600 transition-all gap-2"
                   >
                     <CheckCircle2 className="w-6 h-6" />
@@ -145,6 +176,5 @@ const ExamReviewApproval = () => {
       <Toaster position="top-right" />
     </div>
   );
-};
+}
 
-export default ExamReviewApproval;

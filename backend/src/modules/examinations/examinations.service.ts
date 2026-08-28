@@ -1,13 +1,55 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import * as crypto from 'crypto';
+import { ExamStatus } from '@prisma/client';
 
 @Injectable()
 export class ExaminationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 1. Create exam with status (DRAFT or PENDING)
- async createExamination(dto: any) {
+  async getFormData() {
+    const subjects = await this.prisma.subject.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true, code: true }
+    });
+    
+    const classes = await this.prisma.class.findMany({
+      select: { id: true, name: true, section: true }
+    });
+    
+    const sections = await this.prisma.classSection.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true }
+    });
+
+    return { subjects, classes, sections };
+  }
+
+  async findTeacherExaminations(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId } });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+    
+    return this.prisma.examination.findMany({
+      where: { teacherId: teacher.id },
+      include: {
+        Subject: true,
+        Class: true,
+        ClassSection: true,
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  async createExamination(dto: any, userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId } });
+    if (!teacher) {
+      throw new UnauthorizedException('Active user is not registered as a teacher');
+    }
+
+    if (!dto.subjectId) throw new BadRequestException('Subject is required');
+    if (!dto.classId) throw new BadRequestException('Class is required');
+    if (!dto.classSectionId) throw new BadRequestException('Class Section is required');
+
     const calculatedTotalMarks = dto.questions 
       ? dto.questions.reduce((sum: number, q: any) => sum + (q.marks || 10), 0) 
       : 100;
@@ -15,74 +57,84 @@ export class ExaminationsService {
     const examId = crypto.randomUUID();
     const now = new Date();
 
-    // 1. Create the examination record
-    const examination = await this.prisma.examination.create({
-      data: {
-        id: examId,
-        title: dto.title,
-        Subject: dto.subject,
-        duration: dto.duration,
-        status: dto.status || 'DRAFT',
-        totalMarks: calculatedTotalMarks,
-        examDate: now,
-        updatedAt: now, // 👈 Fixes the missing updatedAt error
-      } as any,
-    });
-
-    // 2. Safely create questions and options linked to this exam
-    if (dto.questions && Array.isArray(dto.questions)) {
-      for (const q of dto.questions) {
-        const questionId = crypto.randomUUID();
-        await (this.prisma as any).question.create({
+    try {
+      const examination = await this.prisma.$transaction(async (tx) => {
+        // Create Examination and questions/options atomically
+        return tx.examination.create({
           data: {
-            id: questionId,
-            examId: examId,
-            questionText: q.questionText,
-            marks: q.marks || 10,
-            options: {
-              create: q.options.map((opt: any) => ({
+            id: examId,
+            title: dto.title || 'Untitled Examination',
+            subjectId: dto.subjectId,
+            classId: dto.classId,
+            classSectionId: dto.classSectionId,
+            teacherId: teacher.id,
+            duration: dto.duration || 60,
+            status: dto.status === 'DRAFT' ? ExamStatus.DRAFT : ExamStatus.PENDING,
+            totalMarks: calculatedTotalMarks,
+            examDate: now,
+            updatedAt: now,
+            questions: {
+              create: (dto.questions || []).map((q: any) => ({
                 id: crypto.randomUUID(),
-                optionText: opt.optionText,
-                isCorrect: Boolean(opt.isCorrect), // 👈 Respects whichever option (A, B, C, or D) is marked correct!
-              })),
-            },
+                text: q.questionText,
+                options: {
+                  create: (q.options || []).map((opt: any) => ({
+                    id: crypto.randomUUID(),
+                    optionText: opt.optionText,
+                    isCorrect: Boolean(opt.isCorrect),
+                  }))
+                }
+              }))
+            }
           },
         });
-      }
+      });
+
+      return examination;
+    } catch (error: any) {
+      require('fs').writeFileSync('/tmp/exam_error.log', error.stack || error.message);
+      throw new InternalServerErrorException(`Failed to create examination: ${error.message}`);
     }
-
-    return examination;
   }
-  
-  // 2. Fetch only approved exams (for students)
+
   async findApprovedExaminations() {
-    return (this.prisma as any).examination.findMany({
-      where: { status: 'APPROVED' },
+    return this.prisma.examination.findMany({
+      where: { status: ExamStatus.APPROVED },
+      include: { Subject: true, Teacher: { include: { User: true } } }
     });
   }
 
-  // 3. Fetch pending exams (for admin review dashboard)
   async findPendingExaminations() {
-    return (this.prisma as any).examination.findMany({
-      where: { status: 'PENDING' },
+    return this.prisma.examination.findMany({
+      where: { status: ExamStatus.PENDING },
+      include: {
+        Subject: true,
+        Teacher: { include: { User: true } },
+        Class: true,
+        ClassSection: true,
+        questions: { include: { options: true } }
+      },
+      orderBy: { createdAt: 'desc' }
     });
   }
 
-  // 4. Update exam status (Approve or Reject)
   async updateExamStatus(id: string, status: 'APPROVED' | 'REJECTED') {
-    return (this.prisma as any).examination.update({
+    const exam = await this.prisma.examination.findUnique({ where: { id } });
+    if (!exam || exam.status !== ExamStatus.PENDING) {
+      throw new BadRequestException('Only pending exams can be approved or rejected.');
+    }
+    return this.prisma.examination.update({
       where: { id },
-      data: { status },
+      data: { status: status === 'APPROVED' ? ExamStatus.APPROVED : ExamStatus.REJECTED },
     });
   }
 
-  // 5. Existing auto-grading submission logic
   async submitAndAutoGrade(dto: {
     examinationId: string;
     studentId: string;
     answers: Array<{ questionId: string; selectedOptionId: string }>;
   }) {
-    const exam: any = await this.prisma.examination.findUnique({
+    const exam = await this.prisma.examination.findUnique({
       where: { id: dto.examinationId },
     });
 
@@ -90,7 +142,7 @@ export class ExaminationsService {
       throw new NotFoundException('Examination not found');
     }
 
-    const questions: any[] = await (this.prisma as any).question.findMany({
+    const questions = await this.prisma.question.findMany({
       where: { examId: dto.examinationId },
       include: { options: true },
     });
@@ -100,7 +152,7 @@ export class ExaminationsService {
     const gradedAnswers: any[] = [];
 
     for (const question of questions) {
-      const questionMarks = question.marks || 10;
+      const questionMarks = 10;
       totalPossibleMarks += questionMarks;
 
       const correctOption = question.options.find((o: any) => o.isCorrect);
@@ -115,7 +167,7 @@ export class ExaminationsService {
 
       gradedAnswers.push({
         questionId: question.id,
-        questionText: question.questionText,
+        questionText: question.text,
         selectedOptionId,
         correctOptionId: correctOption?.id || '',
         isCorrect,
