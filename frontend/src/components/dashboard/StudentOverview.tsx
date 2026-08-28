@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { 
   BookOpen, 
   ClipboardList, 
@@ -9,15 +10,40 @@ import {
   Clock
 } from 'lucide-react';
 import StatCard from './StatCard';
-import { MOCK_SUBJECTS, MOCK_ASSIGNMENTS, MOCK_ANNOUNCEMENTS } from '../../data/mockData';
+import { MOCK_ASSIGNMENTS } from '../../data/mockData';
+import { getUserNotices } from '../../api/notices';
+import { getMyAttendance, getMyCourses, getMyResults } from '../../api/students';
 
 const StudentOverview = () => {
+  const { data: notices = [], isLoading: noticesLoading, isError: noticesError } = useQuery({
+    queryKey: ['student-notices'],
+    queryFn: getUserNotices,
+  });
+  const { data: courses = [], isLoading: coursesLoading, isError: coursesError } = useQuery({
+    queryKey: ['my-courses'],
+    queryFn: getMyCourses,
+  });
+  const { data: attendance = [], isLoading: attendanceLoading, isError: attendanceError } = useQuery({
+    queryKey: ['my-attendance'],
+    queryFn: getMyAttendance,
+  });
+  const { data: results = [], isLoading: resultsLoading, isError: resultsError } = useQuery({
+    queryKey: ['my-results'],
+    queryFn: getMyResults,
+  });
+
+  const presentDays = attendance.filter((record) => record.status === 'PRESENT').length;
+  const attendancePercentage = attendance.length ? (presentDays / attendance.length) * 100 : null;
+  const totalObtained = results.reduce((sum, result) => sum + result.marksObtained, 0);
+  const totalPossible = results.reduce((sum, result) => sum + result.Exam.totalMarks, 0);
+  const average = totalPossible ? (totalObtained / totalPossible) * 100 : null;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Total Subjects" 
-          value={MOCK_SUBJECTS.length} 
+          value={coursesLoading ? '…' : coursesError ? '—' : courses.length}
           icon={BookOpen} 
           iconClassName="bg-blue-50 text-blue-600"
         />
@@ -29,14 +55,13 @@ const StudentOverview = () => {
         />
         <StatCard 
           title="Attendance" 
-          value="95%" 
+          value={attendanceLoading ? '…' : attendanceError || attendancePercentage === null ? '—' : `${attendancePercentage.toFixed(1)}%`}
           icon={CheckSquare} 
           iconClassName="bg-green-50 text-green-600"
-          trend={{ value: "+2%", isUp: true }}
         />
         <StatCard 
           title="Average" 
-          value="95%" 
+          value={resultsLoading ? '…' : resultsError || average === null ? '—' : `${average.toFixed(1)}%`}
           icon={GraduationCap} 
           iconClassName="bg-purple-50 text-purple-600"
         />
@@ -53,13 +78,22 @@ const StudentOverview = () => {
             <button className="text-sm text-blue-600 font-medium hover:underline">View All</button>
           </div>
           <div className="divide-y divide-gray-100">
-            {MOCK_ANNOUNCEMENTS.map((ann) => (
+            {noticesLoading && (
+              <p className="p-6 text-sm text-gray-500">Loading announcements...</p>
+            )}
+            {noticesError && (
+              <p className="p-6 text-sm text-red-600">Could not load announcements.</p>
+            )}
+            {!noticesLoading && !noticesError && notices.length === 0 && (
+              <p className="p-6 text-sm text-gray-500">No announcements for you yet.</p>
+            )}
+            {notices.slice(0, 5).map((ann) => (
               <div key={ann.id} className="p-6 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-semibold text-gray-900">{ann.title}</h4>
                   <span className="text-xs text-gray-400 flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
-                    {ann.date}
+                    {new Date(ann.publishedAt ?? ann.createdAt).toLocaleDateString()}
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 line-clamp-2">{ann.content}</p>

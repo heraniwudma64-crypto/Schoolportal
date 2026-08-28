@@ -35,6 +35,8 @@ export interface UpdateNoticeDto {
 
 @Injectable()
 export class NoticesService {
+  private isHandling = false; // Add a lock flag
+  
   constructor(private prisma: PrismaService) {}
 
   async createNotice(userId: string, userRole: Role, data: CreateNoticeDto): Promise<Notice> {

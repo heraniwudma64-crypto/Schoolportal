@@ -50,6 +50,7 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
         { name: 'Report Card', href: '/report-card', icon: FileCheck },
         { name: 'Attendance', href: '/attendance', icon: CheckSquare },
         { name: 'Materials', href: '/materials', icon: Book },
+        { name: 'Settings', href: '/teacher/profile', icon: Settings },
       ];
     }
 
@@ -63,6 +64,7 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
         { name: 'Exam Creation', href: '/exams', icon: FileText },
         { name: 'Materials', href: '/materials', icon: Book },
         { name: 'Performance', href: '/performance', icon: Users },
+        { name: 'Settings', href: '/teacher/profile', icon: Settings },
       ];
     }
 
@@ -70,10 +72,11 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
       return [
         ...common,
         { name: 'User Management', href: '/users', icon: Users },
-        { name: 'Class Roster', href: '/roster', icon: ClipboardList },
-        { name: 'Exam Review', href: '/exam-review', icon: FileCheck },
-        { name: 'Report Cards', href: '/report-cards', icon: FileCheck },
         { name: 'Academic Structure', href: '/structure', icon: Settings },
+        { name: 'Teacher Assignments', href: '/teacher-assignments', icon: BookOpen },
+        { name: 'Roster Review', href: '/roster', icon: ClipboardList },
+        { name: 'Exam Review', href: '/exam-review', icon: FileCheck },
+        { name: 'Report Card Review', href: '/report-cards', icon: FileCheck },
         { name: 'Materials', href: '/materials', icon: Book },
         { name: 'Announcements', href: '/announcements', icon: Bell },
       ];

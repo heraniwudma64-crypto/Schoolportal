@@ -28,7 +28,7 @@ export class RosterService {
             },
             ExamAttempt: {
               include: {
-                Exam: {
+                Examination: {
                   select: { 
                     classSectionId: true,
                     totalMarks: true,
@@ -54,20 +54,20 @@ export class RosterService {
       // Calculate attendance
       const sectionAttendance = student.StudentAttendance || [];
       const totalDays = sectionAttendance.length;
-      const presentDays = sectionAttendance.filter(a => a.status === 'PRESENT' || a.status === 'LATE' || a.status === 'EXCUSED').length;
+      const presentDays = sectionAttendance.filter((a:any) => a.status === 'PRESENT' || a.status === 'LATE' || a.status === 'EXCUSED').length;
       const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : null;
 
       // Calculate exam status
-      const sectionExams = student.ExamAttempt?.filter(a => a.Exam?.classSectionId === classSectionId) || [];
+      const sectionExams = student.ExamAttempt?.filter(a => a.Examination?.classSectionId === classSectionId) || [];
       let examStatus = 'Not Taken';
       
       if (sectionExams.length > 0) {
         // Sort to prefer the most recent exam
-        sectionExams.sort((a, b) => new Date(b.Exam.examDate).getTime() - new Date(a.Exam.examDate).getTime());
+        sectionExams.sort((a, b) => new Date(b.Examination.examDate).getTime() - new Date(a.Examination.examDate).getTime());
         const recentAttempt = sectionExams[0];
         
-        if (recentAttempt.Exam.passingMarks != null) {
-          if (recentAttempt.marksObtained >= recentAttempt.Exam.passingMarks) {
+        if (recentAttempt.Examination.passingMarks != null) {
+    if (recentAttempt.marksObtained >= recentAttempt.Examination.passingMarks) {
             examStatus = 'Passed';
           } else {
             examStatus = 'Failed';

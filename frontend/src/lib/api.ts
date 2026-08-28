@@ -43,7 +43,9 @@ async function request<T>(
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
   }
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,

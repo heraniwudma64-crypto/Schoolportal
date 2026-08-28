@@ -1,92 +1,115 @@
-import React from 'react';
-import { MOCK_SUBJECTS } from '../../data/mockData';
-import { CheckCircle2, XCircle, Clock, Calendar } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import React, { useState, useEffect } from 'react';
+import { api } from '../../lib/api';
 
-const Attendance = () => {
+const StudentAttendance = () => {
+  const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    setErrorMessage('');
+
+    // api.get returns the data payload directly because of res.json() in api.ts
+    api.get<any[]>('/students/me/attendance')
+      .then((data) => {
+        if (!isMounted) return;
+        console.log("Student attendance data received:", data);
+
+        const recordsList = Array.isArray(data) 
+          ? data 
+          : Array.isArray(data?.records) 
+            ? data.records 
+            : Array.isArray(data?.data) 
+              ? data.data 
+              : [];
+
+        setAttendanceRecords(recordsList);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch student attendance:", err);
+        if (!isMounted) return;
+        setErrorMessage(err?.message || 'Failed to load your attendance records.');
+        setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Attendance Records</h2>
-        <div className="flex gap-2">
-          <select className="bg-white border border-gray-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
-            <option>All Months</option>
-            <option>May 2024</option>
-            <option>April 2024</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center text-green-600">
-            <CheckCircle2 className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-gray-500">Present</p>
-            <p className="text-2xl font-bold text-gray-900">172 Days</p>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center text-red-600">
-            <XCircle className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-gray-500">Absent</p>
-            <p className="text-2xl font-bold text-gray-900">5 Days</p>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-          <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600">
-            <Clock className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-gray-500">Late</p>
-            <p className="text-2xl font-bold text-gray-900">3 Days</p>
-          </div>
-        </div>
+    <div className="space-y-6 p-6 max-w-7xl mx-auto">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">My Attendance History</h2>
+        <p className="text-sm text-gray-500">View your personal attendance records and status.</p>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-gray-100">
-          <h3 className="font-bold text-gray-900">Recent Attendance Details</h3>
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-gray-900">Attendance Log</h3>
+          <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-2.5 py-1 rounded-full">
+            {attendanceRecords.length} Records
+          </span>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-gray-50 text-xs font-bold text-gray-400 uppercase tracking-widest">
                 <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Subject</th>
+                <th className="px-6 py-4">Period</th>
+                <th className="px-6 py-4">Subject / Class</th>
                 <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Teacher</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {[
-                { date: '2024-05-18', subject: 'Mathematics', status: 'present', teacher: 'Meron Tadesse' },
-                { date: '2024-05-18', subject: 'Physics', status: 'present', teacher: 'Meron Tadesse' },
-                { date: '2024-05-17', subject: 'English', status: 'late', teacher: 'Dawit Gebre' },
-                { date: '2024-05-17', subject: 'Mathematics', status: 'present', teacher: 'Meron Tadesse' },
-                { date: '2024-05-16', subject: 'Physics', status: 'absent', teacher: 'Meron Tadesse' },
-              ].map((row, i) => (
-                <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-gray-400" />
-                      {row.date}
-                    </div>
+              {isLoading && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">
+                    Loading your attendance records...
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{row.subject}</td>
+                </tr>
+              )}
+
+              {errorMessage && !isLoading && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-8 text-center text-sm text-red-600">
+                    {errorMessage}
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && !errorMessage && attendanceRecords.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-6 py-8 text-center text-sm text-gray-500">
+                    No attendance records found.
+                  </td>
+                </tr>
+              )}
+
+              {!isLoading && attendanceRecords.map((record: any, index: number) => (
+                <tr key={record?.id || index} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                    {record?.date ? new Date(record.date).toLocaleDateString() : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500">
+                    Period {record?.period || 1}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    {record?.subject || record?.ClassSection?.name || record?.className || 'General Session'}
+                  </td>
                   <td className="px-6 py-4">
-                    <span className={cn(
-                      "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
-                      row.status === 'present' ? "bg-green-50 text-green-600" :
-                      row.status === 'absent' ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
-                    )}>
-                      {row.status}
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      record?.status === 'PRESENT' ? 'bg-green-50 text-green-700 border border-green-200' :
+                      record?.status === 'ABSENT' ? 'bg-red-50 text-red-700 border border-red-200' :
+                      'bg-orange-50 text-orange-700 border border-orange-200'
+                    }`}>
+                      {record?.status || 'PRESENT'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">{row.teacher}</td>
                 </tr>
               ))}
             </tbody>
@@ -97,4 +120,4 @@ const Attendance = () => {
   );
 };
 
-export default Attendance;
+export default StudentAttendance;

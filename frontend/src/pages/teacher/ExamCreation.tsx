@@ -8,7 +8,7 @@ interface Question {
   id: string;
   text: string;
   options: string[];
-  correctAnswer: number;
+  correctAnswer: number; // 0 for A, 1 for B, 2 for C, 3 for D
 }
 
 const ExamCreation = () => {
@@ -53,8 +53,38 @@ const ExamCreation = () => {
     setQuestions(questions.map(q => q.id === qId ? { ...q, correctAnswer: idx } : q));
   };
 
-  const handleSubmit = (status: 'draft' | 'pending') => {
-    toast.success(status === 'draft' ? 'Exam saved as draft' : 'Exam submitted for admin review!');
+  const handleSubmit = async (status: 'draft' | 'pending') => {
+    const payload = {
+      title: examData.title || 'Untitled Examination',
+      subject: examData.subjectId,
+      duration: Number(examData.duration),
+      status: status === 'draft' ? 'DRAFT' : 'PENDING',
+      questions: questions.map((q) => ({
+        questionText: q.text,
+        marks: 10,
+        options: q.options.map((optText, optIdx) => ({
+          optionText: optText,
+          isCorrect: q.correctAnswer === optIdx, // 👈 Now correctly identifies if B, C, or D is selected!
+        })),
+      })),
+    };
+
+    try {
+      const response = await fetch('http://localhost:3000/examinations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        toast.success(status === 'draft' ? 'Exam saved as draft' : 'Exam submitted to admin for review!');
+      } else {
+        toast.error('Failed to save examination to the server.');
+      }
+    } catch (error) {
+      console.error('API Error:', error);
+      toast.error('Network error. Could not connect to backend.');
+    }
   };
 
   return (
@@ -190,11 +220,13 @@ const ExamCreation = () => {
                       />
                     </div>
                     <button
+                      type="button"
                       onClick={() => setCorrectAnswer(question.id, oIdx)}
                       className={cn(
-                        "absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all",
-                        question.correctAnswer === oIdx ? "bg-green-600 text-white" : "bg-gray-200 text-transparent hover:bg-gray-300"
+                        "absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer",
+                        question.correctAnswer === oIdx ? "bg-green-600 text-white" : "bg-gray-200 text-gray-400 hover:bg-gray-300"
                       )}
+                      title={`Mark Option ${String.fromCharCode(65 + oIdx)} as correct`}
                     >
                       <CheckCircle2 className="w-5 h-5" />
                     </button>
