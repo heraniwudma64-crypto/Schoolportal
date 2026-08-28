@@ -73,41 +73,23 @@ enum NoticeTargetType {
 // ─── Core Auth / User ─────────────────────────────────────────────────────────
 
 model User {
-<<<<<<< ours
-  id                String       @id
-  loginId           String       @unique
-  name              String?      
+  id                String    @id
+  loginId           String    @unique
+  name              String?
   password          String
-  email             String?      @unique
-  role              Role         @default(TEACHER)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)"))
+  email             String?   @unique
+  role              Role      @default(TEACHER)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)"))
   avatarUrl         String?
-  isActive          Boolean      @default(true)
-  isDeleted         Boolean      @default(false)
+  isActive          Boolean   @default(true)
+  isDeleted         Boolean   @default(false)
   lastLoginAt       DateTime?
   phoneNumber       String?
   otpCode           String?
   otpExpiresAt      DateTime?
   resetOtp          String?
   resetOtpExpiresAt DateTime?
-=======
-  id          String    @id
-  loginId     String    @unique
-  password    String
-  email       String?   @unique
-  name        String?
-  role        Role      @default(TEACHER)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(dbgenerated("(now() AT TIME ZONE 'utc'::text)"))
-  avatarUrl   String?
-  isActive    Boolean   @default(true)
-  isDeleted   Boolean   @default(false)
-  lastLoginAt DateTime?
-  phoneNumber String?
-  otpCode     String?
-  otpExpiresAt DateTime?
->>>>>>> theirs
 
   // Relations
   Course            Course[]
@@ -131,10 +113,11 @@ model AcademicYear {
   createdAt DateTime @default(now())
   updatedAt DateTime
 
-  ClassSection      ClassSection[]
-  Term              Term[]
-  StudentEnrollment StudentEnrollment[]
-  GradeSubject      GradeSubject[]
+  ClassSection          ClassSection[]
+  Term                  Term[]
+  StudentEnrollment     StudentEnrollment[]
+  GradeSubject          GradeSubject[]
+  SectionSubjectTeacher SectionSubjectTeacher[]
 }
 
 model Term {
@@ -178,16 +161,17 @@ model ClassSection {
   gradeLevelId   String?
   status         String   @default("ACTIVE")
 
-  Assignment        Assignment[]
-  AcademicYear      AcademicYear?       @relation(fields: [academicYearId], references: [id])
-  Teacher           Teacher?            @relation(fields: [teacherId], references: [id])
-  GradeLevel        GradeLevel?         @relation(fields: [gradeLevelId], references: [id])
-  Examination       Examination[]
-  students          Student[]
-  StudentAttendance StudentAttendance[]
-  Timetable         Timetable[]
-  StudentEnrollment StudentEnrollment[]
-  Notice            Notice[]
+  Assignment            Assignment[]
+  AcademicYear          AcademicYear?           @relation(fields: [academicYearId], references: [id])
+  Teacher               Teacher?                @relation(fields: [teacherId], references: [id])
+  GradeLevel            GradeLevel?             @relation(fields: [gradeLevelId], references: [id])
+  Examination           Examination[]
+  students              Student[]
+  StudentAttendance     StudentAttendance[]
+  Timetable             Timetable[]
+  StudentEnrollment     StudentEnrollment[]
+  Notice                Notice[]
+  SectionSubjectTeacher SectionSubjectTeacher[]
 }
 
 model Class {
@@ -244,13 +228,14 @@ model Teacher {
   staffId       String?  @unique
   updatedAt     DateTime
 
-  ClassSection  ClassSection[]
-  User          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Timetable     Timetable[]
-  classes       ClassTeacher[]
-  subjects      Subject[]
-  assignments   Assignment[]
-  examinations  Examination[]
+  ClassSection          ClassSection[]
+  User                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Timetable             Timetable[]
+  classes               ClassTeacher[]
+  subjects              Subject[]
+  assignments           Assignment[]
+  examinations          Examination[]
+  SectionSubjectTeacher SectionSubjectTeacher[]
 }
 
 model ClassTeacher {
@@ -333,11 +318,12 @@ model Subject {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  Examination  Examination[]
-  Timetable    Timetable[]
-  GradeSubject GradeSubject[]
-  teacherId    String?
-  teacher      Teacher?       @relation(fields: [teacherId], references: [id])
+  Examination           Examination[]
+  Timetable             Timetable[]
+  GradeSubject          GradeSubject[]
+  teacherId             String?
+  teacher               Teacher?                @relation(fields: [teacherId], references: [id])
+  SectionSubjectTeacher SectionSubjectTeacher[]
 }
 
 model GradeSubject {
@@ -352,6 +338,23 @@ model GradeSubject {
   Subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@unique([academicYearId, gradeLevelId, subjectId])
+}
+
+model SectionSubjectTeacher {
+  id             String   @id @default(uuid())
+  classSectionId String
+  subjectId      String
+  teacherId      String
+  academicYearId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  ClassSection ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  Subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  Teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  AcademicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([classSectionId, subjectId, academicYearId])
 }
 
 // ─── Timetable ────────────────────────────────────────────────────────────────
@@ -486,7 +489,7 @@ model StudentAttendance {
 // ─── Assignments ──────────────────────────────────────────────────────────────
 
 model Assignment {
-  id             String              @id @default(uuid())
+  id             String   @id @default(uuid())
   title          String
   instructions   String?
   subject        String?
@@ -494,11 +497,11 @@ model Assignment {
   dueDate        DateTime
   attachmentUrl  String?
   classSectionId String?
-  createdAt      DateTime            @default(now())
+  createdAt      DateTime @default(now())
   description    String?
   classId        String?
   teacherId      String
-  updatedAt      DateTime            @updatedAt @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
 
   ClassSection      ClassSection?       @relation(fields: [classSectionId], references: [id])
   Class             Class?              @relation(fields: [classId], references: [id])
@@ -565,13 +568,13 @@ model FeePayment {
 // ─── Notices ──────────────────────────────────────────────────────────────────
 
 model Notice {
-  id          String           @id @default(uuid())
-  title       String
-  content     String
-  category    String           @default("General")
-  targetType  NoticeTargetType @default(GLOBAL)
-  targetRole  Role?
-  status      NoticeStatus     @default(DRAFT)
+  id         String           @id @default(uuid())
+  title      String
+  content    String
+  category   String           @default("General")
+  targetType NoticeTargetType @default(GLOBAL)
+  targetRole Role?
+  status     NoticeStatus     @default(DRAFT)
 
   publishedAt DateTime?
   scheduledAt DateTime?
@@ -593,73 +596,53 @@ model Notice {
   Parent       Parent?       @relation(fields: [parentId], references: [id], onDelete: Cascade)
 }
 
-<<<<<<< ours
 model Grade {
-  id            String   @id @default(uuid())
-  score         Float    @default(0)
-  maxScore      Float    @default(100)
+  id       String @id @default(uuid())
+  score    Float  @default(0)
+  maxScore Float  @default(100)
 
-  mid           Float?   @default(0)
-  assignment    Float?   @default(0)
-  quiz          Float?   @default(0)
-  classwork     Float?   @default(0)
-  final         Float?   @default(0)
+  mid        Float? @default(0)
+  assignment Float? @default(0)
+  quiz       Float? @default(0)
+  classwork  Float? @default(0)
+  final      Float? @default(0)
 
-  quarter       String?
-  subject       String?
+  quarter String?
+  subject String?
 
-  studentId     String
-  student       Student  @relation(fields: [studentId], references: [id])
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id])
 
-  assignmentId  String?
-  Assignment    Assignment? @relation(fields: [assignmentId], references: [id])
+  assignmentId String?
+  Assignment   Assignment? @relation(fields: [assignmentId], references: [id])
 
-  submissionId  String?
-  Submission    Submission? @relation(fields: [submissionId], references: [id])
+  submissionId String?
+  Submission   Submission? @relation(fields: [submissionId], references: [id])
 
-  examinationId String?     
+  examinationId String?
   questions     Question[]
   Examination   Examination? @relation(fields: [examinationId], references: [id])
 
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ─── Materials (Preserved with exact existing column mappings) ────────────────
 
 model Material {
-  id         String    @id @default(uuid())
-  title      String
+  id          String    @id @default(uuid())
+  title       String
   description String?
-  fileUrl    String?   @map("file_url")
-  fileName   String?   @map("file_name")
-  fileSize   Int?      @map("file_size")
-  fileType   String?   @map("file_type")
-  category   String?   @map("category")
-  targetRole String?   @map("target_role")
-  createdAt  DateTime? @default(now()) @map("created_at")
-  updatedAt  DateTime? @updatedAt @map("updated_at")
-  userId     String?
-  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileUrl     String?   @map("file_url")
+  fileName    String?   @map("file_name")
+  fileSize    Int?      @map("file_size")
+  fileType    String?   @map("file_type")
+  category    String?   @map("category")
+  targetRole  String?   @map("target_role")
+  createdAt   DateTime? @default(now()) @map("created_at")
+  updatedAt   DateTime? @updatedAt @map("updated_at")
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("materials")
 }
-=======
-// ─── Materials ────────────────────────────────────────────────────────────────
-
-model Material {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title       String   @db.VarChar(255)
-  category    String   @db.VarChar(50)
-  description String?
-  file_url    String
-  file_name   String?  @db.VarChar(255)
-  file_type   String?  @db.VarChar(100)
-  file_size   BigInt?
-  target_role String   @default("all") @db.VarChar(50)
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
-
-  @@map("materials")
-}
->>>>>>> theirs

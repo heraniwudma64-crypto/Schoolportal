@@ -9,6 +9,12 @@ import { Roles } from '../auth/decorators/roles.decorator';
 export class TeachersController {
   constructor(private readonly teachersService: TeachersService) {}
 
+  @Get()
+  @Roles('ADMIN')
+  async getAllTeachers() {
+    return this.teachersService.getAllTeachers();
+  }
+
   @Get('dashboard-stats')
   @Roles('TEACHER', 'ADMIN')
   async getStats(@Req() req: any) {

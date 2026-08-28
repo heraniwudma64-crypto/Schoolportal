@@ -5,6 +5,17 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class TeachersService {
   constructor(private prisma: PrismaService) {}
 
+  async getAllTeachers() {
+    return this.prisma.teacher.findMany({
+      include: {
+        User: {
+          select: { email: true }
+        }
+      },
+      orderBy: { firstName: 'asc' }
+    });
+  }
+
   async getTeacherDashboardStats(teacherId: string) {
     const classesCount = await this.prisma.classTeacher.count({
       where: { teacherId },
