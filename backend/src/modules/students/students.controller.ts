@@ -1,8 +1,12 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors, ParseFilePipeBuilder } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StudentsService } from './students.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('students')
 @UseGuards(JwtAuthGuard)
@@ -37,9 +41,35 @@ export class StudentsController {
     return this.studentsService.getMyResults(req.user.id);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
   @Get('my-assignments')
-  async getMyAssignments() {
-    return this.studentsService.getMyAssignments();
+  async getMyAssignments(@Req() req: Request & { user: { id: string } }) {
+    return this.studentsService.getMyAssignments(req.user.id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
+  @Get('my-assignments/:id')
+  async getMyAssignment(@Param('id') id: string, @Req() req: Request & { user: { id: string } }) {
+    return this.studentsService.getMyAssignment(req.user.id, id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
+  @Post('my-assignments/:id/submission')
+  @UseInterceptors(FileInterceptor('file'))
+  async submitMyAssignment(
+    @Param('id') id: string,
+    @Body('content') content: string | undefined,
+    @Req() req: Request & { user: { id: string } },
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addMaxSizeValidator({ maxSize: 10 * 1024 * 1024, message: 'File is too large. Maximum size is 10MB.' })
+        .build({ errorHttpStatusCode: HttpStatus.PAYLOAD_TOO_LARGE, fileIsRequired: false }),
+    ) file?: Express.Multer.File,
+  ) {
+    return this.studentsService.submitMyAssignment(req.user.id, id, file, content);
   }
 
   @Get('class-sections')

@@ -18,6 +18,8 @@ import MaterialsWrapper from './components/wrappers/MaterialsWrapper';
 import MyCourses from './pages/student/MyCourses';
 import ClassSchedule from './pages/student/ClassSchedule';
 import ReportCard from './pages/student/ReportCard';
+import AssignmentDetails from './pages/student/AssignmentDetails';
+import MyAccount from './pages/student/MyAccount';
 
 // Admin Specific
 import UserManagement from './pages/admin/UserManagement';
@@ -51,6 +53,7 @@ function App() {
             <Route path="results" element={<ResultsWrapper />} />
             <Route path="attendance" element={<AttendanceWrapper />} />
             <Route path="assignments" element={<AssignmentsWrapper />} />
+            <Route path="assignments/:assignmentId" element={<RequireRole allowedRoles={['student']}><AssignmentDetails /></RequireRole>} />
             <Route path="exams" element={<ExamsWrapper />} />
             <Route path="materials" element={<MaterialsWrapper />} />
 
@@ -58,6 +61,7 @@ function App() {
             <Route path="courses" element={<RequireRole allowedRoles={['student']}><MyCourses /></RequireRole>} />
             <Route path="schedule" element={<RequireRole allowedRoles={['student', 'teacher']}><ClassSchedule /></RequireRole>} />
             <Route path="report-card" element={<RequireRole allowedRoles={['student']}><ReportCard /></RequireRole>} />
+            <Route path="account" element={<RequireRole allowedRoles={['student']}><MyAccount /></RequireRole>} />
 
             {/* Teacher Only */}
             <Route path="performance" element={<RequireRole allowedRoles={['teacher']}><Performance /></RequireRole>} />

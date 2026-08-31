@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -40,6 +41,31 @@ const USER_SELECT = {
       address: true,
       emergencyContact: true,
       status: true,
+      institutionId: true,
+      institutionName: true,
+      fatherName: true,
+      grandfatherName: true,
+      admissionType: true,
+      hasDisability: true,
+      disabilityType: true,
+      nationality: true,
+      familyKebele: true,
+      locationType: true,
+      fatherEducationLevel: true,
+      motherEducationLevel: true,
+      economicStatus: true,
+      guardianFullName: true,
+      familyHeadGender: true,
+      guardianEmail: true,
+      guardianPhone: true,
+      nationalId: true,
+      residenceRegion: true,
+      residenceZone: true,
+      residenceWoreda: true,
+      birthRegion: true,
+      birthZone: true,
+      birthWoreda: true,
+      parentStatus: true,
       ClassSection: { select: { id: true, name: true } },
       Parent: {
         select: {
@@ -454,7 +480,7 @@ export class UsersService {
     return user;
   }
 
-  async updateAccount(userId: string, data: { name?: string; loginId?: string; email?: string }) {
+  async updateAccount(userId: string, data: { name?: string; loginId?: string; email?: string; student?: object }) {
     // Check if loginId is unique if changing
     if (data.loginId) {
       const existing = await this.prisma.user.findUnique({ where: { loginId: data.loginId } });
@@ -470,14 +496,21 @@ export class UsersService {
       }
     }
 
-    const updatedUser = await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        name: data.name,
-        loginId: data.loginId,
-        email: data.email,
-      },
-      select: USER_SELECT,
+    const { student, ...userData } = data;
+    const updatedUser = await this.prisma.$transaction(async (tx) => {
+      if (student) {
+        const existingStudent = await tx.student.findUnique({ where: { userId }, select: { id: true } });
+        if (!existingStudent) throw new BadRequestException('Student profile not found');
+        await tx.student.update({
+          where: { id: existingStudent.id },
+          data: student as Prisma.StudentUpdateInput,
+        });
+      }
+      return tx.user.update({
+        where: { id: userId },
+        data: userData,
+        select: USER_SELECT,
+      });
     });
     return updatedUser;
   }
@@ -552,6 +585,36 @@ export class UsersService {
     });
 
     return updatedUser;
+  }
+
+  // Submission files use the same server-side Supabase client as avatars.  The
+  // client and its service-role credential never leave the backend.
+  async uploadSubmissionFile(studentId: string, assignmentId: string, file: Express.Multer.File) {
+    const bucket = 'submissions';
+    const bucketInfo = await this.supabase.storage.getBucket(bucket);
+    if (bucketInfo.error) {
+      const { error } = await this.supabase.storage.createBucket(bucket, {
+        public: false,
+        fileSizeLimit: '10485760',
+      });
+      if (error && !error.message.toLowerCase().includes('already exists')) {
+        throw new InternalServerErrorException('Submission storage is unavailable. Please try again later.');
+      }
+    }
+
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '').toLowerCase() || 'submission';
+    const path = `${studentId}/${assignmentId}/${randomUUID()}-${safeName}`;
+    const { error } = await this.supabase.storage.from(bucket).upload(path, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
+    if (error) throw new InternalServerErrorException('Submission file upload failed. Please try again later.');
+    return { bucket, path };
+  }
+
+  async removeSubmissionFile(path?: string | null) {
+    if (!path) return;
+    await this.supabase.storage.from('submissions').remove([path]);
   }
 
   // ─── SANITIZE — strip password from result ───────────────────────────────────

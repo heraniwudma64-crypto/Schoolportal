@@ -17,6 +17,7 @@ import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
+import { UpdateStudentAccountDto } from './dto/update-student-account.dto';
 
 type AuthRequest = Request & { user: { id: string; role: Role } };
 
@@ -31,7 +32,7 @@ export class AccountController {
   }
 
   @Patch('me')
-  updateProfile(@Req() req: AuthRequest, @Body() data: { name?: string; loginId?: string; email?: string }) {
+  updateProfile(@Req() req: AuthRequest, @Body() data: UpdateStudentAccountDto) {
     return this.usersService.updateAccount(req.user.id, data);
   }
 

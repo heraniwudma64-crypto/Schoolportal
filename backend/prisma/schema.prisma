@@ -200,6 +200,31 @@ model Student {
   dob              DateTime?
   emergencyContact String?
   gender           String?
+  institutionId    String?
+  institutionName  String?
+  fatherName       String?
+  grandfatherName  String?
+  admissionType    String?
+  hasDisability    Boolean       @default(false)
+  disabilityType   String?
+  nationality      String?
+  familyKebele     String?
+  locationType     String?
+  fatherEducationLevel String?
+  motherEducationLevel String?
+  economicStatus   String?
+  guardianFullName String?
+  familyHeadGender String?
+  guardianEmail    String?
+  guardianPhone    String?
+  nationalId       String?
+  residenceRegion  String?
+  residenceZone    String?
+  residenceWoreda  String?
+  birthRegion      String?
+  birthZone        String?
+  birthWoreda      String?
+  parentStatus     String?
   status           StudentStatus @default(ACTIVE)
   updatedAt        DateTime
 
@@ -520,6 +545,12 @@ model Submission {
   studentId    String
   student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
   createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  content      String?
+  fileUrl      String?
+  fileName     String?
+  fileType     String?
+  fileSize     Int?
   grades       Grade[]
 }
 

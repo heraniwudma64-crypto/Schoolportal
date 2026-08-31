@@ -4,6 +4,7 @@ import { FileText, Calendar, Paperclip, ExternalLink, Search } from 'lucide-reac
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { api } from '../../lib/api'; // Import your authenticated api client
+import { useNavigate } from 'react-router-dom';
 
 import {
   Empty,
@@ -14,34 +15,37 @@ import {
 } from '../../components/ui/empty';
 
 const Assignments = ({ searchQuery }: { searchQuery: string }) => {
+  const navigate = useNavigate();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [filteredAssignments, setFilteredAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     async function fetchRealAssignments() {
       try {
         // Use your custom 'api' client to send the Bearer token correctly
-        const data = await api.get<any[]>('/students/my-assignments');
+        const data = await api.get<any>('/students/my-assignments');
         
         // Handle potential wrapper structures (array vs nested data properties)
         const rawList = Array.isArray(data) ? data : (data?.data || data?.records || []);
 
         const formattedData = rawList.map((item: any) => ({
-          id: item.id || Math.random().toString(),
+          id: item.id,
           title: item.title || 'Untitled',
           subjectName: item.subject?.name || item.subjectName || 'General',
           description: item.instructions || item.description || '',
           dueDate: item.dueDate ? new Date(item.dueDate).toLocaleDateString() : 'No date',
-          status: 'pending',
+          status: item.submissions?.length ? 'submitted' : 'pending',
           attachmentUrl: item.attachmentUrl,
-          teacherName: item.teacher ? `${item.teacher.firstName || ''} ${item.teacher.lastName || ''}`.trim() : 'Teacher',
+          teacherName: item.Teacher ? `${item.Teacher.firstName || ''} ${item.Teacher.lastName || ''}`.trim() : 'Teacher',
         }));
 
         setAssignments(formattedData);
         setFilteredAssignments(formattedData);
       } catch (error) {
         console.error('Failed to fetch assignments:', error);
+        setLoadError(true);
         toast.error('Could not load assignments from server.');
       } finally {
         setLoading(false);
@@ -63,6 +67,10 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">Loading your assignments...</div>;
+  }
+
+  if (loadError) {
+    return <div className="rounded-2xl border border-red-100 bg-red-50 p-8 text-center text-red-700">Assignments could not be loaded. Please refresh the page and try again.</div>;
   }
 
   return (
@@ -89,9 +97,9 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
             <Search className="h-10 w-10" />
           </EmptyMedia>
           <EmptyHeader>
-            <EmptyTitle>No assignments found</EmptyTitle>
+            <EmptyTitle>{assignments.length === 0 ? 'No assignments have been assigned yet' : 'No assignments found'}</EmptyTitle>
             <EmptyDescription>
-              Your search for "{searchQuery}" did not return any assignments.
+              {assignments.length === 0 ? 'New assignments from your teachers will appear here.' : `Your search for "${searchQuery}" did not return any assignments.`}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -144,13 +152,19 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
               </div>
               
               <div className="flex gap-2 w-full md:w-auto">
+                <button
+                  onClick={() => navigate(`/assignments/${assignment.id}`)}
+                  className="flex-1 md:flex-none px-5 py-2 border border-blue-200 text-blue-800 text-sm font-semibold rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  View Assignment
+                </button>
                 {assignment.status === 'pending' ? (
-                  <button onClick={() => toast.info('Assignment submission feature coming soon')} className="flex-1 md:flex-none px-6 py-2 bg-blue-900 text-white text-sm font-semibold rounded-lg hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
+                  <button onClick={() => navigate(`/assignments/${assignment.id}?submit=1`)} className="flex-1 md:flex-none px-6 py-2 bg-blue-900 text-white text-sm font-semibold rounded-lg hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
                     Submit Work
                     <ExternalLink className="w-4 h-4" />
                   </button>
                 ) : (
-                  <button onClick={() => toast.info('Viewing submission feature coming soon')} className="flex-1 md:flex-none px-6 py-2 bg-gray-100 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors">
+                  <button onClick={() => navigate(`/assignments/${assignment.id}`)} className="flex-1 md:flex-none px-6 py-2 bg-gray-100 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors">
                     View Submission
                   </button>
                 )}
