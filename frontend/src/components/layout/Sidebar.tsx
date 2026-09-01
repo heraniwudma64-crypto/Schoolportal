@@ -17,7 +17,8 @@ import {
   ChevronRight,
   UserCircle,
   UserCog,
-  Award
+  Award,
+  Settings
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { api } from '../../lib/api';
@@ -81,7 +82,8 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
         teacherLinks.push(
           { name: 'Submission Matrix', href: '/homeroom/submissions', icon: FileCheck },
           { name: 'Class Roster & Ranks', href: '/homeroom/roster', icon: Users },
-          { name: 'Homeroom Report Cards', href: '/homeroom/report-cards', icon: Award }
+          { name: 'Homeroom Report Cards', href: '/homeroom/report-cards', icon: Award },
+          { name: 'Prepare Report Cards', href: '/homeroom/reports', icon: FileCheck },
         );
       }
 
