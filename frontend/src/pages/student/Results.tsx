@@ -8,7 +8,7 @@ const Results = () => {
   const { data: results = [], isLoading, isError } = useQuery({
     queryKey: ['my-results'],
     queryFn: async () => {
-      const data = await api.get<any[]>('/students/me/results');
+      const data = await api.get<any>('/students/me/results');
       return Array.isArray(data) ? data : (data?.data || data?.records || []);
     },
   });

@@ -12,7 +12,7 @@ const StudentAttendance = () => {
     setErrorMessage('');
 
     // api.get returns the data payload directly because of res.json() in api.ts
-    api.get<any[]>('/students/me/attendance')
+    api.get<any>('/students/me/attendance')
       .then((data) => {
         if (!isMounted) return;
         console.log("Student attendance data received:", data);

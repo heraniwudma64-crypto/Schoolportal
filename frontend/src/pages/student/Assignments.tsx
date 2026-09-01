@@ -22,7 +22,7 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
     async function fetchRealAssignments() {
       try {
         // Use your custom 'api' client to send the Bearer token correctly
-        const data = await api.get<any[]>('/students/my-assignments');
+        const data = await api.get<any>('/students/my-assignments');
         
         // Handle potential wrapper structures (array vs nested data properties)
         const rawList = Array.isArray(data) ? data : (data?.data || data?.records || []);

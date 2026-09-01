@@ -82,6 +82,19 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
       ];
     }
 
+    if (role === 'parent') {
+      return [
+        ...common,
+        { name: 'My Children', href: '/parent/children', icon: Users },
+        { name: 'Attendance', href: '/parent/attendance', icon: CheckSquare },
+        { name: 'Results', href: '/parent/results', icon: GraduationCap },
+        { name: 'Report Card', href: '/parent/report-card', icon: FileCheck },
+        { name: 'Class Schedule', href: '/parent/schedule', icon: Calendar },
+        { name: 'Assignments', href: '/parent/assignments', icon: ClipboardList },
+        { name: 'Account', href: '/account', icon: Settings },
+      ];
+    }
+
     return common;
   };
 

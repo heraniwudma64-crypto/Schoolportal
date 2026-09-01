@@ -67,6 +67,10 @@ export class UpdateUserDto {
   @IsString()
   emergencyContact?: string;
 
+  @IsOptional()
+  @IsString()
+  parentId?: string | null;
+
   // Teacher
   @IsOptional()
   @IsString()

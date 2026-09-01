@@ -17,6 +17,7 @@ import { RosterModule } from './modules/roster/roster.module';
 import { MaterialsModule } from './modules/materials/materials.module';
 import { ReportCardsModule } from './modules/report-cards/report-cards.module';
 import { TeacherAssignmentsModule } from './modules/teacher-assignments/teacher-assignments.module';
+import { ParentsModule } from './modules/parents/parents.module';
 
 @Module({
   controllers: [AppController],
@@ -36,9 +37,8 @@ import { TeacherAssignmentsModule } from './modules/teacher-assignments/teacher-
     MaterialsModule,
     ReportCardsModule,
     TeacherAssignmentsModule,
+    ParentsModule,
     ScheduleModule.forRoot(),
-   
   ],
-  
 })
 export class AppModule {}

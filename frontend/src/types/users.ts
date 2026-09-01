@@ -76,6 +76,68 @@ export interface PaginatedUsers {
   };
 }
 
+export interface ParentLookupOption {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string | null;
+  relationship: string | null;
+  User: {
+    loginId: string;
+    email: string | null;
+  };
+}
+
+export interface StudentLookupItem {
+  id: string;
+  admissionNo: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  gender: string | null;
+  status: StudentStatus;
+  isActive: boolean;
+  avatarUrl: string | null;
+  classSectionId: string | null;
+  classSectionName: string | null;
+  gradeLevelName: string | null;
+  parentId: string | null;
+  parent: {
+    id: string;
+    fullName: string;
+    loginId: string;
+    phoneNumber: string | null;
+    relationship: string | null;
+  } | null;
+}
+
+export interface ParentLinkedChildrenResponse {
+  parent: {
+    id: string;
+    userId: string;
+    firstName: string;
+    lastName: string;
+    fullName: string;
+    loginId: string;
+    email: string | null;
+    phoneNumber: string | null;
+    relationship: string | null;
+  };
+  children: Array<{
+    id: string;
+    admissionNo: string;
+    firstName: string;
+    lastName: string;
+    fullName: string;
+    gender: string | null;
+    status: StudentStatus;
+    isActive: boolean;
+    avatarUrl: string | null;
+    classSectionName: string | null;
+    gradeLevelName: string | null;
+  }>;
+}
+
 export interface CreateUserPayload {
   loginId: string;
   password: string;
@@ -87,6 +149,7 @@ export interface CreateUserPayload {
   // Student
   admissionNo?: string;
   classSectionId?: string;
+  parentId?: string;
   gender?: string;
   dob?: string;
   address?: string;
@@ -108,6 +171,7 @@ export interface UpdateUserPayload {
   lastName?: string;
   admissionNo?: string;
   classSectionId?: string;
+  parentId?: string | null;
   gender?: string;
   dob?: string;
   address?: string;

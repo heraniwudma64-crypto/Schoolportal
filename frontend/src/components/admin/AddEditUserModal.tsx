@@ -6,6 +6,7 @@ import {
   CreateUserPayload,
   DbRole,
   ManagedUser,
+  ParentLookupOption,
   ROLE_LABELS,
   UpdateUserPayload,
   getUserDisplayName,
@@ -15,6 +16,7 @@ interface AddEditUserModalProps {
   open: boolean;
   editUser: ManagedUser | null;
   classSections: ClassSection[];
+  parentsList: ParentLookupOption[];
   isSaving: boolean;
   onSave: (payload: CreateUserPayload | UpdateUserPayload) => Promise<void>;
   onClose: () => void;
@@ -31,6 +33,7 @@ interface FormState {
   // Student
   admissionNo: string;
   classSectionId: string;
+  parentId: string;
   gender: string;
   dob: string;
   address: string;
@@ -46,7 +49,7 @@ interface FormState {
 const EMPTY: FormState = {
   loginId: '', password: '', role: 'STUDENT', email: '', phoneNumber: '',
   firstName: '', lastName: '',
-  admissionNo: '', classSectionId: '', gender: '', dob: '', address: '', emergencyContact: '',
+  admissionNo: '', classSectionId: '', parentId: '', gender: '', dob: '', address: '', emergencyContact: '',
   staffId: '', qualification: '',
   occupation: '', relationship: '',
 };
@@ -70,7 +73,7 @@ const inputCls = 'w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-x
 const selectCls = inputCls + ' appearance-none';
 
 const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
-  open, editUser, classSections, isSaving, onSave, onClose,
+  open, editUser, classSections, parentsList, isSaving, onSave, onClose,
 }) => {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
@@ -94,6 +97,7 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
       lastName: s?.lastName ?? t?.lastName ?? p?.lastName ?? '',
       admissionNo: s?.admissionNo ?? '',
       classSectionId: s?.ClassSection?.id ?? '',
+      parentId: s?.Parent?.id ?? '',
       gender: s?.gender ?? '',
       dob: s?.dob ? s.dob.slice(0, 10) : '',
       address: s?.address ?? t?.address ?? '',
@@ -135,7 +139,7 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
         firstName: form.firstName || undefined,
         lastName: form.lastName || undefined,
       };
-      if (form.role === 'STUDENT') Object.assign(payload, { admissionNo: form.admissionNo, classSectionId: form.classSectionId || undefined, gender: form.gender || undefined, dob: form.dob || undefined, address: form.address || undefined, emergencyContact: form.emergencyContact || undefined });
+      if (form.role === 'STUDENT') Object.assign(payload, { admissionNo: form.admissionNo, classSectionId: form.classSectionId || undefined, parentId: form.parentId || null, gender: form.gender || undefined, dob: form.dob || undefined, address: form.address || undefined, emergencyContact: form.emergencyContact || undefined });
       if (form.role === 'TEACHER') Object.assign(payload, { staffId: form.staffId || undefined, qualification: form.qualification || undefined, address: form.address || undefined });
       if (form.role === 'PARENT') Object.assign(payload, { occupation: form.occupation || undefined, relationship: form.relationship || undefined });
       await onSave(payload);
@@ -149,7 +153,7 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
         firstName: form.firstName,
         lastName: form.lastName,
       };
-      if (form.role === 'STUDENT') Object.assign(payload, { admissionNo: form.admissionNo, classSectionId: form.classSectionId || undefined, gender: form.gender || undefined, dob: form.dob || undefined, address: form.address || undefined, emergencyContact: form.emergencyContact || undefined });
+      if (form.role === 'STUDENT') Object.assign(payload, { admissionNo: form.admissionNo, classSectionId: form.classSectionId || undefined, parentId: form.parentId || undefined, gender: form.gender || undefined, dob: form.dob || undefined, address: form.address || undefined, emergencyContact: form.emergencyContact || undefined });
       if (form.role === 'TEACHER') Object.assign(payload, { staffId: form.staffId || undefined, qualification: form.qualification || undefined, address: form.address || undefined });
       if (form.role === 'PARENT') Object.assign(payload, { occupation: form.occupation || undefined, relationship: form.relationship || undefined });
       await onSave(payload);
@@ -258,6 +262,16 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
                   </select>
                 </Field>
               </div>
+              <Field label="Parent / Guardian (Optional)" hint="Link this student to an existing parent account">
+                <select className={selectCls} value={form.parentId} onChange={set('parentId')}>
+                  <option value="">No Parent Linked</option>
+                  {parentsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.firstName} {p.lastName} ({p.relationship || 'Parent'}) — {p.User.loginId}{p.phoneNumber ? ` • ${p.phoneNumber}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </Field>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Gender">
                   <select className={selectCls} value={form.gender} onChange={set('gender')}>

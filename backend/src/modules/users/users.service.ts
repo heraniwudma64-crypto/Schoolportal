@@ -13,6 +13,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { LinkChildrenDto } from './dto/link-children.dto';
 import { createClient } from '@supabase/supabase-js';
 
 // ─── Safe user shape returned to the frontend ────────────────────────────────
@@ -229,6 +230,22 @@ export class UsersService {
       if (dup) throw new ConflictException('A student with that Admission Number already exists');
     }
 
+    // Validate parent if provided for Student creation
+    let validatedParentId: string | null = null;
+    if (dto.role === 'STUDENT' && dto.parentId) {
+      const parent = await this.prisma.parent.findUnique({
+        where: { id: dto.parentId },
+        include: { User: true },
+      });
+      if (!parent) {
+        throw new NotFoundException('Selected parent does not exist');
+      }
+      if (!parent.User || parent.User.isDeleted || !parent.User.isActive) {
+        throw new BadRequestException('Cannot link student to an inactive or deleted parent account');
+      }
+      validatedParentId = parent.id;
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const userId = randomUUID();
     const now = new Date();
@@ -262,6 +279,7 @@ export class UsersService {
             address: dto.address,
             emergencyContact: dto.emergencyContact,
             classSectionId: dto.classSectionId ?? null,
+            parentId: validatedParentId,
             updatedAt: now,
             ...(dto.dob ? { dob: new Date(dto.dob) } : {}),
           },
@@ -331,6 +349,26 @@ export class UsersService {
       dto.email = email;
     }
 
+    // Validate parent if supplied for Student update
+    let updatedParentId: string | null | undefined = undefined;
+    if (existing.role === 'STUDENT' && dto.parentId !== undefined) {
+      if (dto.parentId) {
+        const parent = await this.prisma.parent.findUnique({
+          where: { id: dto.parentId },
+          include: { User: true },
+        });
+        if (!parent) {
+          throw new NotFoundException('Selected parent does not exist');
+        }
+        if (!parent.User || parent.User.isDeleted || !parent.User.isActive) {
+          throw new BadRequestException('Cannot link student to an inactive or deleted parent account');
+        }
+        updatedParentId = parent.id;
+      } else {
+        updatedParentId = null; // Unlink parent if explicitly null or empty string
+      }
+    }
+
     const now = new Date();
 
     await this.prisma.$transaction(async (tx) => {
@@ -363,6 +401,7 @@ export class UsersService {
             ...(dto.address !== undefined && { address: dto.address }),
             ...(dto.emergencyContact !== undefined && { emergencyContact: dto.emergencyContact }),
             ...(dto.dob !== undefined && { dob: dto.dob ? new Date(dto.dob) : null }),
+            ...(updatedParentId !== undefined && { parentId: updatedParentId }),
           },
         });
       } else if (existing.role === 'TEACHER' && existing.Teacher) {
@@ -441,6 +480,270 @@ export class UsersService {
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
+  }
+
+  // ─── GET PARENTS LIST (for dropdowns) ────────────────────────────────────────
+
+  async getParentsList() {
+    return this.prisma.parent.findMany({
+      where: {
+        User: {
+          isActive: true,
+          isDeleted: false,
+        },
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phoneNumber: true,
+        relationship: true,
+        User: {
+          select: {
+            loginId: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    });
+  }
+
+  // ─── GET STUDENTS LOOKUP (for Admin Parent-Child Linking) ───────────────────
+
+  async getStudentsLookup() {
+    const students = await this.prisma.student.findMany({
+      where: {
+        User: {
+          isDeleted: false,
+        },
+      },
+      select: {
+        id: true,
+        admissionNo: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
+        status: true,
+        parentId: true,
+        classSectionId: true,
+        ClassSection: {
+          select: {
+            id: true,
+            name: true,
+            roomNumber: true,
+            GradeLevel: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+        Parent: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+            relationship: true,
+            User: {
+              select: {
+                loginId: true,
+                email: true,
+              },
+            },
+          },
+        },
+        User: {
+          select: {
+            id: true,
+            loginId: true,
+            email: true,
+            isActive: true,
+            avatarUrl: true,
+          },
+        },
+      },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    });
+
+    return students.map((s) => ({
+      id: s.id,
+      admissionNo: s.admissionNo,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      fullName: `${s.firstName} ${s.lastName}`.trim(),
+      gender: s.gender,
+      status: s.status,
+      isActive: s.User?.isActive ?? true,
+      avatarUrl: s.User?.avatarUrl || null,
+      classSectionId: s.classSectionId,
+      classSectionName: s.ClassSection?.name || null,
+      gradeLevelName: s.ClassSection?.GradeLevel?.name || null,
+      parentId: s.parentId,
+      parent: s.Parent
+        ? {
+            id: s.Parent.id,
+            fullName: `${s.Parent.firstName} ${s.Parent.lastName}`.trim(),
+            loginId: s.Parent.User?.loginId || '',
+            phoneNumber: s.Parent.phoneNumber || null,
+            relationship: s.Parent.relationship || null,
+          }
+        : null,
+    }));
+  }
+
+  // ─── GET PARENT LINKED CHILDREN ─────────────────────────────────────────────
+
+  async getParentChildren(parentIdOrUserId: string) {
+    const parent = await this.prisma.parent.findFirst({
+      where: {
+        OR: [{ id: parentIdOrUserId }, { userId: parentIdOrUserId }],
+        User: { isDeleted: false },
+      },
+      include: {
+        User: {
+          select: {
+            id: true,
+            loginId: true,
+            email: true,
+            isActive: true,
+          },
+        },
+        Student: {
+          where: {
+            User: { isDeleted: false },
+          },
+          select: {
+            id: true,
+            admissionNo: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            status: true,
+            classSectionId: true,
+            ClassSection: {
+              select: {
+                id: true,
+                name: true,
+                roomNumber: true,
+                GradeLevel: { select: { id: true, name: true } },
+              },
+            },
+            User: {
+              select: {
+                id: true,
+                loginId: true,
+                isActive: true,
+                avatarUrl: true,
+              },
+            },
+          },
+          orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+        },
+      },
+    });
+
+    if (!parent) {
+      throw new NotFoundException('Parent record not found');
+    }
+
+    return {
+      parent: {
+        id: parent.id,
+        userId: parent.userId,
+        firstName: parent.firstName,
+        lastName: parent.lastName,
+        fullName: `${parent.firstName} ${parent.lastName}`.trim(),
+        loginId: parent.User?.loginId,
+        email: parent.User?.email,
+        phoneNumber: parent.phoneNumber,
+        relationship: parent.relationship,
+      },
+      children: parent.Student.map((s) => ({
+        id: s.id,
+        admissionNo: s.admissionNo,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        fullName: `${s.firstName} ${s.lastName}`.trim(),
+        gender: s.gender,
+        status: s.status,
+        isActive: s.User?.isActive ?? true,
+        avatarUrl: s.User?.avatarUrl || null,
+        classSectionName: s.ClassSection?.name || null,
+        gradeLevelName: s.ClassSection?.GradeLevel?.name || null,
+      })),
+    };
+  }
+
+  // ─── LINK / UNLINK PARENT CHILDREN ──────────────────────────────────────────
+
+  async linkParentChildren(parentIdOrUserId: string, dto: LinkChildrenDto) {
+    const parent = await this.prisma.parent.findFirst({
+      where: {
+        OR: [{ id: parentIdOrUserId }, { userId: parentIdOrUserId }],
+      },
+      include: {
+        User: true,
+      },
+    });
+
+    if (!parent) {
+      throw new NotFoundException('Parent record not found');
+    }
+
+    if (!parent.User || parent.User.isDeleted) {
+      throw new BadRequestException('Cannot link children to a deleted parent account');
+    }
+
+    const { studentIds } = dto;
+
+    // Validate that all requested student IDs exist and are active/non-deleted
+    if (studentIds.length > 0) {
+      const foundStudents = await this.prisma.student.findMany({
+        where: {
+          id: { in: studentIds },
+          User: { isDeleted: false },
+        },
+        select: { id: true, firstName: true, lastName: true, admissionNo: true },
+      });
+
+      if (foundStudents.length !== studentIds.length) {
+        const foundIdSet = new Set(foundStudents.map((s) => s.id));
+        const missingIds = studentIds.filter((id) => !foundIdSet.has(id));
+        throw new NotFoundException(`One or more student records were not found or are deleted: ${missingIds.join(', ')}`);
+      }
+    }
+
+    // Atomic transaction: unlink removed children, link selected children
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Unlink students previously linked to this parent who are not in the new studentIds list
+      await tx.student.updateMany({
+        where: {
+          parentId: parent.id,
+          id: { notIn: studentIds },
+        },
+        data: {
+          parentId: null,
+        },
+      });
+
+      // 2. Link all selected students to this parent
+      if (studentIds.length > 0) {
+        await tx.student.updateMany({
+          where: {
+            id: { in: studentIds },
+          },
+          data: {
+            parentId: parent.id,
+          },
+        });
+      }
+    });
+
+    // Return the updated parent children view
+    return this.getParentChildren(parent.id);
   }
 
   // ─── ACCOUNT MANAGEMENT FOR AUTHENTICATED USER ─────────────────────────────

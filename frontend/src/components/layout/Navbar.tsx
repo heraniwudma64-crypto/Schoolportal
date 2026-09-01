@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Bell, Search, Menu, UserCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import ChildSelector from '../parent/ChildSelector';
 
 const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSearchQuery }: { onMenuClick?: () => void; onSidebarOpen?: () => void; onSidebarClose?: () => void; searchQuery: string; setSearchQuery: (query: string) => void; }) => {
   const { user } = useAuth();
@@ -30,6 +31,7 @@ const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSe
       </div>
 
       <div className="flex items-center gap-4">
+        {user?.role === 'parent' && <ChildSelector />}
         <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg relative">
           <Bell className="w-5 h-5" />
           <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>

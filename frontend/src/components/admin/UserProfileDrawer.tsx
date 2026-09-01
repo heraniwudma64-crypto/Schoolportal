@@ -20,6 +20,7 @@ import { cn } from '../../lib/utils';
 interface UserProfileDrawerProps {
   user: ManagedUser | null;
   onClose: () => void;
+  onManageChildren?: (user: ManagedUser) => void;
 }
 
 const Field: React.FC<{ icon: React.ElementType; label: string; value?: string | null }> = ({
@@ -41,7 +42,7 @@ const Field: React.FC<{ icon: React.ElementType; label: string; value?: string |
   );
 };
 
-const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose }) => {
+const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose, onManageChildren }) => {
   if (!user) return null;
 
   const roleColor = ROLE_COLORS[user.role];
@@ -146,21 +147,48 @@ const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose }) 
           {/* Parent profile */}
           {user.Parent && (
             <section className="space-y-3">
-              <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Parent Details</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Parent Details</h4>
+                {onManageChildren && (
+                  <button
+                    type="button"
+                    onClick={() => onManageChildren(user)}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    Manage Children
+                  </button>
+                )}
+              </div>
               <div className="space-y-3">
                 <Field icon={Phone} label="Phone" value={user.Parent.phoneNumber} />
                 <Field icon={Building2} label="Occupation" value={user.Parent.occupation} />
                 <Field icon={Users} label="Relationship to Student" value={user.Parent.relationship} />
               </div>
-              {user.Parent.Student && user.Parent.Student.length > 0 && (
+              {user.Parent.Student && user.Parent.Student.length > 0 ? (
                 <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Children</p>
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                    Linked Children ({user.Parent.Student.length})
+                  </p>
                   {user.Parent.Student.map((s) => (
-                    <div key={s.id} className="flex items-center justify-between">
+                    <div key={s.id} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0">
                       <p className="text-sm font-bold text-gray-900">{s.firstName} {s.lastName}</p>
-                      <p className="text-xs text-gray-400">{s.admissionNo}</p>
+                      <p className="text-xs text-gray-400 font-mono">{s.admissionNo}</p>
                     </div>
                   ))}
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <p className="text-xs text-gray-400 italic">No children linked yet</p>
+                  {onManageChildren && (
+                    <button
+                      type="button"
+                      onClick={() => onManageChildren(user)}
+                      className="mt-2 px-3 py-1 bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      + Link Children
+                    </button>
+                  )}
                 </div>
               )}
             </section>

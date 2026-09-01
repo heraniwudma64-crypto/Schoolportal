@@ -5,6 +5,9 @@ import {
   CreateUserPayload,
   ManagedUser,
   PaginatedUsers,
+  ParentLookupOption,
+  StudentLookupItem,
+  ParentLinkedChildrenResponse,
   UpdateUserPayload,
   UserStats,
 } from '../types/users';
@@ -46,6 +49,7 @@ export function useUsers() {
   const [meta, setMeta] = useState({ total: 0, page: 1, limit: 15, totalPages: 1 });
   const [stats, setStats] = useState<UserStats | null>(null);
   const [classSections, setClassSections] = useState<ClassSection[]>([]);
+  const [parentsList, setParentsList] = useState<ParentLookupOption[]>([]);
   const [filters, setFilters] = useState<UserFilters>(DEFAULT_FILTERS);
   const [isLoading, setIsLoading] = useState(false);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
@@ -89,11 +93,21 @@ export function useUsers() {
     }
   }, []);
 
+  const fetchParentsList = useCallback(async () => {
+    try {
+      const list = await api.get<ParentLookupOption[]>('/users/parents-list');
+      setParentsList(list);
+    } catch {
+      // non-critical
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     void fetchUsers(filters);
     void fetchStats();
     void fetchClassSections();
+    void fetchParentsList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -119,7 +133,8 @@ export function useUsers() {
   const refresh = useCallback(() => {
     void fetchUsers(filters);
     void fetchStats();
-  }, [filters, fetchUsers, fetchStats]);
+    void fetchParentsList();
+  }, [filters, fetchUsers, fetchStats, fetchParentsList]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -176,11 +191,32 @@ export function useUsers() {
     [fetchStats],
   );
 
+  const getStudentsLookup = useCallback(async () => {
+    return api.get<StudentLookupItem[]>('/users/students-lookup');
+  }, []);
+
+  const getParentChildren = useCallback(async (parentId: string) => {
+    return api.get<ParentLinkedChildrenResponse>(`/users/parents/${parentId}/children`);
+  }, []);
+
+  const linkParentChildren = useCallback(
+    async (parentId: string, studentIds: string[]) => {
+      const result = await api.put<ParentLinkedChildrenResponse>(
+        `/users/parents/${parentId}/children`,
+        { studentIds },
+      );
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
   return {
     users,
     meta,
     stats,
     classSections,
+    parentsList,
     filters,
     isLoading,
     isStatsLoading,
@@ -193,5 +229,8 @@ export function useUsers() {
     deactivateUser,
     resetPassword,
     deleteUser,
+    getStudentsLookup,
+    getParentChildren,
+    linkParentChildren,
   };
 }

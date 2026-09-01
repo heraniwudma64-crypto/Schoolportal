@@ -7,5 +7,6 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
   imports: [PrismaModule],
   controllers: [ReportCardsController],
   providers: [ReportCardsService],
+  exports: [ReportCardsService],
 })
 export class ReportCardsModule {}

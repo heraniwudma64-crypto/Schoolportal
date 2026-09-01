@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -16,6 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CreateUserDto } from './dto/create-user.dto';
+import { LinkChildrenDto } from './dto/link-children.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -39,6 +41,33 @@ export class UsersController {
   @Get('class-sections')
   getClassSections() {
     return this.usersService.getClassSections();
+  }
+
+  /** GET /users/parents-list — for parent lookup dropdown */
+  @Get('parents-list')
+  getParentsList() {
+    return this.usersService.getParentsList();
+  }
+
+  /** GET /users/students-lookup — for parent-child linking lookup */
+  @Get('students-lookup')
+  getStudentsLookup() {
+    return this.usersService.getStudentsLookup();
+  }
+
+  /** GET /users/parents/:parentId/children — get linked children for a parent */
+  @Get('parents/:parentId/children')
+  getParentChildren(@Param('parentId') parentId: string) {
+    return this.usersService.getParentChildren(parentId);
+  }
+
+  /** PUT /users/parents/:parentId/children — link/unlink children for a parent */
+  @Put('parents/:parentId/children')
+  linkParentChildren(
+    @Param('parentId') parentId: string,
+    @Body() dto: LinkChildrenDto,
+  ) {
+    return this.usersService.linkParentChildren(parentId, dto);
   }
 
   /** GET /users — paginated list with search/filter/sort */

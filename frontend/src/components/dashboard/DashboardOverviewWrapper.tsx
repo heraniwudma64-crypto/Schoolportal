@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import StudentOverview from './StudentOverview';
 import TeacherOverview from './TeacherOverview';
 import AdminOverview from './AdminOverview';
+import ParentOverview from './ParentOverview';
 
 const DashboardOverviewWrapper = () => {
   const { user } = useAuth();
@@ -17,6 +18,10 @@ const DashboardOverviewWrapper = () => {
 
   if (user?.role === 'admin') {
     return <AdminOverview />;
+  }
+
+  if (user?.role === 'parent') {
+    return <ParentOverview />;
   }
 
   return (

@@ -37,6 +37,7 @@ import { ApiError } from '../../lib/api';
 import AddEditUserModal from '../../components/admin/AddEditUserModal';
 import UserProfileDrawer from '../../components/admin/UserProfileDrawer';
 import ConfirmDialog from '../../components/admin/ConfirmDialog';
+import LinkChildrenModal from '../../components/admin/LinkChildrenModal';
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 
@@ -94,7 +95,7 @@ const UserManagement: React.FC = () => {
   const { user: currentUser } = useAuth();
 
   const {
-    users, meta, stats, classSections, filters,
+    users, meta, stats, classSections, parentsList, filters,
     isLoading, isStatsLoading, error,
     applyFilters, refresh,
     createUser, updateUser, activateUser, deactivateUser, resetPassword, deleteUser,
@@ -104,6 +105,7 @@ const UserManagement: React.FC = () => {
   const [showAddEdit, setShowAddEdit] = useState(false);
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
   const [profileUser, setProfileUser] = useState<ManagedUser | null>(null);
+  const [linkChildrenUser, setLinkChildrenUser] = useState<ManagedUser | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Confirm dialog state
@@ -367,9 +369,26 @@ const UserManagement: React.FC = () => {
                       {/* Identity */}
                       <td className="px-6 py-4">
                         <p className="text-xs font-bold text-gray-900">{profileId}</p>
-                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-0.5">
-                          {sectionName ?? (u.Teacher?.staffId ? `Staff: ${u.Teacher.staffId}` : '')}
-                        </p>
+                        {u.role === 'PARENT' ? (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider',
+                                u.Parent?.Student && u.Parent.Student.length > 0
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-gray-100 text-gray-400',
+                              )}
+                            >
+                              {u.Parent?.Student?.length
+                                ? `${u.Parent.Student.length} Child${u.Parent.Student.length > 1 ? 'ren' : ''}`
+                                : 'No Children'}
+                            </span>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-0.5">
+                            {sectionName ?? (u.Teacher?.staffId ? `Staff: ${u.Teacher.staffId}` : '')}
+                          </p>
+                        )}
                       </td>
 
                       {/* Status */}
@@ -386,6 +405,17 @@ const UserManagement: React.FC = () => {
                       {/* Actions */}
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {/* Manage Children (Parent Only) */}
+                          {u.role === 'PARENT' && (
+                            <button
+                              onClick={() => setLinkChildrenUser(u)}
+                              title="Manage / Link Children"
+                              className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                            >
+                              <Users className="w-4 h-4" />
+                            </button>
+                          )}
+
                           {/* View */}
                           <button
                             onClick={() => setProfileUser(u)}
@@ -529,6 +559,7 @@ const UserManagement: React.FC = () => {
         open={showAddEdit}
         editUser={editingUser}
         classSections={classSections}
+        parentsList={parentsList}
         isSaving={isSaving}
         onSave={handleSave}
         onClose={() => { setShowAddEdit(false); setEditingUser(null); }}
@@ -537,6 +568,20 @@ const UserManagement: React.FC = () => {
       <UserProfileDrawer
         user={profileUser}
         onClose={() => setProfileUser(null)}
+        onManageChildren={(u) => {
+          setProfileUser(null);
+          setLinkChildrenUser(u);
+        }}
+      />
+
+      <LinkChildrenModal
+        open={Boolean(linkChildrenUser)}
+        parentUser={linkChildrenUser}
+        classSections={classSections}
+        onClose={() => setLinkChildrenUser(null)}
+        onSuccess={() => {
+          refresh();
+        }}
       />
 
       {/* Deactivate */}

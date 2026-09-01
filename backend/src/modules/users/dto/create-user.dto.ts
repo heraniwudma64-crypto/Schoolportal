@@ -74,6 +74,10 @@ export class CreateUserDto {
   @IsString()
   emergencyContact?: string;
 
+  @IsOptional()
+  @IsString()
+  parentId?: string;
+
   // Teacher fields
   @IsOptional()
   @IsString()

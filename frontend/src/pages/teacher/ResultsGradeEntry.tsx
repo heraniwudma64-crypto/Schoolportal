@@ -22,7 +22,7 @@ const ResultsGradeEntry = () => {
       setLoading(true);
       try {
         // Use your backend's flexible section/class lookup endpoint
-        const data = await api.get<any[]>(`/students/by-section?section=${encodeURIComponent(selectedClass)}`);
+        const data = await api.get<any>(`/students/by-section?section=${encodeURIComponent(selectedClass)}`);
         
         const rawList = Array.isArray(data) ? data : (data?.data || data?.records || []);
 
