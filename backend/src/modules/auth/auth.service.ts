@@ -51,6 +51,15 @@ export class AuthService {
     const email = registerDto.email?.trim().toLowerCase();
     const role = this.mapRegisterRole(registerDto.role);
 
+    if (role === Role.STUDENT) {
+      const required = ['institutionId', 'institutionName', 'fatherName', 'grandfatherName', 'admissionType', 'gender', 'dob', 'nationality', 'familyKebele', 'locationType', 'fatherEducationLevel', 'motherEducationLevel', 'economicStatus', 'guardianFullName', 'familyHeadGender', 'guardianEmail', 'guardianPhone', 'nationalId', 'residenceRegion', 'residenceZone', 'residenceWoreda', 'birthRegion', 'birthZone', 'birthWoreda', 'parentStatus'];
+      const missing = required.filter((field) => !String((registerDto as unknown as Record<string, unknown>)[field] ?? '').trim());
+      if (missing.length) throw new BadRequestException(`Missing required student registration information: ${missing.join(', ')}`);
+      if (registerDto.disability === 'yes' && !registerDto.disabilityType?.trim()) {
+        throw new BadRequestException('Disability type is required when disability is Yes');
+      }
+    }
+
     const existingByLoginId = await this.prisma.user.findUnique({
       where: { loginId },
       select: { id: true },
@@ -81,6 +90,7 @@ export class AuthService {
         data: {
           id: userId,
           loginId,
+          name: registerDto.name.trim(),
           email,
           password: passwordHash,
           role,
@@ -137,6 +147,32 @@ export class AuthService {
             firstName,
             lastName,
             gender: registerDto.gender,
+            institutionId: registerDto.institutionId?.trim(),
+            institutionName: registerDto.institutionName?.trim(),
+            fatherName: registerDto.fatherName?.trim(),
+            grandfatherName: registerDto.grandfatherName?.trim(),
+            admissionType: registerDto.admissionType?.trim(),
+            hasDisability: registerDto.disability === 'yes',
+            disabilityType: registerDto.disability === 'yes' ? registerDto.disabilityType?.trim() : null,
+            dob: registerDto.dob ? new Date(registerDto.dob) : undefined,
+            nationality: registerDto.nationality?.trim(),
+            familyKebele: registerDto.familyKebele?.trim(),
+            locationType: registerDto.locationType?.trim(),
+            fatherEducationLevel: registerDto.fatherEducationLevel?.trim(),
+            motherEducationLevel: registerDto.motherEducationLevel?.trim(),
+            economicStatus: registerDto.economicStatus?.trim(),
+            guardianFullName: registerDto.guardianFullName?.trim(),
+            familyHeadGender: registerDto.familyHeadGender?.trim(),
+            guardianEmail: registerDto.guardianEmail?.trim().toLowerCase(),
+            guardianPhone: registerDto.guardianPhone?.trim(),
+            nationalId: registerDto.nationalId?.trim(),
+            residenceRegion: registerDto.residenceRegion?.trim(),
+            residenceZone: registerDto.residenceZone?.trim(),
+            residenceWoreda: registerDto.residenceWoreda?.trim(),
+            birthRegion: registerDto.birthRegion?.trim(),
+            birthZone: registerDto.birthZone?.trim(),
+            birthWoreda: registerDto.birthWoreda?.trim(),
+            parentStatus: registerDto.parentStatus?.trim(),
             updatedAt: new Date(),
             ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
           },
