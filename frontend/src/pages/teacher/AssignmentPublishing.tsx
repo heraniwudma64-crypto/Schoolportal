@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FiSend, FiUpload, FiFileText, FiCalendar, FiBookOpen } from 'react-icons/fi';
+import { api } from '../../lib/api';
+import { formatClassSection } from '../../lib/classSection';
 
 export default function PublishAssignmentPage() {
   const [formData, setFormData] = useState({
-    subject: 'Mathematics',
-    targetClass: 'Grade 10A',
+    subjectId: '',
+    classSectionId: '',
     title: '',
     instructions: '',
     dueDate: '',
@@ -12,13 +14,25 @@ export default function PublishAssignmentPage() {
   });
 
   const [loading, setLoading] = useState(false);
+  const [teachingAssignments, setTeachingAssignments] = useState<any[]>([]);
   const [message, setMessage] = useState('');
   
   // Example recent publications data matching the design
-  const [recentPublications, setRecentPublications] = useState([
-    { id: 1, title: 'Algebra Worksheet', targetClass: 'GRADE 10A', time: '2 HOURS AGO' },
-    { id: 2, title: 'Physics Lab Report', targetClass: 'GRADE 10B', time: 'YESTERDAY' },
-  ]);
+  const [recentPublications, setRecentPublications] = useState<any[]>([]);
+  const [selectedSubmissions, setSelectedSubmissions] = useState<any[]>([]);
+
+  useEffect(() => {
+    api.get<any[]>('/teachers/assignments').then((assignments) => {
+      setTeachingAssignments(assignments);
+      const first = assignments[0];
+      if (first) setFormData((current) => ({ ...current, subjectId: first.subjectId, classSectionId: first.classSectionId }));
+      setRecentPublications(assignments.map((item) => ({ id: item.id, title: item.title, targetClass: item.ClassSection?.name || item.targetClass || '', time: new Date(item.createdAt).toLocaleString(), submissions: item.submissions || [] })));
+    });
+  }, []);
+
+  const loadSubmissions = async (id: string) => {
+    try { setSelectedSubmissions(await api.get<any[]>(`/assignments/${id}/submissions`)); } catch (error: any) { alert(error.message || 'Could not load submissions'); }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -30,42 +44,25 @@ export default function PublishAssignmentPage() {
     setMessage('');
 
     try {
-      // Get the stored auth token and user info if available
-      const token = localStorage.getItem('token');
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : {};
-
-      const response = await fetch('http://localhost:3000/assignments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
+      const newAssignment = await api.post<any>('/assignments', {
           title: formData.title,
-          subject: formData.subject,
-          targetClass: formData.targetClass,
+          subjectId: formData.subjectId,
+          classSectionId: formData.classSectionId,
           description: formData.instructions,
           instructions: formData.instructions,
           dueDate: formData.dueDate,
           attachmentUrl: formData.attachmentUrl,
-          userId: user.id || user.sub, // Send real user ID so backend can find the teacher profile
-        }),
       });
-
-      if (!response.ok) throw new Error('Failed to publish assignment');
-
-      const newAssignment = await response.json();
       
       setRecentPublications([
-        { id: newAssignment.id || Date.now(), title: formData.title, targetClass: formData.targetClass.toUpperCase(), time: 'JUST NOW' },
+        { id: newAssignment.id || Date.now(), title: formData.title, targetClass: formatClassSection(teachingAssignments.find((item) => item.classSectionId === formData.classSectionId)?.ClassSection).toUpperCase(), time: 'JUST NOW' },
         ...recentPublications,
       ]);
 
       setMessage('Assignment published successfully and distributed to enrolled students!');
       setFormData({
-        subject: 'Mathematics',
-        targetClass: 'Grade 10A',
+        subjectId: teachingAssignments[0]?.subjectId || '',
+        classSectionId: teachingAssignments[0]?.classSectionId || '',
         title: '',
         instructions: '',
         dueDate: '',
@@ -98,29 +95,27 @@ export default function PublishAssignmentPage() {
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Subject</label>
                 <select
-                  name="subject"
-                  value={formData.subject}
-                  onChange={handleChange}
+                  name="subjectId"
+                  value={formData.subjectId}
+                  onChange={(e) => {
+                    const assignment = teachingAssignments.find((item) => item.subjectId === e.target.value);
+                    setFormData({ ...formData, subjectId: e.target.value, classSectionId: assignment?.classSectionId || '' });
+                  }}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:border-blue-900"
                 >
-                  <option value="Mathematics">Mathematics</option>
-                  <option value="Physics">Physics</option>
-                  <option value="Chemistry">Chemistry</option>
-                  <option value="English">English</option>
+                  {[...new Map(teachingAssignments.map((item) => [item.Subject.id, item.Subject])).values()].map((subject: any) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
                 </select>
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Target Class</label>
                 <select
-                  name="targetClass"
-                  value={formData.targetClass}
+                  name="classSectionId"
+                  value={formData.classSectionId}
                   onChange={handleChange}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:border-blue-900"
                 >
-                  <option value="Grade 10A">Grade 10A</option>
-                  <option value="Grade 10B">Grade 10B</option>
-                  <option value="Grade 11A">Grade 11A</option>
+                  {teachingAssignments.filter((item) => item.subjectId === formData.subjectId).map((item) => <option key={item.classSectionId} value={item.classSectionId}>{formatClassSection(item.ClassSection)}</option>)}
                 </select>
               </div>
             </div>
@@ -225,10 +220,13 @@ export default function PublishAssignmentPage() {
                 <p className="text-[11px] font-bold text-gray-400 tracking-wider mt-1">
                   {item.targetClass} • {item.time}
                 </p>
+                <button type="button" onClick={() => loadSubmissions(item.id)} className="mt-3 text-xs font-bold text-blue-800">View student responses ({item.submissions?.length || 0})</button>
               </div>
             ))}
           </div>
         </div>
+
+        {selectedSubmissions.length > 0 && <div className="mt-4 bg-blue-50 border border-blue-100 rounded-xl p-4"><h3 className="font-bold">Student responses</h3>{selectedSubmissions.map((submission) => <div key={submission.id} className="py-2 text-sm border-b border-blue-100">{submission.student?.firstName} {submission.student?.lastName} <span className="text-gray-500">submitted {new Date(submission.createdAt).toLocaleString()}</span></div>)}</div>}
 
       </div>
     </div>

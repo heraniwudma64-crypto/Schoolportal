@@ -14,6 +14,10 @@ export class CreateMaterialDto {
   @IsString()
   @IsOptional()
   target_role?: string;
+
+  @IsString()
+  @IsOptional()
+  classSectionId?: string;
 }
 
 export class UpdateMaterialDto {
@@ -32,4 +36,8 @@ export class UpdateMaterialDto {
   @IsString()
   @IsOptional()
   target_role?: string;
+
+  @IsString()
+  @IsOptional()
+  classSectionId?: string;
 }

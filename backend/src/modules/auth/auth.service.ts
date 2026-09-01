@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  NotFoundException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -116,30 +117,56 @@ export class AuthService {
       } else if (role === Role.STUDENT) {
         const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
         let resolvedClassSectionId: string | null = null;
+        const currentYear = classInput
+          ? await tx.academicYear.findFirst({ where: { isCurrent: true }, select: { id: true } })
+          : null;
 
         if (classInput) {
+          const normalizedInput = String(classInput).trim();
+          if (!currentYear) {
+            throw new BadRequestException('A current academic year must be set before selecting a class section');
+          }
           let sectionRecord = await tx.classSection.findFirst({
             where: {
-              OR: [
-                { id: classInput },
-                { name: classInput },
+              AND: [
+                { academicYearId: currentYear.id, gradeLevelId: { not: null } },
+                {
+                  OR: [
+                    { id: normalizedInput },
+                    // A full display label is accepted only when it resolves to
+                    // an existing grade/section pair; never create a raw class.
+                    { name: normalizedInput },
+                  ],
+                },
               ],
             },
           });
 
           if (!sectionRecord) {
-            sectionRecord = await tx.classSection.create({
-              data: {
-                id: randomUUID(),
-                name: classInput,
-                updatedAt: new Date(),
-              },
-            });
+            const match = normalizedInput.match(/^grade\s*(\d+)\s*([a-z][a-z0-9]{0,3})$/i);
+            if (match) {
+              sectionRecord = await tx.classSection.findFirst({
+                where: {
+                  name: match[2].toUpperCase(),
+                  academicYearId: currentYear.id,
+                  GradeLevel: {
+                    OR: [
+                      { gradeNumber: Number(match[1]) },
+                      { name: `Grade ${match[1]}` },
+                    ],
+                  },
+                },
+              });
+            }
+          }
+
+          if (!sectionRecord || !sectionRecord.gradeLevelId || !sectionRecord.academicYearId) {
+            throw new BadRequestException('Select a valid class and section, for example Grade 10 A');
           }
           resolvedClassSectionId = sectionRecord.id;
         }
 
-        await tx.student.create({
+        const student = await tx.student.create({
           data: {
             id: randomUUID(),
             userId: user.id,
@@ -177,6 +204,24 @@ export class AuthService {
             ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
           },
         });
+        if (resolvedClassSectionId) {
+          const section = await tx.classSection.findUnique({
+            where: { id: resolvedClassSectionId },
+            select: { academicYearId: true, gradeLevelId: true },
+          });
+          if (!section?.academicYearId || !section.gradeLevelId || section.academicYearId !== currentYear?.id) {
+            throw new BadRequestException('Select a class section from the current academic year');
+          }
+          await tx.studentEnrollment.create({
+            data: {
+              studentId: student.id,
+              academicYearId: section.academicYearId,
+              gradeLevelId: section.gradeLevelId,
+              classSectionId: resolvedClassSectionId,
+              status: 'ACTIVE',
+            },
+          });
+        }
       }
 
       return user;
@@ -191,13 +236,49 @@ export class AuthService {
     };
   }
 
+  async getTeacherPermissions(userId: string) {
+  // 1. Find the teacher record using their user ID
+  const teacher = await this.prisma.teacher.findUnique({
+    where: { userId },
+    include: { homeroomSections: true }, // This uses the "HomeroomTeacher" relation from your schema
+  });
+
+  if (!teacher) {
+    throw new NotFoundException('Teacher not found');
+  }
+
+  // 2. Check if they have at least one homeroom section assigned
+  const isHomeroomTeacher = teacher.homeroomSections.length > 0;
+
+  // 3. Return their info plus the permission flag
+  return {
+    id: teacher.id,
+    name: `${teacher.firstName} ${teacher.lastName}`,
+    isHomeroomTeacher, // true or false
+  };
+}
+
   async login(loginDto: LoginDto) {
-    const identifier = loginDto.identifier.trim();
+    const identifier = [
+      loginDto.identifier,
+      loginDto.loginId,
+      loginDto.idNumber,
+      loginDto.username,
+      loginDto.email,
+    ].find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim();
+
+    if (!identifier) {
+      throw new BadRequestException('An ID number, username, or email is required');
+    }
+
     const emailIdentifier = identifier.toLowerCase();
 
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [{ loginId: identifier }, { email: emailIdentifier }],
+        OR: [
+          { loginId: { equals: identifier, mode: 'insensitive' } },
+          { email: { equals: emailIdentifier, mode: 'insensitive' } },
+        ],
       },
       select: {
         id: true,
@@ -205,8 +286,13 @@ export class AuthService {
         email: true,
         password: true,
         role: true,
+        name: true,
+        avatarUrl: true,
         isActive: true,
         isDeleted: true,
+        Teacher: { select: { firstName: true, lastName: true } },
+        Student: { select: { firstName: true, lastName: true } },
+        Parent: { select: { firstName: true, lastName: true } },
       },
     });
 
@@ -313,6 +399,46 @@ export class AuthService {
     return { message: 'Password has been reset successfully' };
   }
 
+  /**
+   * Resolves homeroom duty from ClassSection.teacherId. Subject assignments
+   * live in SectionSubjectTeacher and must not grant homeroom access.
+   */
+  async getHomeroomContext(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!teacher) {
+      return { isHomeroomTeacher: false, assignedSection: null };
+    }
+
+    const section = await this.prisma.classSection.findFirst({
+      where: { teacherId: teacher.id },
+      select: {
+        id: true,
+        name: true,
+        GradeLevel: { select: { name: true } },
+        _count: { select: { students: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    if (!section) {
+      return { isHomeroomTeacher: false, assignedSection: null };
+    }
+
+    return {
+      isHomeroomTeacher: true,
+      assignedSection: {
+        id: section.id,
+        name: section.name,
+        grade: section.GradeLevel?.name ?? null,
+        studentCount: section._count.students,
+      },
+    };
+  }
+
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -321,8 +447,12 @@ export class AuthService {
         loginId: true,
         email: true,
         role: true,
+        name: true,
         isActive: true,
         isDeleted: true,
+        Teacher: { select: { firstName: true, lastName: true } },
+        Student: { select: { firstName: true, lastName: true } },
+        Parent: { select: { firstName: true, lastName: true } },
       },
     });
 
@@ -379,6 +509,7 @@ export class AuthService {
       email: user.email,
       role: user.role.toLowerCase() as Lowercase<Role>,
       name,
+      avatarUrl: user.avatarUrl,
     };
   }
 }

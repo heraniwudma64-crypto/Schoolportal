@@ -18,7 +18,7 @@ export class TeacherAssignmentsService {
       where: { academicYearId: yearId },
       include: {
         GradeLevel: true,
-        Teacher: true,
+        homeroomTeacher: true,
       },
       orderBy: [
         { GradeLevel: { gradeNumber: 'asc' } },
@@ -31,44 +31,48 @@ export class TeacherAssignmentsService {
       classSectionId: sec.id,
       grade: sec.GradeLevel?.name || 'Unknown Grade',
       section: sec.name,
-      teacher: sec.Teacher ? {
-        id: sec.Teacher.id,
-        name: `${sec.Teacher.firstName} ${sec.Teacher.lastName}`,
-        staffId: sec.Teacher.staffId
+      teacher: sec.homeroomTeacher ? {
+        id: sec.homeroomTeacher.id,
+        name: `${sec.homeroomTeacher.firstName} ${sec.homeroomTeacher.lastName}`,
+        staffId: sec.homeroomTeacher.staffId
       } : null,
       academicYearId: sec.academicYearId
     }));
   }
 
-  async assignHomeRoomTeacher(classSectionId: string, teacherId: string | null) {
-    const section = await this.prisma.classSection.findUnique({ where: { id: classSectionId } });
-    if (!section) throw new NotFoundException('Section not found');
+  async getAssignedTeachersCount(academicYearId: string) {
+    return this.prisma.classSection.count({
+      where: {
+        academicYearId: academicYearId,
+        teacherId: { not: null },
+      },
+    });
+  }
 
-    if (teacherId) {
-      const teacher = await this.prisma.teacher.findUnique({ where: { id: teacherId } });
-      if (!teacher) throw new NotFoundException('Teacher not found');
-    }
-
+  async assignHomeRoomTeacher(classSectionId: string, teacherId: string | null, academicYearId: string) {
     return this.prisma.classSection.update({
       where: { id: classSectionId },
-      data: { teacherId: teacherId },
-      include: {
-        GradeLevel: true,
-        Teacher: true
-      }
+      data: { 
+        teacherId: teacherId,
+        academicYearId: academicYearId,
+      },
     });
   }
 
   async getSubjectAssignments(academicYearId?: string) {
     let yearId = academicYearId;
-    if (!yearId) {
+
+    if (!yearId || yearId === 'undefined' || yearId === 'null') {
       const currentYear = await this.prisma.academicYear.findFirst({ where: { isCurrent: true } });
       if (currentYear) yearId = currentYear.id;
     }
 
     if (!yearId) return [];
 
-    const assignments = await this.prisma.sectionSubjectTeacher.findMany({
+    const model = (this.prisma as any).sectionSubjectTeacher || (this.prisma as any).SectionSubjectTeacher;
+    if (!model) return [];
+
+    const assignments = await model.findMany({
       where: { academicYearId: yearId },
       include: {
         ClassSection: { include: { GradeLevel: true } },
@@ -83,24 +87,24 @@ export class TeacherAssignmentsService {
       ]
     });
 
-    return assignments.map(a => ({
+    return assignments.map((a: any) => ({
       id: a.id,
       classSectionId: a.classSectionId,
-      grade: a.ClassSection.GradeLevel?.name || 'Unknown Grade',
-      section: a.ClassSection.name,
+      grade: a.ClassSection?.GradeLevel?.name || 'Unknown Grade',
+      section: a.ClassSection?.name,
       subject: {
-        id: a.Subject.id,
-        name: a.Subject.name,
-        code: a.Subject.code
+        id: a.Subject?.id,
+        name: a.Subject?.name,
+        code: a.Subject?.code
       },
       teacher: {
-        id: a.Teacher.id,
-        name: `${a.Teacher.firstName} ${a.Teacher.lastName}`,
-        staffId: a.Teacher.staffId
+        id: a.Teacher?.id,
+        name: `${a.Teacher?.firstName} ${a.Teacher?.lastName}`,
+        staffId: a.Teacher?.staffId
       },
       academicYear: {
-        id: a.AcademicYear.id,
-        year: a.AcademicYear.year
+        id: a.AcademicYear?.id,
+        year: a.AcademicYear?.year
       }
     }));
   }
@@ -112,10 +116,8 @@ export class TeacherAssignmentsService {
     });
     if (!section) throw new NotFoundException('Section not found');
     
-    // Allow sections that do not strictly have academicYearId set to still be validated against the parameter if business rules allow, 
-    // but typically we should enforce section year matches parameter year if section.academicYearId is set.
     if (section.academicYearId && section.academicYearId !== academicYearId) {
-        throw new BadRequestException('Section does not belong to the supplied Academic Year');
+      throw new BadRequestException('Section does not belong to the supplied Academic Year');
     }
 
     const teacher = await this.prisma.teacher.findUnique({ where: { id: teacherId } });
@@ -136,7 +138,6 @@ export class TeacherAssignmentsService {
       }
     });
 
-    // If there's no gradeSubject mapped with the academicYearId, fallback to a global check without academicYearId if allowed by schema.
     if (!gradeSubject) {
       const globalGradeSubject = await this.prisma.gradeSubject.findFirst({
         where: {
@@ -150,7 +151,7 @@ export class TeacherAssignmentsService {
       }
     }
 
-    const existing = await this.prisma.sectionSubjectTeacher.findUnique({
+    const existing = await (this.prisma as any).sectionSubjectTeacher.findUnique({
       where: {
         classSectionId_subjectId_academicYearId: {
           classSectionId,
@@ -161,13 +162,13 @@ export class TeacherAssignmentsService {
     });
 
     if (existing) {
-      return this.prisma.sectionSubjectTeacher.update({
+      return (this.prisma as any).sectionSubjectTeacher.update({
         where: { id: existing.id },
         data: { teacherId }
       });
     }
 
-    return this.prisma.sectionSubjectTeacher.create({
+    return (this.prisma as any).sectionSubjectTeacher.create({
       data: {
         classSectionId,
         subjectId,
@@ -177,8 +178,39 @@ export class TeacherAssignmentsService {
     });
   }
 
+  async getTeacherPermissions(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      include: {
+        homeroomSections: {
+          include: {
+            GradeLevel: true,
+            students: true,
+          },
+        },
+      },
+    });
+
+    if (!teacher) {
+      throw new NotFoundException('Teacher profile not found');
+    }
+
+    const isHomeroomTeacher = teacher.homeroomSections.length > 0;
+    const section = isHomeroomTeacher ? teacher.homeroomSections[0] : null;
+
+    return {
+      isHomeroomTeacher,
+      assignedSection: section ? {
+        id: section.id,
+        name: section.name,
+        grade: section.GradeLevel?.name,
+        studentCount: section.students.length,
+      } : null,
+    };
+  }
+
   async removeSubjectTeacher(id: string) {
-    return this.prisma.sectionSubjectTeacher.delete({
+    return (this.prisma as any).sectionSubjectTeacher.delete({
       where: { id }
     });
   }

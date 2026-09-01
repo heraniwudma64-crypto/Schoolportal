@@ -34,4 +34,10 @@ export class UpdateStudentAccountDto {
   @IsOptional() @IsString() @MinLength(2) loginId?: string;
   @IsOptional() @Transform(({ value }) => value === '' ? undefined : value) @IsEmail() email?: string;
   @IsOptional() @ValidateNested() @Type(() => StudentAccountFieldsDto) student?: StudentAccountFieldsDto;
+  @IsOptional() @IsString() firstName?: string;
+  @IsOptional() @IsString() lastName?: string;
+  @IsOptional() @IsString() staffId?: string;
+  @IsOptional() @IsString() phoneNumber?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() qualification?: string;
 }

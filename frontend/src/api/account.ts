@@ -44,11 +44,23 @@ export interface AccountProfile {
     parentStatus: string | null;
     ClassSection?: { id: string; name: string } | null;
   } | null;
+  Teacher?: { id: string; firstName: string; lastName: string; staffId?: string | null; phoneNumber?: string | null; address?: string | null; qualification?: string | null } | null;
 }
 
 export const getMyAccount = () => api.get<AccountProfile>('/account/me');
 
-export const updateMyAccount = (data: { name?: string; loginId?: string; email?: string; student?: Record<string, unknown> }) =>
+export const updateMyAccount = (data: {
+  name?: string;
+  loginId?: string;
+  email?: string;
+  student?: Record<string, unknown>;
+  firstName?: string;
+  lastName?: string;
+  staffId?: string;
+  phoneNumber?: string;
+  address?: string;
+  qualification?: string;
+}) =>
   api.patch<AccountProfile>('/account/me', data);
 
 export const updateMyPassword = (data: { currentPassword?: string; newPassword?: string }) => 

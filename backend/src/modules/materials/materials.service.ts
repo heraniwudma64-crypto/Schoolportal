@@ -1,13 +1,20 @@
 import { Injectable, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
-import { PrismaClient, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
+import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateMaterialDto, UpdateMaterialDto } from './dto/material.dto';
 import { createClient } from '@supabase/supabase-js';
 import * as crypto from 'crypto';
 
-const prisma = new PrismaClient();
+type UploadedMaterialFile = {
+  originalname: string;
+  buffer: Buffer;
+  mimetype: string;
+  size: number;
+};
 
 @Injectable()
 export class MaterialsService {
+  constructor(private readonly prisma: PrismaService) {}
   private supabaseUrl = process.env.DIRECT_URL ? process.env.DIRECT_URL.replace('postgres://', 'https://').split(':')[0] : '';
   // Since we don't have the service role key natively in env right now, we will try to use the project ref from the DB URL.
   // Actually, without the service key, we cannot upload. Let's ask the user to provide SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY.
@@ -34,22 +41,39 @@ export class MaterialsService {
     return '';
   }
 
-  async findAll(role?: Role) {
+  async findAll(userId: string, role?: Role) {
     const where: any = {};
     if (role && role !== Role.ADMIN) {
       where.OR = [
-        { target_role: 'ALL' },
-        { target_role: role.toUpperCase() }
+        { targetRole: 'all' },
+        { targetRole: role.toLowerCase() }
       ];
     }
-    return prisma.material.findMany({
+    if (role === Role.TEACHER) {
+      const teacher = await this.prisma.teacher.findUnique({
+        where: { userId },
+        select: { id: true },
+      });
+      const assignedSections = teacher
+        ? await this.prisma.sectionSubjectTeacher.findMany({
+            where: { teacherId: teacher.id },
+            select: { classSectionId: true },
+          })
+        : [];
+      where.OR = [
+        ...(where.OR || []),
+        { userId },
+        ...(assignedSections.length ? [{ classSectionId: { in: assignedSections.map((item) => item.classSectionId) } }] : []),
+      ];
+    }
+    return this.prisma.material.findMany({
       where,
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: string) {
-    const material = await prisma.material.findUnique({ where: { id } });
+    const material = await this.prisma.material.findUnique({ where: { id } });
     if (!material) throw new NotFoundException('Material not found');
     return material;
   }
@@ -69,7 +93,7 @@ export class MaterialsService {
     return 'all';
   }
 
-  async create(createMaterialDto: CreateMaterialDto, file: Express.Multer.File) {
+  async create(createMaterialDto: CreateMaterialDto, file: UploadedMaterialFile, userId: string, role: Role) {
     if (!file) {
       throw new BadRequestException('File is required');
     }
@@ -93,7 +117,13 @@ export class MaterialsService {
     }
 
     try {
-      return await prisma.material.create({
+      if (role === Role.TEACHER) {
+        if (!createMaterialDto.classSectionId) throw new BadRequestException('Choose one of your assigned sections');
+        const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+        const assignment = teacher && await this.prisma.sectionSubjectTeacher.findFirst({ where: { teacherId: teacher.id, classSectionId: createMaterialDto.classSectionId } });
+        if (!assignment) throw new BadRequestException('You can only target sections you teach');
+      }
+      return await this.prisma.material.create({
         data: {
           title: createMaterialDto.title,
           category: this.mapCategory(createMaterialDto.category),
@@ -101,8 +131,10 @@ export class MaterialsService {
           targetRole: this.mapTargetRole(createMaterialDto.target_role || 'All Users'),
           fileType: file.mimetype,
           fileName: file.originalname,
-          fileSize: file.size,
+          fileSize: BigInt(file.size || 0),
           fileUrl: `materials/${fileName}`,
+          userId,
+          classSectionId: createMaterialDto.classSectionId || null,
         },
       });
     } catch (dbError: any) {
@@ -113,7 +145,7 @@ export class MaterialsService {
     }
   }
 
-  async update(id: string, updateMaterialDto: UpdateMaterialDto, file?: Express.Multer.File) {
+  async update(id: string, updateMaterialDto: UpdateMaterialDto, file?: UploadedMaterialFile) {
     const material = await this.findOne(id);
    let fileUrl = material.fileUrl;
 let fileType = material.fileType;
@@ -142,7 +174,7 @@ let fileSize = material.fileSize;
       fileUrl = `materials/${fileName}`;
       fileType = file.mimetype;
       fileNameStr = file.originalname;
-      fileSize = Number(file.size);
+      fileSize = BigInt(file.size || 0);
 
       // Extract old file path and remove it
       const oldFilePathMatch = material.fileUrl?.match(/materials\/(.*)$/);
@@ -151,7 +183,7 @@ let fileSize = material.fileSize;
       }
     }
 
-    return prisma.material.update({
+    return this.prisma.material.update({
       where: { id },
       data: {
         title: updateMaterialDto.title,
@@ -177,12 +209,18 @@ let fileSize = material.fileSize;
       }
     }
 
-    await prisma.material.delete({ where: { id } });
+    await this.prisma.material.delete({ where: { id } });
     return { success: true };
   }
 
-  async getDownloadUrl(id: string) {
+  async getDownloadUrl(id: string, userId: string, role: Role) {
     const material = await this.findOne(id);
+    if (role === Role.TEACHER) {
+      const visibleMaterials = await this.findAll(userId, role);
+      if (!visibleMaterials.some((item) => item.id === material.id)) {
+        throw new BadRequestException('You cannot download this material');
+      }
+    }
     const oldFilePathMatch = material.fileUrl?.match(/materials\/(.*)$/);
 const pathInBucket = (oldFilePathMatch ? oldFilePathMatch[1] : material.fileUrl) || '';
     
@@ -200,5 +238,43 @@ const pathInBucket = (oldFilePathMatch ? oldFilePathMatch[1] : material.fileUrl)
       return { url: publicData.publicUrl };
     }
     return { url: data.signedUrl };
+  }
+
+  async getAdminMaterials(userId: string, role: Role) {
+    // Get all admin users
+    const admins = await this.prisma.user.findMany({
+      where: { role: Role.ADMIN, isActive: true },
+      select: { id: true }
+    });
+    const adminIds = admins.map(admin => admin.id);
+
+    // Build filter for admin materials visible to this role
+    const where: any = {
+      userId: { in: adminIds },
+      OR: [
+        { targetRole: 'all' },
+        { targetRole: role.toLowerCase() }
+      ]
+    };
+
+    // Exclude materials that belong to a specific class section (these are class-specific admin materials)
+    // Only show global admin materials or those explicitly for this role
+    where.classSectionId = null;
+
+    return this.prisma.material.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        category: true,
+        fileName: true,
+        fileSize: true,
+        createdAt: true,
+        updatedAt: true,
+        targetRole: true
+      }
+    });
   }
 }

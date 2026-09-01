@@ -13,7 +13,7 @@ import { Request } from 'express';
 export class MaterialsController {
   constructor(private readonly materialsService: MaterialsService) {}
 
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.TEACHER)
   @Post()
   @UseInterceptors(FileInterceptor('file'))
   create(
@@ -22,15 +22,23 @@ export class MaterialsController {
       new ParseFilePipeBuilder()
         .addMaxSizeValidator({ maxSize: 10 * 1024 * 1024, message: 'File is too large. Maximum size is 10MB.' })
         .build({ errorHttpStatusCode: HttpStatus.PAYLOAD_TOO_LARGE })
-    ) file: Express.Multer.File
+  ) file: Express.Multer.File,
+    @Req() req: Request & { user: { id: string; role: Role } },
   ) {
-    return this.materialsService.create(createMaterialDto, file);
+    return this.materialsService.create(createMaterialDto, file, req.user.id, req.user.role);
   }
 
   // Admin gets all, others get materials filtered by their role and "all"
   @Get()
-  findAll(@Req() req: Request & { user: { role: Role } }) {
-    return this.materialsService.findAll(req.user.role);
+  findAll(@Req() req: Request & { user: { id: string; role: Role } }) {
+    return this.materialsService.findAll(req.user.id, req.user.role);
+  }
+
+  // Get admin materials (for teachers to view admin-published content)
+  @Roles(Role.TEACHER, Role.STUDENT)
+  @Get('admin/published')
+  getAdminMaterials(@Req() req: Request & { user: { id: string; role: Role } }) {
+    return this.materialsService.getAdminMaterials(req.user.id, req.user.role);
   }
 
   @Roles(Role.ADMIN)
@@ -56,8 +64,8 @@ export class MaterialsController {
 
   @Roles(Role.ADMIN, Role.STUDENT, Role.TEACHER, Role.PARENT)
   @Get(':id/download')
-  download(@Param('id') id: string) {
-    return this.materialsService.getDownloadUrl(id);
+  download(@Param('id') id: string, @Req() req: Request & { user: { id: string; role: Role } }) {
+    return this.materialsService.getDownloadUrl(id, req.user.id, req.user.role);
   }
 
   @Roles(Role.ADMIN)

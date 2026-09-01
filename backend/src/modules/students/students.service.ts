@@ -214,7 +214,7 @@ export class StudentsService {
       select: {
         classSectionId: true,
         StudentEnrollment: {
-          where: { status: 'ACTIVE', classSectionId: { not: null } },
+          where: { status: 'ACTIVE' },
           orderBy: { enrollmentDate: 'desc' },
           take: 1,
           select: { classSectionId: true },

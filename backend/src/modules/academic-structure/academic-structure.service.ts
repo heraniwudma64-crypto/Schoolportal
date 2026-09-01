@@ -62,7 +62,7 @@ export class AcademicStructureService {
   // ─── GRADE LEVELS ────────────────────────────────────────────────────────────
 
   async getGradeLevels() {
-    return this.prisma.gradeLevel.findMany({
+    const grades = await this.prisma.gradeLevel.findMany({
       include: {
         ClassSection: true,
         StudentEnrollment: {
@@ -76,6 +76,13 @@ export class AcademicStructureService {
       },
       orderBy: { gradeNumber: 'asc' },
     });
+    return grades.map((grade) => ({
+      ...grade,
+      ClassSection: grade.ClassSection.map((section) => ({
+        ...section,
+        displayName: `${grade.name.startsWith('Grade') ? grade.name : `Grade ${grade.name}`} ${section.name}`,
+      })),
+    }));
   }
 
   async createGradeLevel(data: { name: string; gradeNumber?: number; description?: string }) {
@@ -95,11 +102,28 @@ export class AcademicStructureService {
       throw new BadRequestException('Grade level not found');
     }
 
+    // Store a section code only (A, B, C, ...); grade identity belongs to the
+    // GradeLevel relation. This prevents ambiguous values such as "Grade 10A"
+    // or "A,B,C" from becoming standalone class names.
+    const sectionName = data.name.trim().replace(/^grade\s*\d+\s*/i, '').toUpperCase();
+    if (!/^[A-Z][A-Z0-9]{0,3}$/.test(sectionName)) {
+      throw new BadRequestException('Section must be one code, for example A, B, or C');
+    }
+
+    const currentYear = await this.prisma.academicYear.findFirst({
+      where: { isCurrent: true },
+      select: { id: true },
+    });
+    if (!currentYear) {
+      throw new BadRequestException('Set the current academic year before creating a class section');
+    }
+
     return this.prisma.classSection.create({
       data: {
         id: crypto.randomUUID(),
-        name: data.name,
+        name: sectionName,
         gradeLevelId: data.gradeLevelId,
+        academicYearId: currentYear.id,
       },
     });
   }

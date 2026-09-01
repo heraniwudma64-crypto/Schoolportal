@@ -4,6 +4,8 @@ export type StudentStatus = 'ACTIVE' | 'GRADUATED' | 'SUSPENDED' | 'TRANSFERRED'
 export interface ClassSection {
   id: string;
   name: string;
+  displayName?: string;
+  GradeLevel?: { name: string } | null;
 }
 
 export interface StudentProfile {

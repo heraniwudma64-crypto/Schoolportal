@@ -8,6 +8,7 @@ import { Button } from '../ui/button';
 import { getAcademicYears, getGradeLevels } from '../../api/academicStructure';
 import { api } from '../../lib/api';
 import { enrollStudent } from '../../api/roster';
+import { formatClassSection } from '../../lib/classSection';
 import { toast } from 'sonner';
 
 interface EnrollStudentModalProps {
@@ -127,7 +128,7 @@ export const EnrollStudentModal = ({ isOpen, onClose, defaultAcademicYearId, def
               </SelectTrigger>
               <SelectContent>
                 {sections.map(section => (
-                  <SelectItem key={section.id} value={section.id}>{section.name}</SelectItem>
+                  <SelectItem key={section.id} value={section.id}>{formatClassSection({ ...section, GradeLevel: selectedGrade })}</SelectItem>
                 ))}
                 {sections.length === 0 && (
                   <SelectItem value="none" disabled>No sections available</SelectItem>

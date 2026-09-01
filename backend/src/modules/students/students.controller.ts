@@ -71,7 +71,6 @@ export class StudentsController {
   ) {
     return this.studentsService.submitMyAssignment(req.user.id, id, file, content);
   }
-
   @Get('class-sections')
   async getClassSections() {
     return this.prisma.classSection.findMany();
@@ -103,10 +102,19 @@ export class StudentsController {
   // ==========================================
 
   @Get('by-class-section/:classSectionId')
-  async getStudentsByClassSectionId(@Param('classSectionId') classSectionId: string) {
+  async getStudentsByClassSectionId(
+    @Param('classSectionId') classSectionId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
     return this.prisma.student.findMany({
       where: {
-        classSectionId: classSectionId,
+        StudentEnrollment: {
+          some: {
+            classSectionId,
+            status: 'ACTIVE',
+            ...(academicYearId ? { academicYearId } : {}),
+          },
+        },
       },
       include: {
         ClassSection: true,

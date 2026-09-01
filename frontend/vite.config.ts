@@ -18,12 +18,18 @@ export default defineConfig({
     }),
   ],
   server: {
-    port: 3000,
+    port: 5173, // Recommended: keep Vite dev server on 5173 and proxy backend requests to 3000
     host: true,
     allowedHosts: true,
+    proxy: {
+      "/auth": {
+        target: "http://localhost:3000",
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
-    port: 3000,
+    port: 5173,
     host: true,
     allowedHosts: true,
   },

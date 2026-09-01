@@ -1,30 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import { MOCK_SUBJECTS } from '../../data/mockData';
-import { GraduationCap, Search, Save, Calculator, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Save, Calculator, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
 import { api } from '../../lib/api'; // Import your authenticated api client
+import { formatClassSection } from '../../lib/classSection';
+import { getEnrolledStudents } from '../../api/roster';
 
 const ResultsGradeEntry = () => {
   const [selectedQuarter, setSelectedQuarter] = useState('Quarter 1');
-  const [selectedClass, setSelectedClass] = useState('Grade 10A');
-  const [selectedSubject, setSelectedSubject] = useState(MOCK_SUBJECTS[0]?.id || '');
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   
   const [grades, setGrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [teachingAssignments, setTeachingAssignments] = useState<any[]>([]);
+  const selectedAssignment = useMemo(
+    () => teachingAssignments.find((assignment) => assignment.id === selectedAssignmentId) ?? null,
+    [selectedAssignmentId, teachingAssignments],
+  );
 
   // Fetch real enrolled students dynamically using your api client and section endpoint
   useEffect(() => {
+    api.get<any[]>('/teachers/assignments').then((assignments) => {
+      setTeachingAssignments(assignments);
+      if (assignments[0]) {
+        setSelectedAssignmentId(assignments[0].id);
+      }
+    }).catch(() => toast.error('Could not load your active class-subject assignments'));
+  }, []);
+
+  useEffect(() => {
     async function fetchStudents() {
-      if (!selectedClass) return;
+      if (!selectedAssignment) {
+        setGrades([]);
+        return;
+      }
       setLoading(true);
       try {
-        // Use your backend's flexible section/class lookup endpoint
-        const data = await api.get<any>(`/students/by-section?section=${encodeURIComponent(selectedClass)}`);
+        const data = await getEnrolledStudents(selectedAssignment.academicYearId, selectedAssignment.classSectionId);
         
-        const rawList = Array.isArray(data) ? data : (data?.data || data?.records || []);
+        const rawList = data;
 
         if (rawList.length > 0) {
           const formattedData = rawList.map((student: any) => ({
@@ -40,7 +56,7 @@ const ResultsGradeEntry = () => {
         } else {
           // Empty state if the section has no registered students yet
           setGrades([]);
-          toast.info(`No students found enrolled in ${selectedClass}`);
+          toast.info(`No students found enrolled in ${formatClassSection(selectedAssignment.ClassSection)}`);
         }
       } catch (err) {
         console.error('Failed to fetch students from server:', err);
@@ -52,7 +68,7 @@ const ResultsGradeEntry = () => {
     }
 
     fetchStudents();
-  }, [selectedClass]);
+  }, [selectedAssignment]);
 
   const handleGradeChange = (id: string, field: string, value: string) => {
     const rawVal = Number(value);
@@ -67,12 +83,16 @@ const ResultsGradeEntry = () => {
   };
 
   const handleSave = async () => {
+    if (!selectedAssignment) {
+      toast.error('Select one of your active class-subject assignments');
+      return;
+    }
     setSaving(true);
     try {
       const savePromises = grades.map((studentGrade) =>
         api.post('/grades', {
           studentId: studentGrade.id,
-          subjectId: selectedSubject,
+          subjectId: selectedAssignment.subjectId,
           quarter: selectedQuarter,
           mid: studentGrade.mid,
           assignment: studentGrade.assignment,
@@ -93,6 +113,29 @@ const ResultsGradeEntry = () => {
     }
   };
 
+  const submitToHomeroom = async () => {
+    if (!selectedAssignment) return toast.error('Select one of your active class-subject assignments');
+    try {
+      await api.post('/results/submit-to-homeroom', { 
+        classSectionId: selectedAssignment.classSectionId,
+        subjectId: selectedAssignment.subjectId,
+        academicYearId: selectedAssignment.academicYearId,
+        term: selectedQuarter.replace('Quarter ', 'TERM_'),
+      });
+      toast.success('Finalized results sent to the homeroom teacher');
+    } catch (error: any) { toast.error(error.message || 'Could not submit results'); }
+  };
+
+  const saveDraft = async (studentId?: string) => {
+    if (!selectedAssignment) return toast.error('Select one of your active class-subject assignments');
+    const selectedGrades = studentId ? grades.filter((grade) => grade.id === studentId) : grades;
+    try {
+      await api.post('/results/draft', { classSectionId: selectedAssignment.classSectionId, subjectId: selectedAssignment.subjectId, academicYearId: selectedAssignment.academicYearId, term: selectedQuarter.replace('Quarter ', 'TERM_'), grades: selectedGrades.map((grade) => ({ studentId: grade.id, marks: calculateTotal(grade) })) });
+      if (studentId) await api.post('/results/publish-student', { classSectionId: selectedAssignment.classSectionId, subjectId: selectedAssignment.subjectId, academicYearId: selectedAssignment.academicYearId, term: selectedQuarter.replace('Quarter ', 'TERM_'), studentId });
+      toast.success(studentId ? 'Student result published' : 'Class results saved as draft');
+    } catch (error: any) { toast.error(error.message || 'Could not save results'); }
+  };
+
   const filteredGrades = grades.filter(g => 
     g.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     g.id.toLowerCase().includes(searchQuery.toLowerCase())
@@ -105,19 +148,20 @@ const ResultsGradeEntry = () => {
           <h2 className="text-2xl font-bold text-gray-900">Academic Grade Entry</h2>
           <p className="text-sm text-gray-500">Enter student scores for each grading component and publish results.</p>
         </div>
-        <div className="flex gap-2">
-          <button 
-            onClick={handleSave}
-            disabled={saving || grades.length === 0}
+        <div className="flex gap-2 items-center">
+            <button 
+            onClick={() => saveDraft()}
+            disabled={saving || grades.length === 0 || !selectedAssignment}
             className="flex items-center gap-2 px-6 py-2 bg-blue-900 text-white rounded-xl text-sm font-bold hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            {saving ? 'Publishing...' : 'Publish Results'}
+            {saving ? 'Publishing...' : 'Save Class Results'}
           </button>
+          <button onClick={submitToHomeroom} disabled={saving || grades.length === 0 || !selectedAssignment} className="flex items-center gap-2 px-4 py-2 border border-blue-900 text-blue-900 rounded-xl text-sm font-bold disabled:opacity-50">Send to Homeroom</button>
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
           <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Quarter</label>
           <select 
@@ -132,25 +176,18 @@ const ResultsGradeEntry = () => {
           </select>
         </div>
         <div>
-          <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Class</label>
+          <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Assigned Class & Subject</label>
           <select 
-            value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
+            value={selectedAssignmentId}
+            onChange={(e) => setSelectedAssignmentId(e.target.value)}
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500/20"
           >
-            <option value="Grade 10A">Grade 10A</option>
-            <option value="Grade 10B">Grade 10B</option>
-            <option value="Grade 11A">Grade 11A</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Subject</label>
-          <select 
-            value={selectedSubject}
-            onChange={(e) => setSelectedSubject(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500/20"
-          >
-            {MOCK_SUBJECTS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="">Select an assigned class and subject</option>
+            {teachingAssignments.map((assignment) => (
+              <option key={assignment.id} value={assignment.id}>
+                {formatClassSection(assignment.ClassSection)} — {assignment.Subject.name}
+              </option>
+            ))}
           </select>
         </div>
         <div>
@@ -187,7 +224,7 @@ const ResultsGradeEntry = () => {
               {loading ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-8 text-center text-gray-500 font-medium">
-                    Loading enrolled students for {selectedClass}...
+                    Loading enrolled students for {selectedAssignment ? formatClassSection(selectedAssignment.ClassSection) : 'your selected assignment'}...
                   </td>
                 </tr>
               ) : filteredGrades.length === 0 ? (
@@ -223,6 +260,7 @@ const ResultsGradeEntry = () => {
                       )}>
                         {calculateTotal(grade)}
                       </span>
+                      <button onClick={() => saveDraft(grade.id)} className="ml-2 text-xs font-bold text-blue-800">Publish</button>
                     </td>
                   </tr>
                 ))

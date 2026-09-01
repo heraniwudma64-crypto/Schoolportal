@@ -37,7 +37,7 @@ const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSe
           <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
         </button>
         <div className="h-8 w-px bg-gray-200 mx-2"></div>
-        <Link to={user?.role === 'admin' ? '/admin/account' : '/account'} className="flex items-center gap-3 hover:bg-gray-50 p-1.5 rounded-lg transition-colors cursor-pointer">
+        <Link to={user?.role === 'admin' ? '/admin/account' : '/teacher/profile'} className="flex items-center gap-3 hover:bg-gray-50 p-1.5 rounded-lg transition-colors cursor-pointer">
           <div className="text-right hidden sm:block">
             <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
             <p className="text-xs text-gray-500 capitalize">{user?.role}</p>

@@ -1,6 +1,5 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { randomUUID } from 'node:crypto';
 
 @Injectable()
 export class AssignmentsService {
@@ -9,51 +8,46 @@ export class AssignmentsService {
   async findAll() {
     return this.prisma.assignment.findMany();
   }
+  
+  async findTeacherAssignments(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+    if (!teacher) throw new UnauthorizedException('Teacher profile not found');
+    return this.prisma.assignment.findMany({ where: { teacherId: teacher.id }, include: { ClassSection: true, submissions: { include: { student: true } } }, orderBy: { createdAt: 'desc' } });
+  }
+  
+  async findSubmissions(id: string, userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+    const assignment = await this.prisma.assignment.findFirst({ where: { id, teacherId: teacher?.id }, select: { id: true } });
+    if (!assignment) throw new UnauthorizedException('You cannot view submissions for this assignment');
+    return this.prisma.submission.findMany({ where: { assignmentId: id }, include: { student: true, grades: true }, orderBy: { createdAt: 'desc' } });
+  }
 
   async create(data: any, userId?: string) {
-    let teacher = null;
+    if (!userId) throw new UnauthorizedException('User unauthenticated');
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId } });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
-    // 1. Try finding teacher by the provided userId
-    if (userId) {
-      teacher = await this.prisma.teacher.findUnique({
-        where: { userId },
-      });
+    const subjectId = data.subjectId;
+    const classSectionId = data.classSectionId;
+    if (!subjectId || !classSectionId) {
+      throw new BadRequestException('Subject and assigned section are required');
     }
 
-    // 2. If not found by userId, try finding by teacherId if passed in data
-    if (!teacher && data.teacherId && data.teacherId !== 'CURRENT_TEACHER_ID') {
-      teacher = await this.prisma.teacher.findUnique({
-        where: { id: data.teacherId },
-      });
-    }
-
-    // 3. Fallback: Grab the very first teacher in the database
-    if (!teacher) {
-      teacher = await this.prisma.teacher.findFirst();
-    }
-
-    // 4. Ultimate fallback: Create a default teacher on the fly if none exist
-    if (!teacher) {
-      const defaultUser = await this.prisma.user.findFirst();
-      if (!defaultUser) {
-        throw new BadRequestException('No users found in database. Please register an account first.');
-      }
-      teacher = await this.prisma.teacher.create({
-        data: {
-          id: randomUUID(),
-          userId: defaultUser.id,
-          firstName: 'Default',
-          lastName: 'Teacher',
-          updatedAt: new Date(),
-        },
-      });
+    const teachingAssignment = await this.prisma.sectionSubjectTeacher.findFirst({
+      where: { teacherId: teacher.id, subjectId, classSectionId },
+      include: { Subject: true, ClassSection: true },
+    });
+    if (!teachingAssignment) {
+      throw new BadRequestException('You are not assigned to this subject and section');
     }
 
     return this.prisma.assignment.create({
       data: {
         title: data.title,
-        subject: data.subject,
-        targetClass: data.targetClass,
+        subject: teachingAssignment.Subject.name,
+        targetClass: teachingAssignment.ClassSection.name,
+        classSectionId,
+        classId: data.classId || null,
         description: data.description || data.instructions,
         instructions: data.instructions || data.description,
         dueDate: data.dueDate ? new Date(data.dueDate) : new Date(),

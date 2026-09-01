@@ -18,6 +18,7 @@ import { MaterialsModule } from './modules/materials/materials.module';
 import { ReportCardsModule } from './modules/report-cards/report-cards.module';
 import { TeacherAssignmentsModule } from './modules/teacher-assignments/teacher-assignments.module';
 import { ParentsModule } from './modules/parents/parents.module';
+import { ResultsModule } from './modules/results/results.module';
 
 @Module({
   controllers: [AppController],
@@ -38,6 +39,7 @@ import { ParentsModule } from './modules/parents/parents.module';
     ReportCardsModule,
     TeacherAssignmentsModule,
     ParentsModule,
+    ResultsModule,
     ScheduleModule.forRoot(),
   ],
 })

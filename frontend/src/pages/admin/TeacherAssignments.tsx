@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, ClipboardList, Building2 } from 'lucide-react';
+import { Users, UserPlus, ClipboardList, Building2, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import { getAcademicYears, getGradeLevels, getGradeSubjects, AcademicYear, GradeLevel, GradeSubject } from '../../api/academicStructure';
@@ -7,12 +7,12 @@ import { teachersApi, Teacher } from '../../api/teachers';
 import { teacherAssignmentsApi, TeacherAssignment, SubjectTeacherAssignment } from '../../api/teacherAssignments';
 import { toast } from 'sonner';
 
-const TeacherAssignments = () => {
+export const TeacherAssignments = () => {
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
-  
+
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [academicYearId, setAcademicYearId] = useState<string>('');
-  
+
   const [gradeLevels, setGradeLevels] = useState<GradeLevel[]>([]);
   const [gradeSubjects, setGradeSubjects] = useState<GradeSubject[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -22,7 +22,7 @@ const TeacherAssignments = () => {
 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignmentType, setAssignmentType] = useState<'HomeRoom' | 'Subject'>('HomeRoom');
-  
+
   const [selectedGradeId, setSelectedGradeId] = useState('');
   const [selectedSectionId, setSelectedSectionId] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
@@ -30,6 +30,7 @@ const TeacherAssignments = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // --- CHANGED AREA 1: Safely unwrap data from APIs ---
   const fetchInitialData = async () => {
     try {
       setLoading(true);
@@ -37,34 +38,47 @@ const TeacherAssignments = () => {
         getAcademicYears(),
         getGradeLevels(),
         getGradeSubjects(),
-        teachersApi.getTeachers()
+        teachersApi.getTeachers(),
       ]);
-      setAcademicYears(yearsRes);
-      setGradeLevels(gradesRes);
-      setGradeSubjects(subjectsRes);
-      setTeachers(teachersRes);
-      
-      const current = yearsRes.find(y => y.isCurrent) || yearsRes[0];
+
+      // Many APIs wrap data in a "data" or "teachers" object. This safely extracts the array.
+      const years = Array.isArray(yearsRes) ? yearsRes : (yearsRes as any)?.data || [];
+      const grades = Array.isArray(gradesRes) ? gradesRes : (gradesRes as any)?.data || [];
+      const subjects = Array.isArray(subjectsRes) ? subjectsRes : (subjectsRes as any)?.data || [];
+      const teachList = Array.isArray(teachersRes) ? teachersRes : (teachersRes as any)?.teachers || (teachersRes as any)?.data || [];
+
+      setAcademicYears(years);
+      setGradeLevels(grades);
+      setGradeSubjects(subjects);
+      setTeachers(teachList);
+
+      const current = years.find((y: AcademicYear) => y.isCurrent) || years[0];
       if (current) {
         setAcademicYearId(current.id);
       }
-    } catch (err) {
-      toast.error('Failed to load basic data');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to load basic data');
     } finally {
       setLoading(false);
     }
   };
 
+  // --- CHANGED AREA 2: Safely unwrap assignment data ---
   const fetchAssignments = async (yearId: string) => {
+    if (!yearId) return;
     try {
-      const [hr, sub] = await Promise.all([
+      const [hrRes, subRes] = await Promise.all([
         teacherAssignmentsApi.getHomeRoomAssignments(yearId),
-        teacherAssignmentsApi.getSubjectAssignments(yearId)
+        teacherAssignmentsApi.getSubjectAssignments(yearId),
       ]);
+
+      const hr = Array.isArray(hrRes) ? hrRes : (hrRes as any)?.data || [];
+      const sub = Array.isArray(subRes) ? subRes : (subRes as any)?.data || [];
+
       setHomeRoomAssignments(hr);
       setSubjectAssignments(sub);
-    } catch (err) {
-      toast.error('Failed to load assignments');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to load assignments');
     }
   };
 
@@ -72,11 +86,11 @@ const TeacherAssignments = () => {
     fetchInitialData();
   }, []);
 
-  useEffect(() => {
-    if (academicYearId) {
-      fetchAssignments(academicYearId);
-    }
-  }, [academicYearId]);
+ useEffect(() => {
+  if (academicYearId) {
+    fetchAssignments(academicYearId);
+  }
+}, [academicYearId]);
 
   const handleAssignClick = (type: 'HomeRoom' | 'Subject', editItem?: any) => {
     setAssignmentType(type);
@@ -84,50 +98,66 @@ const TeacherAssignments = () => {
     setSelectedSectionId('');
     setSelectedSubjectId('');
     setSelectedTeacherId('');
-    
+
     if (editItem) {
-      // Find the grade by name to pre-select
-      const grade = gradeLevels.find(g => g.name === editItem.grade || g.name === `Grade ${editItem.grade}`);
+      const grade = gradeLevels.find(
+        (g) =>
+          g.id === editItem.gradeId ||
+          g.name === editItem.grade ||
+          g.name === `Grade ${editItem.grade}`
+      );
+
       if (grade) {
         setSelectedGradeId(grade.id);
-        const section = grade.ClassSection.find(s => s.name === editItem.section || s.id === editItem.classSectionId);
+        const sections = grade.ClassSection || (grade as any).classSections || (grade as any).classSection || [];
+        const section = sections.find(
+          (s: any) =>
+            s.id === editItem.classSectionId ||
+            s.id === editItem.sectionId ||
+            s.name === editItem.section
+        );
         if (section) setSelectedSectionId(section.id);
       }
+
       if (type === 'Subject' && editItem.subject) {
-        setSelectedSubjectId(editItem.subject.id);
+        setSelectedSubjectId(editItem.subject.id || editItem.subjectId);
       }
+
       if (editItem.teacher) {
-        setSelectedTeacherId(editItem.teacher.id);
+        setSelectedTeacherId(editItem.teacher.id || editItem.teacherId);
       }
     }
-    
+
     setIsAssignModalOpen(true);
   };
 
   const handleSave = async () => {
     if (!selectedSectionId) return toast.error('Please select a section');
     if (assignmentType === 'Subject' && !selectedSubjectId) return toast.error('Please select a subject');
-    // If no teacher is selected for homeroom, it acts as unassign. For subject, maybe it's required.
     if (assignmentType === 'Subject' && !selectedTeacherId) return toast.error('Please select a teacher');
 
     setIsSaving(true);
     try {
-      if (assignmentType === 'HomeRoom') {
-        await teacherAssignmentsApi.assignHomeRoomTeacher(selectedSectionId, selectedTeacherId || null);
-        toast.success('Home Room teacher updated');
-      } else {
+    if (assignmentType === 'HomeRoom') {
+  await teacherAssignmentsApi.assignHomeRoomTeacher(
+    selectedSectionId,
+    selectedTeacherId || null,
+    academicYearId
+  );
+  toast.success('Home Room teacher updated');
+}else {
         await teacherAssignmentsApi.assignSubjectTeacher({
           classSectionId: selectedSectionId,
           subjectId: selectedSubjectId,
           teacherId: selectedTeacherId,
-          academicYearId: academicYearId
+          academicYearId: academicYearId,
         });
         toast.success('Subject teacher updated');
       }
       setIsAssignModalOpen(false);
       fetchAssignments(academicYearId);
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Failed to save assignment');
+      toast.error(err.response?.data?.message || err.message || 'Failed to save assignment');
     } finally {
       setIsSaving(false);
     }
@@ -139,43 +169,70 @@ const TeacherAssignments = () => {
       await teacherAssignmentsApi.removeSubjectTeacher(id);
       toast.success('Assignment removed');
       fetchAssignments(academicYearId);
-    } catch (err) {
-      toast.error('Failed to remove assignment');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to remove assignment');
     }
   };
 
-  // Derive dropdown options
-  const selectedGrade = gradeLevels.find(g => g.id === selectedGradeId);
-  const sectionsForGrade = selectedGrade?.ClassSection || [];
-  const subjectsForGrade = gradeSubjects
-    .filter(gs => gs.gradeLevelId === selectedGradeId && (!gs.academicYearId || gs.academicYearId === academicYearId))
-    .map(gs => gs.Subject);
+  // --- CHANGED AREA 3: Safely get the teacher's name ---
+  const getTeacherDisplayName = (t?: any) => {
+    if (!t) return '—';
+    if (t.name) return t.name;
+    if (t.fullName) return t.fullName;
+    if (t.firstName || t.lastName) return `${t.firstName || ''} ${t.lastName || ''}`.trim();
+    return '—';
+  };
 
-  // Compute stats
+  // --- CHANGED AREA 4: Safely get sections, checking for different casing styles ---
+  const selectedGrade = gradeLevels.find((g) => g.id === selectedGradeId);
+  const sectionsForGrade = 
+    selectedGrade?.ClassSection || 
+    (selectedGrade as any)?.classSections || 
+    (selectedGrade as any)?.classSection || 
+    [];
+  
+  const subjectsForGradeMap = new Map();
+  gradeSubjects
+    .filter(
+      (gs) =>
+        gs.gradeLevelId === selectedGradeId &&
+        (!gs.academicYearId || gs.academicYearId === academicYearId)
+    )
+    .forEach((gs) => {
+      if (gs.Subject?.id) {
+        subjectsForGradeMap.set(gs.Subject.id, gs.Subject);
+      }
+    });
+  const subjectsForGrade = Array.from(subjectsForGradeMap.values());
+
   const totalTeachers = teachers.length;
-  const homeRoomCount = homeRoomAssignments.filter(a => a.teacher).length;
-  // A teacher is assigned if they are in homeRoom or subject array
+  const homeRoomCount = homeRoomAssignments.filter((a) => a.teacher).length;
   const assignedTeacherIds = new Set([
-    ...homeRoomAssignments.filter(a => a.teacher).map(a => a.teacher!.id),
-    ...subjectAssignments.filter(a => a.teacher).map(a => a.teacher!.id)
+    ...homeRoomAssignments.filter((a) => a.teacher).map((a) => a.teacher!.id),
+    ...subjectAssignments.filter((a) => a.teacher).map((a) => a.teacher!.id),
   ]);
   const assignedCount = assignedTeacherIds.size;
-  const unassignedCount = totalTeachers - assignedCount;
+  const unassignedCount = Math.max(0, totalTeachers - assignedCount);
 
-  // Filter based on global search
   const query = globalSearchQuery?.toLowerCase() || '';
-  const filteredHomeRoom = homeRoomAssignments.filter(a => 
-    a.grade.toLowerCase().includes(query) || 
-    a.section.toLowerCase().includes(query) || 
-    (a.teacher?.name || '').toLowerCase().includes(query)
-  );
-  
-  const filteredSubject = subjectAssignments.filter(a => 
-    a.grade.toLowerCase().includes(query) || 
-    a.section.toLowerCase().includes(query) || 
-    a.subject.name.toLowerCase().includes(query) || 
-    (a.teacher?.name || '').toLowerCase().includes(query)
-  );
+  const filteredHomeRoom = homeRoomAssignments.filter((a) => {
+    const teacherName = getTeacherDisplayName(a.teacher).toLowerCase();
+    return (
+      (a.grade || '').toLowerCase().includes(query) ||
+      (a.section || '').toLowerCase().includes(query) ||
+      teacherName.includes(query)
+    );
+  });
+
+  const filteredSubject = subjectAssignments.filter((a) => {
+    const teacherName = getTeacherDisplayName(a.teacher).toLowerCase();
+    return (
+      (a.grade || '').toLowerCase().includes(query) ||
+      (a.section || '').toLowerCase().includes(query) ||
+      (a.subject?.name || '').toLowerCase().includes(query) ||
+      teacherName.includes(query)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -185,20 +242,22 @@ const TeacherAssignments = () => {
           <p className="text-sm text-gray-500">Assign home room teachers and subject teachers to classes and sections.</p>
         </div>
         <div className="flex items-center gap-3">
-           <select 
-              value={academicYearId} 
-              onChange={e => setAcademicYearId(e.target.value)} 
-              className="h-12 px-4 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all shadow-sm"
-              disabled={loading}
-            >
-              {academicYears.map(ay => (
-                <option key={ay.id} value={ay.id}>{ay.year}</option>
-              ))}
-            </select>
+          <select
+            value={academicYearId}
+            onChange={(e) => setAcademicYearId(e.target.value)}
+            className="h-12 px-4 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all shadow-sm"
+            disabled={loading}
+          >
+            {academicYears.map((ay) => (
+              <option key={ay.id} value={ay.id}>
+                {ay.year}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Summary */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
           <div className="flex items-center gap-3 mb-2">
@@ -230,14 +289,15 @@ const TeacherAssignments = () => {
         </div>
       </div>
 
+      {/* Main Tables */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        
         {/* Section A - Home Room Assignments */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[400px]">
           <div className="p-6 border-b border-gray-100">
             <div className="flex justify-between items-start mb-2">
               <h3 className="text-xl font-black text-gray-900">Home Room Teachers</h3>
-              <button 
+              <button
+                type="button"
                 onClick={() => handleAssignClick('HomeRoom')}
                 className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2"
               >
@@ -257,29 +317,48 @@ const TeacherAssignments = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredHomeRoom.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-8 text-gray-400">No home room assignments found</td></tr>
-                ) : filteredHomeRoom.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4 text-sm font-bold text-gray-900">{item.grade} - {item.section}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-700">{item.teacher?.name || '—'}</td>
-                    <td className="px-6 py-4">
-                      <span className={cn("px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
-                          item.teacher ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                      )}>
-                        {item.teacher ? 'Assigned' : 'Unassigned'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                       <button 
-                         onClick={() => handleAssignClick('HomeRoom', item)}
-                         className="px-4 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors inline-block"
-                       >
-                         {item.teacher ? 'Edit' : 'Assign'}
-                       </button>
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="text-center py-8 text-gray-400">
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-900 mb-2" />
+                      Loading homeroom assignments...
                     </td>
                   </tr>
-                ))}
+                ) : filteredHomeRoom.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="text-center py-8 text-gray-400">No home room assignments found</td>
+                  </tr>
+                ) : (
+                  filteredHomeRoom.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-bold text-gray-900">
+                        {item.grade} - {item.section}
+                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-700">
+                        {getTeacherDisplayName(item.teacher)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={cn(
+                            'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest',
+                            item.teacher ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                          )}
+                        >
+                          {item.teacher ? 'Assigned' : 'Unassigned'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleAssignClick('HomeRoom', item)}
+                          className="px-4 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors inline-block"
+                        >
+                          {item.teacher ? 'Edit' : 'Assign'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -290,8 +369,9 @@ const TeacherAssignments = () => {
           <div className="p-6 border-b border-gray-100">
             <div className="flex justify-between items-start mb-2">
               <h3 className="text-xl font-black text-gray-900">Subject Teachers</h3>
-              <button 
-                 onClick={() => handleAssignClick('Subject')}
+              <button
+                type="button"
+                onClick={() => handleAssignClick('Subject')}
                 className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-2"
               >
                 <UserPlus className="w-4 h-4" /> Assign
@@ -310,37 +390,53 @@ const TeacherAssignments = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredSubject.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-8 text-gray-400">No subject assignments found</td></tr>
-                ) : filteredSubject.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4 text-sm font-bold text-gray-900">{item.grade} - {item.section}</td>
-                    <td className="px-6 py-4 text-sm font-bold text-gray-600">{item.subject.name}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-700">{item.teacher?.name || '—'}</td>
-                    <td className="px-6 py-4 text-right flex justify-end gap-2">
-                      <button 
-                         onClick={() => handleAssignClick('Subject', item)}
-                         className="px-4 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors inline-block"
-                       >
-                         Edit
-                       </button>
-                       <button 
-                         onClick={() => handleUnassignSubject(item.id)}
-                         className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors inline-block"
-                       >
-                         Remove
-                       </button>
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="text-center py-8 text-gray-400">
+                      <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-900 mb-2" />
+                      Loading subject assignments...
                     </td>
                   </tr>
-                ))}
+                ) : filteredSubject.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="text-center py-8 text-gray-400">No subject assignments found</td>
+                  </tr>
+                ) : (
+                  filteredSubject.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-bold text-gray-900">
+                        {item.grade} - {item.section}
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold text-gray-600">{item.subject?.name}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-700">
+                        {getTeacherDisplayName(item.teacher)}
+                      </td>
+                      <td className="px-6 py-4 text-right flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAssignClick('Subject', item)}
+                          className="px-4 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors inline-block"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUnassignSubject(item.id)}
+                          className="px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors inline-block"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
-
       </div>
 
-      {/* Reusable Dialog for Teacher Assignment */}
+      {/* Assignment Modal */}
       {isAssignModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/20 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl flex flex-col overflow-hidden">
@@ -350,37 +446,41 @@ const TeacherAssignments = () => {
               </h3>
               <p className="text-sm text-gray-500 mt-1">Select the details to make the assignment.</p>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Grade</label>
-                  <select 
+                  <select
                     value={selectedGradeId}
                     onChange={(e) => {
                       setSelectedGradeId(e.target.value);
                       setSelectedSectionId('');
                       setSelectedSubjectId('');
                     }}
-                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all"
+                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all text-sm font-medium"
                   >
                     <option value="">Select Grade</option>
-                    {gradeLevels.map(g => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
+                    {gradeLevels.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Section</label>
-                  <select 
+                  <select
                     value={selectedSectionId}
-                    onChange={e => setSelectedSectionId(e.target.value)}
+                    onChange={(e) => setSelectedSectionId(e.target.value)}
                     disabled={!selectedGradeId}
-                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all disabled:opacity-50"
+                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all disabled:opacity-50 text-sm font-medium"
                   >
                     <option value="">Select Section</option>
-                    {sectionsForGrade.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
+                    {sectionsForGrade.map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -389,15 +489,19 @@ const TeacherAssignments = () => {
               {assignmentType === 'Subject' && (
                 <div>
                   <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Subject</label>
-                  <select 
+                  <select
                     value={selectedSubjectId}
-                    onChange={e => setSelectedSubjectId(e.target.value)}
+                    onChange={(e) => setSelectedSubjectId(e.target.value)}
                     disabled={!selectedGradeId || subjectsForGrade.length === 0}
-                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all disabled:opacity-50"
+                    className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all disabled:opacity-50 text-sm font-medium"
                   >
-                    <option value="">Select Subject</option>
-                    {subjectsForGrade.map(sub => (
-                      <option key={sub.id} value={sub.id}>{sub.name}</option>
+                    <option value="">
+                      {subjectsForGrade.length === 0 ? 'No subjects found for grade' : 'Select Subject'}
+                    </option>
+                    {subjectsForGrade.map((sub: any) => (
+                      <option key={sub.id} value={sub.id}>
+                        {sub.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -405,33 +509,37 @@ const TeacherAssignments = () => {
 
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Teacher</label>
-                <select 
+                <select
                   value={selectedTeacherId}
-                  onChange={e => setSelectedTeacherId(e.target.value)}
-                  className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all"
+                  onChange={(e) => setSelectedTeacherId(e.target.value)}
+                  className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all text-sm font-medium"
                 >
                   <option value="">{assignmentType === 'HomeRoom' ? 'Unassigned (None)' : 'Select Teacher'}</option>
-                  {teachers.map(t => (
-                    <option key={t.id} value={t.id}>{t.firstName} {t.lastName}</option>
+                  {teachers.map((t: any) => (
+                    <option key={t.id} value={t.id}>
+                      {getTeacherDisplayName(t)}
+                    </option>
                   ))}
                 </select>
               </div>
-
             </div>
-            
+
             <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
-              <button 
-                onClick={() => setIsAssignModalOpen(false)} 
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(false)}
                 disabled={isSaving}
                 className="px-6 py-3 rounded-2xl text-sm font-black uppercase tracking-widest text-gray-600 hover:bg-gray-200 transition-colors"
               >
                 Cancel
               </button>
-              <button 
-                onClick={handleSave} 
+              <button
+                type="button"
+                onClick={handleSave}
                 disabled={isSaving}
-                className="px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
+                className="px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 flex items-center gap-2"
               >
+                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {isSaving ? 'Saving...' : 'Save Assignment'}
               </button>
             </div>

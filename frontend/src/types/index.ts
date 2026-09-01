@@ -10,6 +10,10 @@ export interface User {
   department?: string;
   gender?: string;
   avatar?: string;
+  // Populated by teacher-specific context requests when available.
+  isHomeroomTeacher?: boolean;
+  homeroomSections?: Array<{ id: string }>;
+  homeroomClassId?: string;
 }
 
 export interface Subject {

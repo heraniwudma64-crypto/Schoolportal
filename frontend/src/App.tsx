@@ -36,6 +36,10 @@ import TeacherAssignments from './pages/admin/TeacherAssignments';
 // Teacher Specific
 import Performance from './pages/teacher/Performance';
 import TeacherProfile from './pages/teacher/Profile';
+import HomeroomReportCards from './pages/teacher/HomeroomReportCards';
+import HomeroomSubmissionMatrix from './pages/teacher/HomeroomSubmissionMatrix';
+import HomeroomRosterRedesigned from './pages/teacher/HomeroomRosterRedesigned';
+import ReportCardPrintable from './pages/teacher/ReportCardPrintable';
 
 import MyChildren from './pages/parent/MyChildren';
 import ParentAttendance from './pages/parent/ParentAttendance';
@@ -74,6 +78,11 @@ function App() {
 
             {/* Teacher Only */}
             <Route path="performance" element={<RequireRole allowedRoles={['teacher']}><Performance /></RequireRole>} />
+            <Route path="homeroom/submissions" element={<RequireRole allowedRoles={['teacher']}><HomeroomSubmissionMatrix /></RequireRole>} />
+            <Route path="homeroom/roster" element={<RequireRole allowedRoles={['teacher']}><HomeroomRosterRedesigned /></RequireRole>} />
+            <Route path="homeroom/report-cards" element={<RequireRole allowedRoles={['teacher']}><ReportCardPrintable /></RequireRole>} />
+            {/* Retained for existing saved links. */}
+            <Route path="homeroom/reports" element={<RequireRole allowedRoles={['teacher']}><HomeroomReportCards /></RequireRole>} />
             <Route path="/teacher/profile" element={<TeacherProfile />} />
             {/* Admin Only */}
             <Route path="users" element={<RequireRole allowedRoles={['admin']}><UserManagement /></RequireRole>} />

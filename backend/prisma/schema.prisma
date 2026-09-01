@@ -8,6 +8,114 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum ExamType {
+  QUIZ
+  MIDTERM
+  FINAL
+  ASSIGNMENT
+  PROJECT
+}
+
+enum ExamStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CREDIT_CARD
+  ONLINE_GATEWAY
+}
+
+enum StudentStatus {
+  ACTIVE
+  GRADUATED
+  SUSPENDED
+  TRANSFERRED
+}
+
+enum NoticeStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  EXPIRED
+  ARCHIVED
+}
+
+enum NoticeTargetType {
+  GLOBAL
+  ROLE
+  GRADE
+  SECTION
+  STUDENT
+  PARENT
+}
+
+enum ResultStatus {
+  DRAFT
+  SUBMITTED
+  PUBLISHED
+}
+
+model SubjectResult {
+  id             String       @id @default(uuid())
+  studentId      String
+  subjectId      String
+  classSectionId String
+  academicYearId String
+  term           String // e.g., "TERM_1"
+  marks          Float
+  status         ResultStatus @default(DRAFT)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  Student      Student      @relation(fields: [studentId], references: [id])
+  Subject      Subject      @relation(fields: [subjectId], references: [id])
+  ClassSection ClassSection @relation(fields: [classSectionId], references: [id])
+  AcademicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@unique([studentId, subjectId, classSectionId, academicYearId, term])
+}
+
+model ReportCard {
+  id             String       @id @default(uuid())
+  studentId      String
+  classSectionId String
+  academicYearId String
+  term           String
+  totalMarks     Float
+  average        Float
+  rank           Int
+  status         ResultStatus @default(DRAFT)
+  createdAt      DateTime     @default(now())
+
+  Student      Student      @relation(fields: [studentId], references: [id])
+  ClassSection ClassSection @relation(fields: [classSectionId], references: [id])
+  AcademicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+
+  @@unique([studentId, classSectionId, academicYearId, term])
+}
+
 // ─── Core Auth / User ─────────────────────────────────────────────────────────
 
 model User {
@@ -51,11 +159,13 @@ model AcademicYear {
   createdAt DateTime @default(now())
   updatedAt DateTime
 
-  ClassSection          ClassSection[]
-  Term                  Term[]
-  StudentEnrollment     StudentEnrollment[]
-  GradeSubject          GradeSubject[]
-  SectionSubjectTeacher SectionSubjectTeacher[]
+  ClassSection      ClassSection[]
+  Term              Term[]
+  StudentEnrollment StudentEnrollment[]
+  GradeSubject      GradeSubject[]
+  subjectResults    SubjectResult[]
+  reportCards       ReportCard[]
+  sectionSubjectTeachers SectionSubjectTeacher[]
 }
 
 model Term {
@@ -90,7 +200,6 @@ model GradeLevel {
 model ClassSection {
   id             String   @id
   name           String
-  teacherId      String?
   academicYearId String?
   capacity       Int?
   createdAt      DateTime @default(now())
@@ -98,18 +207,28 @@ model ClassSection {
   updatedAt      DateTime @updatedAt
   gradeLevelId   String?
   status         String   @default("ACTIVE")
+  teacherId      String?  
 
-  Assignment            Assignment[]
-  AcademicYear          AcademicYear?           @relation(fields: [academicYearId], references: [id])
-  Teacher               Teacher?                @relation(fields: [teacherId], references: [id])
-  GradeLevel            GradeLevel?             @relation(fields: [gradeLevelId], references: [id])
-  Examination           Examination[]
-  students              Student[]
-  StudentAttendance     StudentAttendance[]
-  Timetable             Timetable[]
-  StudentEnrollment     StudentEnrollment[]
-  Notice                Notice[]
-  SectionSubjectTeacher SectionSubjectTeacher[]
+  Assignment        Assignment[]
+  AcademicYear      AcademicYear?         @relation(fields: [academicYearId], references: [id])
+  GradeLevel        GradeLevel?           @relation(fields: [gradeLevelId], references: [id])
+  Examination       Examination[]
+  students          Student[]
+  StudentAttendance StudentAttendance[]
+  Timetable         Timetable[]
+  StudentEnrollment StudentEnrollment[]
+  Notice            Notice[]
+  subjectResults    SubjectResult[]
+  reportCards       ReportCard[]
+  subjectTeachers   SectionSubjectTeacher[]
+  materials         Material[]
+
+  Teacher           Teacher?              @relation("GeneralTeacher", fields: [teacherId], references: [id], map: "ClassSection_general_teacher_fkey")
+  homeroomTeacher   Teacher?              @relation("HomeroomTeacher", fields: [teacherId], references: [id], map: "ClassSection_homeroom_teacher_fkey")
+
+  // Canonical identity for newly-created sections. Legacy rows may have a
+  // missing year/grade and are deliberately excluded from enrollment flows.
+  @@unique([academicYearId, gradeLevelId, name])
 }
 
 model Class {
@@ -177,28 +296,31 @@ model Student {
   Notice            Notice[]
   submissions       Submission[]
   grades            Grade[]
+  subjectResults    SubjectResult[]
+  reportCards       ReportCard[]
 }
 
 model Teacher {
-  id            String   @id
-  userId        String   @unique
-  firstName     String
-  lastName      String
-  address       String?
-  createdAt     DateTime @default(now())
-  phoneNumber   String?
-  qualification String?
-  staffId       String?  @unique
-  updatedAt     DateTime
+  id             String   @id
+  userId         String   @unique
+  firstName      String
+  lastName       String
+  address        String?
+  createdAt      DateTime @default(now())
+  phoneNumber    String?
+  qualification  String?
+  staffId        String?  @unique
+  updatedAt      DateTime
 
-  ClassSection          ClassSection[]
-  User                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Timetable             Timetable[]
-  classes               ClassTeacher[]
-  subjects              Subject[]
-  assignments           Assignment[]
-  examinations          Examination[]
-  SectionSubjectTeacher SectionSubjectTeacher[]
+  ClassSection       ClassSection[] @relation("GeneralTeacher") // Added relation name here
+  User               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Timetable          Timetable[]
+  classes            ClassTeacher[]
+  subjects           Subject[]
+  assignments        Assignment[]
+  examinations       Examination[]
+  homeroomSections   ClassSection[] @relation("HomeroomTeacher")
+  subjectSections    SectionSubjectTeacher[]
 }
 
 model ClassTeacher {
@@ -267,6 +389,7 @@ model StudentEnrollment {
   ClassSection ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
 
   @@unique([studentId, academicYearId])
+  @@index([academicYearId, gradeLevelId, classSectionId, status])
 }
 
 // ─── Subjects ─────────────────────────────────────────────────────────────────
@@ -281,12 +404,13 @@ model Subject {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  Examination           Examination[]
-  Timetable             Timetable[]
-  GradeSubject          GradeSubject[]
-  teacherId             String?
-  teacher               Teacher?                @relation(fields: [teacherId], references: [id])
-  SectionSubjectTeacher SectionSubjectTeacher[]
+  Examination    Examination[]
+  Timetable      Timetable[]
+  GradeSubject   GradeSubject[]
+  teacherId      String?
+  teacher        Teacher?        @relation(fields: [teacherId], references: [id])
+  subjectResults SubjectResult[]
+  sectionSubjectTeachers SectionSubjectTeacher[]
 }
 
 model GradeSubject {
@@ -301,23 +425,6 @@ model GradeSubject {
   Subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@unique([academicYearId, gradeLevelId, subjectId])
-}
-
-model SectionSubjectTeacher {
-  id             String   @id @default(uuid())
-  classSectionId String
-  subjectId      String
-  teacherId      String
-  academicYearId String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  ClassSection ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
-  Subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  Teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  AcademicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-
-  @@unique([classSectionId, subjectId, academicYearId])
 }
 
 // ─── Timetable ────────────────────────────────────────────────────────────────
@@ -595,6 +702,21 @@ model Grade {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+model SectionSubjectTeacher {
+  id             String       @id @default(uuid())
+  classSectionId String
+  subjectId      String
+  teacherId      String
+  academicYearId String
+
+  ClassSection   ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  Subject        Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  Teacher        Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  AcademicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([classSectionId, subjectId, academicYearId])
+}
+
 
 // ─── Materials (Preserved with exact existing column mappings) ────────────────
 
@@ -604,76 +726,16 @@ model Material {
   description String?
   fileUrl     String?   @map("file_url")
   fileName    String?   @map("file_name")
-  fileSize    Int?      @map("file_size")
+  fileSize    BigInt?   @map("file_size") // Changed from Int? to BigInt? to match your DB
   fileType    String?   @map("file_type")
   category    String?   @map("category")
   targetRole  String?   @map("target_role")
   createdAt   DateTime? @default(now()) @map("created_at")
   updatedAt   DateTime? @updatedAt @map("updated_at")
   userId      String?
+  classSectionId String? @map("class_section_id")
   user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ClassSection ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
 
   @@map("materials")
-}
-
-// ─── Enums ────────────────────────────────────────────────────────────────────
-
-enum Role {
-  ADMIN
-  TEACHER
-  STUDENT
-  PARENT
-}
-
-enum AttendanceStatus {
-  PRESENT
-  ABSENT
-  LATE
-  EXCUSED
-}
-
-enum ExamType {
-  QUIZ
-  MIDTERM
-  FINAL
-  ASSIGNMENT
-  PROJECT
-}
-
-enum ExamStatus {
-  DRAFT
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum PaymentMethod {
-  CASH
-  BANK_TRANSFER
-  CREDIT_CARD
-  ONLINE_GATEWAY
-}
-
-enum StudentStatus {
-  ACTIVE
-  GRADUATED
-  SUSPENDED
-  TRANSFERRED
-}
-
-enum NoticeStatus {
-  DRAFT
-  SCHEDULED
-  PUBLISHED
-  EXPIRED
-  ARCHIVED
-}
-
-enum NoticeTargetType {
-  GLOBAL
-  ROLE
-  GRADE
-  SECTION
-  STUDENT
-  PARENT
 }

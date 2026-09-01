@@ -1,32 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
+import { formatClassSection } from '../../lib/classSection';
+import { getEnrolledStudents } from '../../api/roster';
 
 const TeacherAttendance = () => {
   const [classSections, setClassSections] = useState<any[]>([]);
+  const [teachingAssignments, setTeachingAssignments] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('Mathematics');
   const [searchQuery, setSearchQuery] = useState('');
+  const [historyDate, setHistoryDate] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('');
+  const [historyStudent, setHistoryStudent] = useState('');
   
   const [students, setStudents] = useState<any[]>([]);
   const [pastRecords, setPastRecords] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
 
   // 1. Fetch available class sections from database on mount with fallback
   // 1. Fetch available class sections from NestJS backend
   useEffect(() => {
-    api.get('/students/class-sections') // <-- Updated URL path
+    api.get('/teachers/assignments')
       .then((res: any) => {
-        const responseData = res.data || res;
-        let sections = Array.isArray(responseData) ? responseData : responseData?.data || [];
-        
-        if (sections.length === 0) {
-          sections = [{ id: 'ad8a74f1-9d17-4b1a-a13c-a06994450949', name: 'Grade 10A (Default)' }];
-        }
+        const assignments = Array.isArray(res) ? res : res?.data || [];
+        setTeachingAssignments(assignments);
+        const sections = assignments.filter((item: any, index: number, all: any[]) => all.findIndex((candidate) => candidate.classSectionId === item.classSectionId) === index).map((item: any) => ({ id: item.classSectionId, ...item.ClassSection }));
 
         setClassSections(sections);
-        setSelectedClassId(sections[0].id);
+        setSelectedClassId(sections[0]?.id || '');
+        setSelectedSubject(assignments[0]?.Subject?.name || '');
       })
       .catch((err) => {
         console.error('Failed to load class sections:', err);
@@ -37,29 +43,13 @@ const TeacherAttendance = () => {
   // 2. Fetch students using the exact classSectionId foreign key endpoint with fallback
   useEffect(() => {
     if (showHistory || !selectedClassId) return;
+    const assignment = teachingAssignments.find((item) => item.classSectionId === selectedClassId);
+    if (!assignment?.academicYearId) return;
     setLoading(true);
     
-    api.get(`/students/by-class-section/${selectedClassId}`)
+    getEnrolledStudents(assignment.academicYearId, selectedClassId)
       .then((response: any) => {
-        const data = response.data || response;
-        let rawStudents = [];
-        
-        if (Array.isArray(data)) {
-          rawStudents = data;
-        } else if (data && Array.isArray(data.students)) {
-          rawStudents = data.students;
-        } else if (data && Array.isArray(data.data)) {
-          rawStudents = data.data;
-        }
-
-        // If no students came from the database, use mock students for testing UI
-        if (rawStudents.length === 0) {
-          rawStudents = [
-            { id: '1', name: 'Alice Johnson', idNumber: 'STD-1001', status: 'PRESENT' },
-            { id: '2', name: 'Bob Smith', idNumber: 'STD-1002', status: 'PRESENT' },
-            { id: '3', name: 'Charlie Davis', idNumber: 'STD-1003', status: 'PRESENT' },
-          ];
-        }
+        const rawStudents = response;
 
         const formatted = rawStudents.map((student: any) => ({
           id: student.id,
@@ -71,23 +61,22 @@ const TeacherAttendance = () => {
         setStudents(formatted);
       })
       .catch((err) => {
-        console.error('Failed to fetch students, using mock fallback:', err);
-        // Fallback mock list if network request fails entirely
-        setStudents([
-          { id: '1', name: 'Alice Johnson', idNumber: 'STD-1001', status: 'PRESENT' },
-          { id: '2', name: 'Bob Smith', idNumber: 'STD-1002', status: 'PRESENT' },
-          { id: '3', name: 'Charlie Davis', idNumber: 'STD-1003', status: 'PRESENT' },
-        ]);
+        console.error('Failed to fetch students:', err);
+        setStudents([]);
       })
       .finally(() => setLoading(false));
-  }, [selectedClassId, showHistory]);
+  }, [selectedClassId, showHistory, teachingAssignments]);
 
   // Fetch past attendance records when history view is toggled on
   useEffect(() => {
     if (!showHistory) return;
     setLoading(true);
     
-    api.get('/attendance')
+    const params = new URLSearchParams();
+    if (historyDate) params.set('date', historyDate);
+    if (historyStatus) params.set('status', historyStatus);
+    if (historyStudent) params.set('studentName', historyStudent);
+    api.get(`/attendance?${params.toString()}`)
       .then((response: any) => {
         const resData = response.data || response;
         if (Array.isArray(resData)) {
@@ -96,7 +85,7 @@ const TeacherAttendance = () => {
       })
       .catch((err) => console.error('Error fetching history:', err))
       .finally(() => setLoading(false));
-  }, [showHistory]);
+  }, [showHistory, historyDate, historyStatus, historyStudent]);
 
   const handleStatusChange = (studentId: string, newStatus: string) => {
     setStudents((prev) =>
@@ -109,7 +98,7 @@ const TeacherAttendance = () => {
       await api.post('/attendance', {
         classSectionId: selectedClassId,
         subject: selectedSubject,
-        recordedById: 'current-teacher-id',
+        recordedById: user?.id,
         date: new Date().toISOString().split('T')[0],
         period: 1,
         records: students.map((s) => ({
@@ -175,7 +164,7 @@ const TeacherAttendance = () => {
               >
                 {classSections.map((sec) => (
                   <option key={sec.id} value={sec.id}>
-                    {sec.name}
+                    {formatClassSection(sec)}
                   </option>
                 ))}
               </select>
@@ -187,9 +176,9 @@ const TeacherAttendance = () => {
                 onChange={(e) => setSelectedSubject(e.target.value)}
                 className="w-full rounded-lg border-gray-300 border p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="Mathematics">Mathematics</option>
-                <option value="Physics">Physics</option>
-                <option value="Chemistry">Chemistry</option>
+                {[...new Map(teachingAssignments.map((item) => [item.Subject.id, item.Subject])).values()].map((subject: any) => (
+                  <option key={subject.id} value={subject.name}>{subject.name}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -281,7 +270,7 @@ const TeacherAttendance = () => {
         </>
       ) : (
         /* Past Attendance Records Table View */
-        <div className="bg-white shadow-sm rounded-xl border border-gray-100 overflow-hidden">
+        <div className="space-y-4"><div className="bg-white p-4 rounded-xl border border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-3"><input type="date" value={historyDate} onChange={(event) => setHistoryDate(event.target.value)} className="border rounded-lg px-3 py-2 text-sm" /><input value={historyStudent} onChange={(event) => setHistoryStudent(event.target.value)} placeholder="Student name" className="border rounded-lg px-3 py-2 text-sm" /><select value={historyStatus} onChange={(event) => setHistoryStatus(event.target.value)} className="border rounded-lg px-3 py-2 text-sm"><option value="">All statuses</option><option value="PRESENT">Present</option><option value="ABSENT">Absent</option><option value="LATE">Late</option><option value="EXCUSED">Excused</option></select><button onClick={() => { setHistoryDate(''); setHistoryStudent(''); setHistoryStatus(''); }} className="border rounded-lg px-3 py-2 text-sm">Clear filters</button></div><div className="bg-white shadow-sm rounded-xl border border-gray-100 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -320,7 +309,7 @@ const TeacherAttendance = () => {
               )}
             </tbody>
           </table>
-        </div>
+        </div></div>
       )}
     </div>
   );

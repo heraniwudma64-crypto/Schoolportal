@@ -10,7 +10,8 @@ import { toast } from 'sonner';
 export const AssignSubjectsDialog = () => {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const { data: academicYears = [] } = useQuery({ queryKey: ['academicYears'], queryFn: getAcademicYears });
   const { data: gradeLevels = [] } = useQuery({ queryKey: ['gradeLevels'], queryFn: getGradeLevels });
   const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: getSubjects });
@@ -20,44 +21,71 @@ export const AssignSubjectsDialog = () => {
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
 
   const assignMutation = useMutation({
-    mutationFn: (data: { gradeId: string, subjectId: string, yearId?: string }) => 
+    mutationFn: (data: { gradeId: string; subjectId: string; yearId?: string }) =>
       assignSubjectToGrade(data.gradeId, { subjectId: data.subjectId, academicYearId: data.yearId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gradeLevels'] });
-      queryClient.invalidateQueries({ queryKey: ['subjects'] });
-    },
-    onError: (e: any) => toast.error(e.message || 'Failed to assign subject')
   });
 
-  const handleAssign = async () => {
+  const resetForm = () => {
+    setSelectedSubjects([]);
+    setGradeLevelId('');
+    setAcademicYearId('');
+  };
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen);
+    if (!newOpen) resetForm();
+  };
+
+  const handleAssign = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!gradeLevelId || selectedSubjects.length === 0) {
       toast.error('Please select a grade and at least one subject');
       return;
     }
 
+    setIsSubmitting(true);
+
     try {
-      for (const subjectId of selectedSubjects) {
-        await assignMutation.mutateAsync({ gradeId: gradeLevelId, subjectId, yearId: academicYearId || undefined });
-      }
+      // Execute assignments concurrently
+      await Promise.all(
+        selectedSubjects.map((subjectId) =>
+          assignMutation.mutateAsync({
+            gradeId: gradeLevelId,
+            subjectId,
+            yearId: academicYearId || undefined,
+          })
+        )
+      );
+
+      // Invalidate target queries once all mutations complete
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['gradeLevels'] }),
+        queryClient.invalidateQueries({ queryKey: ['subjects'] }),
+        queryClient.invalidateQueries({ queryKey: ['grade-subjects'] }),
+      ]);
+
       toast.success('Subjects assigned successfully');
-      setOpen(false);
-      setSelectedSubjects([]);
-      setGradeLevelId('');
-    } catch (e) {
-      // errors handled by mutation
+      handleOpenChange(false);
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to assign selected subjects');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const toggleSubject = (id: string) => {
-    setSelectedSubjects(prev => 
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+    setSelectedSubjects((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
     );
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <button className="flex items-center gap-2 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20">
+        <button
+          type="button"
+          className="flex items-center gap-2 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20"
+        >
           <Layers className="w-4 h-4" />
           Assign Subjects
         </button>
@@ -66,61 +94,68 @@ export const AssignSubjectsDialog = () => {
         <DialogHeader>
           <DialogTitle>Assign Subjects to Grade</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 pt-4">
+        <form onSubmit={handleAssign} className="space-y-4 pt-4">
           <div>
             <Label>Academic Year (Optional)</Label>
-            <select 
+            <select
               className="w-full p-2 border rounded-md mt-1"
-              value={academicYearId} 
-              onChange={e => setAcademicYearId(e.target.value)}
+              value={academicYearId}
+              onChange={(e) => setAcademicYearId(e.target.value)}
             >
               <option value="">All Years / General Assignment...</option>
-              {academicYears.map(y => (
-                <option key={y.id} value={y.id}>{y.year}</option>
+              {academicYears.map((y: any) => (
+                <option key={y.id} value={y.id}>
+                  {y.year}
+                </option>
               ))}
             </select>
           </div>
           <div>
             <Label>Grade Level</Label>
-            <select 
+            <select
               className="w-full p-2 border rounded-md mt-1"
-              value={gradeLevelId} 
-              onChange={e => setGradeLevelId(e.target.value)}
+              value={gradeLevelId}
+              onChange={(e) => setGradeLevelId(e.target.value)}
             >
               <option value="">Select Grade...</option>
-              {gradeLevels.map(g => (
-                <option key={g.id} value={g.id}>{g.name}</option>
+              {gradeLevels.map((g: any) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
               ))}
             </select>
           </div>
-          
+
           {gradeLevelId && (
             <div>
               <Label>Select Subjects</Label>
               <div className="grid grid-cols-2 gap-2 mt-2 max-h-48 overflow-y-auto p-2 border rounded-xl bg-gray-50">
-                {subjects.map(s => (
-                  <div key={s.id} className="flex items-center gap-2 p-2 bg-white rounded-lg border shadow-sm">
-                    <input 
+                {subjects.map((s: any) => (
+                  <label
+                    key={s.id}
+                    className="flex items-center gap-2 p-2 bg-white rounded-lg border shadow-sm cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    <input
                       type="checkbox"
                       checked={selectedSubjects.includes(s.id)}
                       onChange={() => toggleSubject(s.id)}
                       className="rounded text-blue-600 w-4 h-4"
                     />
                     <span className="text-sm font-bold">{s.name}</span>
-                  </div>
+                  </label>
                 ))}
               </div>
             </div>
           )}
 
-          <Button 
+          <Button
+            type="submit"
             className="w-full mt-4 bg-blue-900"
-            onClick={handleAssign}
-            disabled={assignMutation.isPending || !gradeLevelId || selectedSubjects.length === 0}
+            disabled={isSubmitting || !gradeLevelId || selectedSubjects.length === 0}
           >
-            {assignMutation.isPending ? 'Assigning...' : 'Assign Selected Subjects'}
+            {isSubmitting ? 'Assigning...' : 'Assign Selected Subjects'}
           </Button>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

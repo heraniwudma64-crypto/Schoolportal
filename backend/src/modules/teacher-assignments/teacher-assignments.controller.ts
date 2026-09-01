@@ -18,14 +18,18 @@ export class TeacherAssignmentsController {
   @Post('homeroom')
   assignHomeRoomTeacher(
     @Body('classSectionId') classSectionId: string,
-    @Body('teacherId') teacherId: string | null
+    @Body('teacherId') teacherId: string | null,
+    @Body('academicYearId') academicYearId: string,
   ) {
-    return this.teacherAssignmentsService.assignHomeRoomTeacher(classSectionId, teacherId);
+    return this.teacherAssignmentsService.assignHomeRoomTeacher(classSectionId, teacherId, academicYearId);
   }
-
   @Get('subject')
-  getSubjectAssignments(@Query('academicYearId') academicYearId?: string) {
-    return this.teacherAssignmentsService.getSubjectAssignments(academicYearId);
+  async getSubjectAssignments(
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    // Sanitize empty string values passed from frontend dropdowns
+    const validYearId = academicYearId && academicYearId.trim() !== '' ? academicYearId : undefined;
+    return this.teacherAssignmentsService.getSubjectAssignments(validYearId);
   }
 
   @Post('subject')
@@ -33,7 +37,7 @@ export class TeacherAssignmentsController {
     @Body('classSectionId') classSectionId: string,
     @Body('subjectId') subjectId: string,
     @Body('teacherId') teacherId: string,
-    @Body('academicYearId') academicYearId: string
+    @Body('academicYearId') academicYearId: string,
   ) {
     return this.teacherAssignmentsService.assignSubjectTeacher(classSectionId, subjectId, teacherId, academicYearId);
   }

@@ -13,6 +13,8 @@ export interface ClassSection {
   id: string;
   name: string;
   gradeLevelId: string;
+  displayName?: string;
+  GradeLevel?: { name: string };
 }
 
 export interface GradeLevel {

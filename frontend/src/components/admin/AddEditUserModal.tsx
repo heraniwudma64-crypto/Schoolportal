@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { formatClassSection } from '../../lib/classSection';
 import {
   ClassSection,
   CreateUserPayload,
@@ -257,7 +258,7 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
                   <select className={selectCls} value={form.classSectionId} onChange={set('classSectionId')}>
                     <option value="">No class assigned</option>
                     {classSections.map((cs) => (
-                      <option key={cs.id} value={cs.id}>{cs.name}</option>
+                      <option key={cs.id} value={cs.id}>{formatClassSection(cs)}</option>
                     ))}
                   </select>
                 </Field>

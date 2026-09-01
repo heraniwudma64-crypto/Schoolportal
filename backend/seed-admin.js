@@ -2,7 +2,7 @@
  * One-time admin seed script.
  * Usage: node seed-admin.js
  *
- * Edit the values below, run once, then delete (or keep) this file.
+ * Run this whenever the development admin account needs to be repaired.
  */
 
 const ADMIN_LOGIN_ID = 'admin-001';   // the ID you'll type at login
@@ -19,25 +19,25 @@ const { randomUUID } = require('crypto');
 const prisma = new PrismaClient();
 
 async function main() {
-  const existing = await prisma.user.findUnique({
-    where: { loginId: ADMIN_LOGIN_ID },
-    select: { id: true },
-  });
-
-  if (existing) {
-    console.log(`Admin with loginId "${ADMIN_LOGIN_ID}" already exists (id: ${existing.id}). Nothing changed.`);
-    return;
-  }
-
   const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 12);
 
-  const admin = await prisma.user.create({
-    data: {
-      id:       randomUUID(),
-      loginId:  ADMIN_LOGIN_ID,
-      email:    ADMIN_EMAIL || undefined,
+  // Upsert rather than skipping existing records. This fixes a stale seed with
+  // an old password, incorrect role, or disabled/deleted state.
+  const admin = await prisma.user.upsert({
+    where: { loginId: ADMIN_LOGIN_ID },
+    update: {
       password: passwordHash,
-      role:     'ADMIN',
+      role: 'ADMIN',
+      isActive: true,
+      isDeleted: false,
+      ...(ADMIN_EMAIL ? { email: ADMIN_EMAIL } : {}),
+    },
+    create: {
+      id: randomUUID(),
+      loginId: ADMIN_LOGIN_ID,
+      email: ADMIN_EMAIL || undefined,
+      password: passwordHash,
+      role: 'ADMIN',
       isActive: true,
       isDeleted: false,
     },

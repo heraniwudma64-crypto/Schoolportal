@@ -1,130 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { User, Mail, BookOpen, Save, CheckCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Save, Upload } from 'lucide-react';
+import { toast } from 'sonner';
+import { getMyAccount, updateMyAccount, uploadMyAvatar, type AccountProfile } from '../../api/account';
+import { useAuth } from '../../context/AuthContext';
 
 export default function TeacherProfile() {
-  const [profile, setProfile] = useState({
-    name: '',
-    email: '',
-    department: '',
-    phone: '',
-  });
-  const [loading, setLoading] = useState(true);
-  const [successMessage, setSuccessMessage] = useState('');
+  const { updateProfile } = useAuth();
+  const [account, setAccount] = useState<AccountProfile | null>(null);
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', loginId: '', staffId: '', phoneNumber: '', address: '', qualification: '' });
 
-  useEffect(() => {
-    // Fetch teacher profile from your backend API
-    axios.get('/api/teacher/profile')
-      .then(res => {
-        setProfile(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error('Error fetching teacher profile:', err);
-        setLoading(false);
-      });
-  }, []);
+  useEffect(() => { getMyAccount().then((data) => {
+    setAccount(data);
+    setForm({ firstName: data.Teacher?.firstName || '', lastName: data.Teacher?.lastName || '', email: data.email || '', loginId: data.loginId, staffId: data.Teacher?.staffId || '', phoneNumber: data.Teacher?.phoneNumber || '', address: data.Teacher?.address || '', qualification: data.Teacher?.qualification || '' });
+  }).catch(() => toast.error('Could not load your account')); }, []);
 
-  const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSuccessMessage('');
-    try {
-      await axios.put('/api/teacher/profile', profile);
-      setSuccessMessage('Profile updated successfully!');
-    } catch (err) {
-      console.error('Failed to update profile:', err);
-      alert('Failed to update profile.');
-    }
-  };
+  const save = async (event: React.FormEvent) => { event.preventDefault(); try {
+    const updated = await updateMyAccount(form);
+    setAccount(updated); updateProfile({ name: `${form.firstName} ${form.lastName}`.trim(), email: form.email, idNumber: form.loginId });
+    toast.success('Account updated');
+  } catch (error: any) { toast.error(error.message || 'Could not update account'); } };
 
-  if (loading) {
-    return <div className="p-8 text-gray-500">Loading profile...</div>;
-  }
-
-  return (
-    <div className="p-8 max-w-4xl mx-auto">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Teacher Settings</h1>
-        <p className="text-sm text-gray-500">Manage and update your personal account information.</p>
-      </div>
-
-      {successMessage && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-green-600" />
-          <span>{successMessage}</span>
-        </div>
-      )}
-
-      {/* Profile Form Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <form onSubmit={handleUpdate} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Full Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <User className="w-5 h-5" />
-                </span>
-                <input 
-                  type="text" 
-                  value={profile.name} 
-                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" 
-                  required 
-                />
-              </div>
-            </div>
-
-            {/* Email Address */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <Mail className="w-5 h-5" />
-                </span>
-                <input 
-                  type="email" 
-                  value={profile.email} 
-                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" 
-                  required 
-                />
-              </div>
-            </div>
-
-            {/* Department / Subject */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Department / Subject</label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <BookOpen className="w-5 h-5" />
-                </span>
-                <input 
-                  type="text" 
-                  value={profile.department} 
-                  onChange={(e) => setProfile({ ...profile, department: e.target.value })}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent" 
-                />
-              </div>
-            </div>
-
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex justify-end pt-4 border-t border-gray-100">
-            <button 
-              type="submit" 
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2 rounded-lg transition"
-            >
-              <Save className="w-4 h-4" />
-              Save Changes
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+  const changeAvatar = async (file?: File) => { if (!file) return; try { const updated = await uploadMyAvatar(file); setAccount(updated); updateProfile({ avatar: updated.avatarUrl || undefined }); toast.success('Profile picture updated'); } catch (error: any) { toast.error(error.message || 'Avatar upload failed'); } };
+  if (!account) return <div className="p-8 text-gray-500">Loading account…</div>;
+  return <div className="max-w-3xl mx-auto space-y-6"><div><h1 className="text-2xl font-bold">My Account</h1><p className="text-gray-500">Manage your teacher registration and personal details.</p></div><div className="bg-white border rounded-xl p-6 flex items-center gap-5"><img src={account.avatarUrl || 'https://placehold.co/96x96?text=Profile'} className="w-20 h-20 rounded-full object-cover" /><label className="cursor-pointer text-blue-900 font-semibold flex gap-2"><Upload className="w-4 h-4" />Update profile picture<input type="file" accept="image/*" className="hidden" onChange={(event) => changeAvatar(event.target.files?.[0])} /></label></div><form onSubmit={save} className="bg-white border rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-4">{([['firstName', 'First name'], ['lastName', 'Last name'], ['email', 'Email'], ['loginId', 'Login ID'], ['staffId', 'Staff ID'], ['phoneNumber', 'Phone number'], ['address', 'Address'], ['qualification', 'Qualification']] as const).map(([key, label]) => <label key={key} className="text-sm font-medium">{label}<input type={key === 'email' ? 'email' : 'text'} value={form[key]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} className="mt-1 w-full border rounded-lg px-3 py-2" /></label>)}<button className="md:col-span-2 bg-blue-900 text-white rounded-lg py-2 font-semibold flex justify-center gap-2"><Save className="w-4 h-4" />Save changes</button></form></div>;
 }

@@ -5,6 +5,7 @@ import {
   Post,
   Req,
   UseGuards,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Request } from 'express';
@@ -15,7 +16,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { AuthService } from './auth.service';
 
-@Controller('auth')
+@Controller('auth') // <-- Keep this as 'auth' so frontend login works at /auth/login
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
@@ -46,6 +47,16 @@ export class AuthController {
     @Body('newPassword') newPassword: string
   ) {
     return this.authService.resetPassword(email, otp, newPassword);
+  }
+
+  @Get('me/homeroom-context')
+  @UseGuards(JwtAuthGuard)
+  async getTeacherHomeroomContext(@Req() req: Request & { user: { userId?: string; id?: string } }) {
+    const userId = req.user.userId || req.user.id;
+    if (!userId) {
+      throw new UnauthorizedException('User ID not found in token');
+    }
+    return this.authService.getHomeroomContext(userId);
   }
   
   @UseGuards(JwtAuthGuard)

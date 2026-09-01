@@ -1,47 +1,55 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   BookOpen, 
   ClipboardList, 
   FileCheck,
-  Bell,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
 } from 'lucide-react';
 import StatCard from './StatCard';
 import { MOCK_SUBJECTS, MOCK_ASSIGNMENTS } from '../../data/mockData';
 import { cn } from '../../lib/utils';
+import { api } from '../../lib/api';
 
 const TeacherOverview = () => {
+  const [dashboard, setDashboard] = useState<{ assignedSubjectsCount: number; activeStudentsCount: number; assignmentsPublishedCount: number; pendingExamsCount: number; attendance: { recordsReviewed: number; presentCount: number; absentCount: number }; recentActions: Array<{ id: string; type: string; text: string; at: string }> } | null>(null);
+
+  useEffect(() => {
+    api.get<typeof dashboard>('/teachers/dashboard').then(setDashboard).catch(() => setDashboard(null));
+  }, []);
+
   return (
     <div className="space-y-6">
+      {/* Top Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="My Subjects" 
-          value={MOCK_SUBJECTS.length} 
+          value={dashboard?.assignedSubjectsCount ?? 0} 
           icon={BookOpen} 
           iconClassName="bg-blue-50 text-blue-600"
         />
         <StatCard 
           title="Active Students" 
-          value="124" 
+          value={dashboard?.activeStudentsCount ?? 0} 
           icon={Users} 
           iconClassName="bg-indigo-50 text-indigo-600"
         />
         <StatCard 
           title="Assignments Published" 
-          value={MOCK_ASSIGNMENTS.length} 
+          value={dashboard?.assignmentsPublishedCount ?? 0} 
           icon={ClipboardList} 
           iconClassName="bg-amber-50 text-amber-600"
         />
         <StatCard 
           title="Pending Exam Reviews" 
-          value="2" 
+          value={dashboard?.pendingExamsCount ?? 0} 
           icon={FileCheck} 
           iconClassName="bg-purple-50 text-purple-600"
         />
       </div>
 
+      {/* Main Grid: Attendance & Recent Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
@@ -49,13 +57,13 @@ const TeacherOverview = () => {
               <CheckCircle2 className="w-5 h-5 text-green-600" />
               Today's Attendance Overview
             </h3>
-            <button className="text-sm text-blue-600 font-medium hover:underline">Mark Attendance</button>
+              <span className="text-sm text-blue-600 font-medium">{dashboard?.attendance.recordsReviewed ?? 0} records reviewed</span>
           </div>
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
-                { class: 'Grade 10A', subject: 'Mathematics', time: '08:00 AM', status: 'Completed', present: '28/30' },
-                { class: 'Grade 10B', subject: 'Physics', time: '10:00 AM', status: 'Upcoming', present: '-' },
+                { class: 'Assigned sections', subject: 'Attendance records', time: 'Current review', status: 'Completed', present: `${dashboard?.attendance.presentCount ?? 0} present/late` },
+                { class: 'Assigned sections', subject: 'Attendance follow-up', time: 'Current review', status: 'Upcoming', present: `${dashboard?.attendance.absentCount ?? 0} absent` },
               ].map((item, i) => (
                 <div key={i} className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
@@ -93,21 +101,21 @@ const TeacherOverview = () => {
             </h3>
           </div>
           <div className="p-6 space-y-6">
-            {[
-              { text: 'Published "Newtonian Laws" assignment', time: '2 hours ago', icon: ClipboardList, color: 'text-amber-600' },
-              { text: 'Mid-term results approved by Admin', time: '5 hours ago', icon: FileCheck, color: 'text-green-600' },
-              { text: 'Created new exam: Physics Final', time: 'Yesterday', icon: Bell, color: 'text-blue-600' },
-            ].map((action, i) => (
-              <div key={i} className="flex gap-4">
-                <div className={cn("w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0", action.color)}>
-                  <action.icon className="w-5 h-5" />
+            {(dashboard?.recentActions ?? []).map((action) => {
+              const Icon = action.type === 'exam' ? FileCheck : ClipboardList;
+              const color = action.type === 'exam' ? 'text-purple-600' : 'text-amber-600';
+              return (
+              <div key={action.id} className="flex gap-4">
+                <div className={cn("w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0", color)}>
+                  <Icon className="w-5 h-5" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-900 leading-tight">{action.text}</p>
-                  <p className="text-xs text-gray-400 mt-1">{action.time}</p>
+                  <p className="text-xs text-gray-400 mt-1">{new Date(action.at).toLocaleString()}</p>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

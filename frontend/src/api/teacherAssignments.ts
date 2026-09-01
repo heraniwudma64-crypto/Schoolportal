@@ -31,8 +31,12 @@ export const teacherAssignmentsApi = {
     return api.get(`/teacher-assignments/homeroom${qs}`);
   },
 
-  assignHomeRoomTeacher: async (classSectionId: string, teacherId: string | null) => {
-    return api.post('/teacher-assignments/homeroom', { classSectionId, teacherId });
+  assignHomeRoomTeacher: async (classSectionId: string, teacherId: string | null, academicYearId: string) => {
+    return api.post<TeacherAssignment>('/teacher-assignments/homeroom', {
+      classSectionId,
+      teacherId,
+      academicYearId,
+    });
   },
 
   getSubjectAssignments: async (academicYearId?: string): Promise<SubjectTeacherAssignment[]> => {

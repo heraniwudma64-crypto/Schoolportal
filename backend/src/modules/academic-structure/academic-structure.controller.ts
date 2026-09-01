@@ -12,6 +12,10 @@ export class AcademicStructureController {
   constructor(private readonly academicStructureService: AcademicStructureService) {}
 
   @Get('years')
+  // Teachers need the active academic year to load homeroom submissions,
+  // consolidated rosters, and report cards. Mutating academic structure
+  // endpoints remain protected by the controller-level ADMIN role.
+  @Roles(Role.ADMIN, Role.TEACHER)
   getAcademicYears() {
     return this.academicStructureService.getAcademicYears();
   }

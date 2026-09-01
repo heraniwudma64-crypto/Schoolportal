@@ -14,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly prisma: PrismaService) {
     const secret = process.env.JWT_SECRET;
     if (!secret) {
-      throw new Error('JWT_SECRET is required');
+      throw new Error('JWT_SECRET environment variable is missing.');
     }
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -24,6 +24,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
+    // Prevent DB connection lookup if sub is missing or invalid
+    if (!payload || !payload.sub) {
+      throw new UnauthorizedException('Invalid token structure');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
@@ -37,7 +42,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!user || !user.isActive || user.isDeleted) {
-      throw new UnauthorizedException('Unauthorized');
+      throw new UnauthorizedException('User is unauthorized or inactive');
     }
 
     return {

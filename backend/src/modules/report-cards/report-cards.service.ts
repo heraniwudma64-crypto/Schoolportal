@@ -55,7 +55,46 @@ export class ReportCardsService {
     }));
   }
 
-  async getReportCard(studentId: string, classSectionId: string, termId: string) {
+ async generateClassRoster(classSectionId: string) {
+  const section = await this.prisma.classSection.findUnique({
+    where: { id: classSectionId },
+    include: {
+      GradeLevel: true,
+      Teacher: true,
+      students: {
+        select: {
+          id: true,
+          admissionNo: true,
+          firstName: true,
+          lastName: true,
+          gender: true,
+          dob: true,
+          status: true,
+        },
+        orderBy: [
+          { lastName: 'asc' },
+          { firstName: 'asc' },
+        ],
+      },
+    },
+  });
+
+  if (!section) {
+    throw new NotFoundException('Class section not found');
+  }
+
+  return {
+    sectionId: section.id,
+    sectionName: section.name,
+    gradeLevel: section.GradeLevel?.name,
+    homeroomTeacher: section.Teacher 
+      ? `${section.Teacher.firstName} ${section.Teacher.lastName}` 
+      : 'Unassigned',
+    studentCount: section.students.length,
+    students: section.students,
+  };
+}  async getReportCard(studentId: string, classSectionId: string, termId: string) {
+  
     if (!studentId || !classSectionId || !termId) {
       throw new BadRequestException('Student ID, Class Section ID, and Term ID are required');
     }
@@ -215,5 +254,158 @@ export class ReportCardsService {
     if (percentage >= 65) return 'C';
     if (percentage >= 60) return 'D';
     return 'F';
+  }
+
+  async getCompiledReportCards(classSectionId: string, academicYearId: string) {
+    // Fetch all students in the class section
+    const students = await this.prisma.student.findMany({
+      where: { 
+        ClassSection: { id: classSectionId },
+        StudentEnrollment: {
+          some: {
+            classSectionId,
+            academicYearId,
+            status: 'ACTIVE'
+          }
+        }
+      },
+      include: { StudentEnrollment: true }
+    });
+
+    // Fetch class section details
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+      include: { GradeLevel: true, Teacher: true, AcademicYear: true }
+    });
+
+    if (!section) throw new NotFoundException('Class section not found');
+
+    // Get latest terms
+    const terms = await this.prisma.term.findMany({
+      where: { academicYearId },
+      orderBy: { startDate: 'asc' }
+    });
+
+    // Fetch all subject results (SUBMITTED only)
+    const subjectResults = await (this.prisma as any).subjectResult.findMany({
+      where: {
+        classSectionId,
+        academicYearId,
+        status: 'SUBMITTED'
+      },
+      include: { Subject: true }
+    });
+
+    const reportSubjectOrder = [
+      'Afaan Oromoo', 'Amharic', 'English', 'Maths', 'Math', 'Biology',
+      'Chemistry', 'Physics', 'Citizenship', 'History', 'Geography',
+      'Economics', 'ICT', 'HPE',
+    ];
+    const resultSubjects = new Map<string, { id: string; name: string }>();
+    subjectResults.forEach((result: any) => resultSubjects.set(result.subjectId, { id: result.subjectId, name: result.Subject.name }));
+    const subjects = Array.from(resultSubjects.values()).sort((left, right) => {
+      const leftIndex = reportSubjectOrder.findIndex((name) => name.toLowerCase() === left.name.toLowerCase());
+      const rightIndex = reportSubjectOrder.findIndex((name) => name.toLowerCase() === right.name.toLowerCase());
+      return (leftIndex < 0 ? 999 : leftIndex) - (rightIndex < 0 ? 999 : rightIndex) || left.name.localeCompare(right.name);
+    });
+    // The official card always presents these rows, even before a teacher has
+    // submitted marks for one of them.
+    for (const subjectName of reportSubjectOrder) {
+      if (!subjects.some((subject) => subject.name.toLowerCase() === subjectName.toLowerCase())) {
+        subjects.push({ id: `placeholder:${subjectName}`, name: subjectName });
+      }
+    }
+
+    const attendance = await this.prisma.studentAttendance.findMany({
+      where: { classSectionId, studentId: { in: students.map((student) => student.id) }, status: 'ABSENT' },
+      select: { studentId: true },
+    });
+    const absentDaysByStudent = attendance.reduce((counts, record) => {
+      counts.set(record.studentId, (counts.get(record.studentId) || 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+
+    // Build compiled data for each student
+    const compiledCards = students.map((student) => {
+      // Get this student's subject results
+      const studentResults = subjectResults.filter((r: any) => r.studentId === student.id);
+
+      // Group results by subject and term
+      const subjectMap = new Map<string, any>(subjects.map((subject) => [subject.id, {
+        subjectName: subject.name, term1: null, term2: null, sem1Avg: null,
+        term3: null, term4: null, sem2Avg: null, yearlyAvg: null,
+      }]));
+      studentResults.forEach((result: any) => {
+        const key = result.subjectId;
+        const sub = subjectMap.get(key);
+        if (!sub) return;
+        if (result.term === 'TERM_1') sub.term1 = result.marks;
+        if (result.term === 'TERM_2') sub.term2 = result.marks;
+        if (result.term === 'TERM_3') sub.term3 = result.marks;
+        if (result.term === 'TERM_4') sub.term4 = result.marks;
+      });
+
+      const calculateAverage = (values: Array<number | null>) => {
+        const present = values.filter((value): value is number => value !== null);
+        return present.length ? Math.round((present.reduce((sum, value) => sum + value, 0) / present.length) * 10) / 10 : null;
+      };
+      const subjectResults_ = Array.from(subjectMap.values()).map((subject) => ({
+        ...subject,
+        sem1Avg: calculateAverage([subject.term1, subject.term2]),
+        sem2Avg: calculateAverage([subject.term3, subject.term4]),
+        yearlyAvg: calculateAverage([subject.term1, subject.term2, subject.term3, subject.term4]),
+      }));
+
+      // Calculate overall average and rank placeholder
+      const scoredSubjects = subjectResults_.filter((subject) => subject.yearlyAvg !== null);
+      const overallTotal = scoredSubjects.reduce((sum, s) => sum + (s.yearlyAvg || 0), 0);
+      const overallAverage = scoredSubjects.length > 0 
+        ? Math.round((overallTotal / scoredSubjects.length) * 10) / 10 
+        : 0;
+
+      return {
+        studentId: student.id,
+        admissionNo: student.admissionNo,
+        firstName: student.firstName,
+        lastName: student.lastName,
+        age: student.dob 
+          ? Math.floor((new Date().getTime() - new Date(student.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+          : 0,
+        gender: student.gender || 'N/A',
+        academicYear: section.AcademicYear?.year || '',
+        gradeLevel: section.GradeLevel?.name || '',
+        classSectionName: section.name,
+        promotedToGrade: '', // To be set by homeroom teacher
+        homeroomTeacher: section.Teacher 
+          ? `${section.Teacher.firstName} ${section.Teacher.lastName}` 
+          : 'Unassigned',
+        subjectResults: subjectResults_,
+        overallTotal,
+        overallAverage,
+        overallRank: 0, // To be calculated later
+        absentDays: absentDaysByStudent.get(student.id) || 0,
+        conduct: 'A', // To be set by homeroom teacher
+        behaviourAssessment: {
+          academicPotential: 'A',
+          uniform: 'A',
+          timeManagement: 'A',
+          harmfulActions: 'A',
+          responsibilities: 'A',
+          clubActivities: 'A',
+          classworkHomework: 'A',
+          flexibility: 'A',
+          hardWork: 'A',
+          positiveThinking: 'A',
+          obeyingRules: 'A',
+          interpersonalCommunication: 'A',
+        },
+        homeroomRemarksSem1: '',
+        homeroomRemarksSem2: '',
+      };
+    });
+
+    const rankedCards = [...compiledCards].sort((left, right) => right.overallAverage - left.overallAverage);
+    rankedCards.forEach((card, index) => { card.overallRank = card.overallAverage > 0 ? index + 1 : 0; });
+    return compiledCards;
   }
 }

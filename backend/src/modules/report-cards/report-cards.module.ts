@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { ReportCardsController } from './report-cards.controller';
 import { ReportCardsService } from './report-cards.service';
-import { PrismaModule } from '../../common/prisma/prisma.module';
+import { ReportCardsController } from './report-cards.controller';
+import { TeachersModule } from '../teachers/teachers.module'; // Import the module
 
 @Module({
-  imports: [PrismaModule],
+  imports: [TeachersModule], // Add it to the imports array
   controllers: [ReportCardsController],
   providers: [ReportCardsService],
   exports: [ReportCardsService],

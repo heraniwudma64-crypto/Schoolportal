@@ -14,10 +14,11 @@ async function bootstrap() {
     origin: true,
     credentials: true,
   });
+  app.getHttpAdapter().getInstance().set('etag', false);
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
+     // whitelist: true,
+      //forbidNonWhitelisted: true,
       transform: true,
     }),
   );

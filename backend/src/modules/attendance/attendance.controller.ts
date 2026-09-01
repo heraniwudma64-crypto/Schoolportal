@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -11,11 +11,19 @@ export class AttendanceController {
 
   @Get()
   async getPastAttendance(
+    @Req() req: Request & { user: { id: string } },
     @Query('classSectionId') classSectionId?: string,
     @Query('date') date?: string,
+    @Query('status') status?: string,
+    @Query('studentName') studentName?: string,
   ) {
     // Build query filters dynamically
     const where: any = {};
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId: req.user.id }, select: { id: true } });
+    if (teacher) {
+      const assignments = await this.prisma.sectionSubjectTeacher.findMany({ where: { teacherId: teacher.id }, select: { classSectionId: true } });
+      where.classSectionId = { in: assignments.map((assignment) => assignment.classSectionId) };
+    }
     if (classSectionId) {
       where.classSectionId = classSectionId;
     }
@@ -29,6 +37,15 @@ export class AttendanceController {
       where.date = {
         gte: startDate,
         lte: endDate,
+      };
+    }
+    if (status) where.status = status;
+    if (studentName) {
+      where.Student = {
+        OR: [
+          { firstName: { contains: studentName, mode: 'insensitive' } },
+          { lastName: { contains: studentName, mode: 'insensitive' } },
+        ],
       };
     }
 
@@ -52,6 +69,16 @@ export class AttendanceController {
   ) {
     const { classSectionId, date, period, records } = body;
     const teacherId = req.user?.id;
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId: teacherId }, select: { id: true } });
+    const canRecord = teacher && await this.prisma.sectionSubjectTeacher.findFirst({
+      where: { teacherId: teacher.id, classSectionId },
+      select: { id: true },
+    });
+    const homeroomAccess = teacher && await this.prisma.classSection.findFirst({
+      where: { id: classSectionId, teacherId: teacher.id },
+      select: { id: true },
+    });
+    if (!canRecord && !homeroomAccess) throw new ForbiddenException('You are not assigned to this section');
     const parsedDate = new Date(date);
     const parsedPeriod = Number(period);
 

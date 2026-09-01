@@ -135,6 +135,37 @@ export class UsersService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Enrollment always derives its grade and year from the selected section.
+   * Clients never get to compose a free-form "Grade 10 A" value or supply a
+   * separate grade ID that can drift from the section relationship.
+   */
+  private async resolveCanonicalSection(classSectionId: string): Promise<{
+    id: string;
+    academicYearId: string;
+    gradeLevelId: string;
+  }> {
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+      select: { id: true, academicYearId: true, gradeLevelId: true },
+    });
+    if (!section?.academicYearId || !section.gradeLevelId) {
+      throw new BadRequestException('Select a valid class section with a grade and academic year');
+    }
+    const currentYear = await this.prisma.academicYear.findFirst({
+      where: { isCurrent: true },
+      select: { id: true },
+    });
+    if (!currentYear || section.academicYearId !== currentYear.id) {
+      throw new BadRequestException('Select a class section from the current academic year');
+    }
+    return {
+      id: section.id,
+      academicYearId: section.academicYearId,
+      gradeLevelId: section.gradeLevelId,
+    };
+  }
+
   // ─── LIST with search / filter / sort / pagination ──────────────────────────
 
   async findAll(query: QueryUsersDto, requesterId: string) {
@@ -275,6 +306,9 @@ export class UsersService {
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const userId = randomUUID();
     const now = new Date();
+    const section = dto.role === 'STUDENT' && dto.classSectionId
+      ? await this.resolveCanonicalSection(dto.classSectionId)
+      : null;
 
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -294,7 +328,7 @@ export class UsersService {
 
       // Create the role-specific profile record
       if (dto.role === 'STUDENT') {
-        await tx.student.create({
+        const student = await tx.student.create({
           data: {
             id: randomUUID(),
             userId,
@@ -304,12 +338,25 @@ export class UsersService {
             gender: dto.gender,
             address: dto.address,
             emergencyContact: dto.emergencyContact,
-            classSectionId: dto.classSectionId ?? null,
+            // Compatibility mirror only. StudentEnrollment is the canonical
+            // class assignment used by rosters, grade entry, and attendance.
+            classSectionId: section?.id ?? dto.classSectionId ?? null,
             parentId: validatedParentId,
             updatedAt: now,
             ...(dto.dob ? { dob: new Date(dto.dob) } : {}),
           },
         });
+        if (section) {
+          await tx.studentEnrollment.create({
+            data: {
+              studentId: student.id,
+              academicYearId: section.academicYearId,
+              gradeLevelId: section.gradeLevelId,
+              classSectionId: section.id,
+              status: 'ACTIVE',
+            },
+          });
+        }
       } else if (dto.role === 'TEACHER') {
         await tx.teacher.create({
           data: {
@@ -396,6 +443,9 @@ export class UsersService {
     }
 
     const now = new Date();
+    const section = existing.role === 'STUDENT' && dto.classSectionId
+      ? await this.resolveCanonicalSection(dto.classSectionId)
+      : null;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
@@ -422,7 +472,7 @@ export class UsersService {
           data: {
             ...profileData,
             ...(dto.admissionNo !== undefined && { admissionNo: dto.admissionNo }),
-            ...(dto.classSectionId !== undefined && { classSectionId: dto.classSectionId || null }),
+            ...(dto.classSectionId !== undefined && { classSectionId: section?.id ?? null }),
             ...(dto.gender !== undefined && { gender: dto.gender }),
             ...(dto.address !== undefined && { address: dto.address }),
             ...(dto.emergencyContact !== undefined && { emergencyContact: dto.emergencyContact }),
@@ -430,6 +480,29 @@ export class UsersService {
             ...(updatedParentId !== undefined && { parentId: updatedParentId }),
           },
         });
+        if (dto.classSectionId !== undefined) {
+          if (!section) {
+            const currentYear = await tx.academicYear.findFirst({ where: { isCurrent: true }, select: { id: true } });
+            if (currentYear) {
+              await tx.studentEnrollment.updateMany({
+                where: { studentId: existing.Student.id, academicYearId: currentYear.id, status: 'ACTIVE' },
+                data: { status: 'INACTIVE' },
+              });
+            }
+          } else {
+            await tx.studentEnrollment.upsert({
+              where: { studentId_academicYearId: { studentId: existing.Student.id, academicYearId: section.academicYearId } },
+              update: { gradeLevelId: section.gradeLevelId, classSectionId: section.id, status: 'ACTIVE' },
+              create: {
+                studentId: existing.Student.id,
+                academicYearId: section.academicYearId,
+                gradeLevelId: section.gradeLevelId,
+                classSectionId: section.id,
+                status: 'ACTIVE',
+              },
+            });
+          }
+        }
       } else if (existing.role === 'TEACHER' && existing.Teacher) {
         await tx.teacher.update({
           where: { userId: id },
@@ -502,10 +575,23 @@ export class UsersService {
   // ─── GET CLASS SECTIONS (for dropdowns) ─────────────────────────────────────
 
   async getClassSections() {
-    return this.prisma.classSection.findMany({
-      select: { id: true, name: true },
-      orderBy: { name: 'asc' },
+    const currentYear = await this.prisma.academicYear.findFirst({
+      where: { isCurrent: true },
+      select: { id: true },
     });
+    if (!currentYear) return [];
+    const sections = await this.prisma.classSection.findMany({
+      where: {
+        academicYearId: currentYear.id,
+        gradeLevelId: { not: null },
+      },
+      select: { id: true, name: true, gradeLevelId: true, GradeLevel: { select: { name: true, gradeNumber: true } } },
+      orderBy: [{ GradeLevel: { gradeNumber: 'asc' } }, { name: 'asc' }],
+    });
+    return sections.map((section) => ({
+      ...section,
+      displayName: `${section.GradeLevel?.name?.startsWith('Grade') ? section.GradeLevel.name : `Grade ${section.GradeLevel?.name || ''}`.trim()} ${section.name}`.trim(),
+    }));
   }
 
   // ─── GET PARENTS LIST (for dropdowns) ────────────────────────────────────────
@@ -783,7 +869,18 @@ export class UsersService {
     return user;
   }
 
-  async updateAccount(userId: string, data: { name?: string; loginId?: string; email?: string; student?: object }) {
+  async updateAccount(userId: string, data: {
+    name?: string;
+    loginId?: string;
+    email?: string;
+    student?: object;
+    firstName?: string;
+    lastName?: string;
+    staffId?: string;
+    phoneNumber?: string;
+    address?: string;
+    qualification?: string;
+  }) {
     // Check if loginId is unique if changing
     if (data.loginId) {
       const existing = await this.prisma.user.findUnique({ where: { loginId: data.loginId } });
@@ -799,7 +896,11 @@ export class UsersService {
       }
     }
 
-    const { student, ...userData } = data;
+    const { student, firstName, lastName, staffId, phoneNumber, address, qualification, ...userData } = data;
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (!user) throw new NotFoundException('Account not found');
+    const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+
     const updatedUser = await this.prisma.$transaction(async (tx) => {
       if (student) {
         const existingStudent = await tx.student.findUnique({ where: { userId }, select: { id: true } });
@@ -809,9 +910,18 @@ export class UsersService {
           data: student as Prisma.StudentUpdateInput,
         });
       }
+      if (user.role === Role.TEACHER && (firstName !== undefined || lastName !== undefined || staffId !== undefined || phoneNumber !== undefined || address !== undefined || qualification !== undefined)) {
+        await tx.teacher.update({
+          where: { userId },
+          data: { firstName, lastName, staffId, phoneNumber, address, qualification },
+        });
+      }
       return tx.user.update({
         where: { id: userId },
-        data: userData,
+        data: {
+          ...userData,
+          name: fullName || userData.name,
+        },
         select: USER_SELECT,
       });
     });

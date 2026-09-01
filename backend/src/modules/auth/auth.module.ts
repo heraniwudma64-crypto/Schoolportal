@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { RolesGuard } from './guards/roles.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { TeacherAssignmentsService } from '../teacher-assignments/teacher-assignments.service'; // Adjust path to point to your service file
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard],
+  providers: [AuthService, JwtStrategy, RolesGuard, TeacherAssignmentsService],
   exports: [AuthService, JwtModule, PassportModule, RolesGuard],
 })
 export class AuthModule {}

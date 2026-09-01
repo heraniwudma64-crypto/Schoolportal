@@ -23,9 +23,13 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<{ user?: { role?: Role } }>();
-    const userRole = request.user?.role;
+    const rawUserRole = String(request.user?.role || '').toUpperCase();
+    // Homeroom duty is an assignment on a TEACHER account, not a separate
+    // database role. Accept the legacy label too, should an older token carry it.
+    const userRole = rawUserRole === 'HOMEROOM_TEACHER' ? Role.TEACHER : rawUserRole;
+    const normalizedRoles = requiredRoles.map((role) => String(role).toUpperCase());
 
-    if (!userRole || !requiredRoles.includes(userRole)) {
+    if (!userRole || !normalizedRoles.includes(userRole)) {
       throw new ForbiddenException('You are not allowed to access this resource');
     }
 

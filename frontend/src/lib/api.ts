@@ -11,6 +11,21 @@ function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+// Example fetch setup in src/api/api.ts
+export const fetchHomeroomAssignments = async (academicYearId?: string) => {
+  const timestamp = Date.now();
+  const token = getToken();
+  const response = await fetch(`${BASE_URL}/teacher-assignments/homeroom?academicYearId=${academicYearId || ''}&_t=${timestamp}`, {
+    headers: {
+      'Cache-Control': 'no-cache, no-store',
+      'Pragma': 'no-cache',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    }
+  });
+  if (!response.ok) throw new ApiError(response.status, await parseError(response));
+  return response.json();
+};
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
