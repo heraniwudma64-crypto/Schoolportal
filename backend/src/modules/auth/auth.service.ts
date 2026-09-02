@@ -321,41 +321,52 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
-    
-    // For security reasons, don't reveal if the email exists or not
-    if (!user) {
-      return { message: 'If the email exists, a password reset code has been sent.' };
+    if (!email?.trim()) {
+      throw new BadRequestException('Email address is required');
     }
+    const normalizedEmail = email.trim().toLowerCase();
 
-    // 1. Generate a random 6-digit OTP code
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // Valid for 15 minutes
-
-    // 2. Save the OTP code and expiration to your user database table
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        resetOtp: otp,
-        resetOtpExpiresAt: otpExpiresAt,
-      },
+    // Look up by the exact registered email only — loginId is not accepted here.
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, isActive: true, isDeleted: true },
     });
 
-    // 3. Send the real email via Nodemailer
+    // Uniform response: never reveal whether an account exists for the address.
+    if (!user || user.isDeleted || !user.isActive) {
+      return { message: 'If that email is registered, a password reset code has been sent.' };
+    }
+
+    // Guard: the email on record must exactly match what was submitted.
+    // (findUnique already guarantees this, but the explicit check documents
+    //  the contract and catches any future case-folding drift.)
+    if (user.email !== normalizedEmail) {
+      return { message: 'If that email is registered, a password reset code has been sent.' };
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { resetOtp: otp, resetOtpExpiresAt: otpExpiresAt },
+    });
+
     try {
       await this.transporter.sendMail({
         from: process.env.MAIL_FROM || process.env.MAIL_USER,
         to: normalizedEmail,
         subject: 'Password Reset Code - School Portal',
         html: `
-          <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-            <h2>Password Reset Request</h2>
-            <p>You requested a password reset for your school portal account.</p>
-            <p>Your verification code is:</p>
-            <h1 style="color: #4F46E5; letter-spacing: 2px;">${otp}</h1>
-            <p>This code will expire in 15 minutes.</p>
-            <p>If you didn't request this, please ignore this email.</p>
+          <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 480px; color: #333;">
+            <h2 style="color: #1e3a5f;">Password Reset Request</h2>
+            <p>You requested a password reset for your School Portal account.</p>
+            <p>Your one-time verification code is:</p>
+            <div style="margin: 24px 0; text-align: center;">
+              <span style="display: inline-block; font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4F46E5; background: #f0f0ff; padding: 12px 24px; border-radius: 8px;">${otp}</span>
+            </div>
+            <p>This code expires in <strong>15 minutes</strong>.</p>
+            <p style="color: #888; font-size: 13px;">If you did not request this, you can safely ignore this email. Your password will not change.</p>
           </div>
         `,
       });
@@ -364,14 +375,31 @@ export class AuthService {
       throw new InternalServerErrorException('Failed to send password reset email. Please try again later.');
     }
 
-    return { message: 'Password reset OTP sent successfully' };
+    return { message: 'If that email is registered, a password reset code has been sent.' };
   }
 
   async verifyOtp(email: string, otp: string) {
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (!email?.trim()) throw new BadRequestException('Email address is required');
+    if (!otp?.trim()) throw new BadRequestException('OTP code is required');
 
-    if (!user || user.resetOtp !== otp || !user.resetOtpExpiresAt || user.resetOtpExpiresAt < new Date()) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // The user must supply the exact email that is stored on their account.
+    // Any mismatch — including submitting a loginId or an unregistered address
+    // — is treated as an invalid OTP to prevent information leakage.
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, resetOtp: true, resetOtpExpiresAt: true, isDeleted: true },
+    });
+
+    if (
+      !user ||
+      user.isDeleted ||
+      user.email !== normalizedEmail ||          // exact-match guard
+      user.resetOtp !== otp.trim() ||
+      !user.resetOtpExpiresAt ||
+      user.resetOtpExpiresAt < new Date()
+    ) {
       throw new BadRequestException('Invalid or expired OTP code');
     }
 
@@ -379,21 +407,36 @@ export class AuthService {
   }
 
   async resetPassword(email: string, otp: string, newPassword: string) {
+    if (!email?.trim()) throw new BadRequestException('Email address is required');
+    if (!otp?.trim()) throw new BadRequestException('OTP code is required');
+    if (!newPassword || newPassword.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters');
+    }
+
     const normalizedEmail = email.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({ where: { email: normalizedEmail } });
-    
-    if (!user || user.resetOtp !== otp || !user.resetOtpExpiresAt || user.resetOtpExpiresAt < new Date()) {
-      throw new BadRequestException('Invalid or expired OTP request');
+
+    // Same strict email-match rule as verifyOtp — no loginId or unregistered
+    // address may be used to reset a password.
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, resetOtp: true, resetOtpExpiresAt: true, isDeleted: true },
+    });
+
+    if (
+      !user ||
+      user.isDeleted ||
+      user.email !== normalizedEmail ||          // exact-match guard
+      user.resetOtp !== otp.trim() ||
+      !user.resetOtpExpiresAt ||
+      user.resetOtpExpiresAt < new Date()
+    ) {
+      throw new BadRequestException('Invalid or expired password reset request');
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.prisma.user.update({
-      where: { email: normalizedEmail },
-      data: { 
-        password: passwordHash,
-        resetOtp: null,
-        resetOtpExpiresAt: null,
-      },
+      where: { id: user.id },
+      data: { password: passwordHash, resetOtp: null, resetOtpExpiresAt: null },
     });
 
     return { message: 'Password has been reset successfully' };

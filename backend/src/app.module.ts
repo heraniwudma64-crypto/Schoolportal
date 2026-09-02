@@ -7,7 +7,6 @@ import { AcademicStructureModule } from './modules/academic-structure/academic-s
 import { NoticesModule } from './modules/notices/notices.module';
 import { AppController } from './app.controller';
 import { StudentsModule } from './modules/students/students.module';
-
 import { TeachersModule } from './modules/teachers/teachers.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { AssignmentsModule } from './modules/assignments/assignments.module';
@@ -19,6 +18,7 @@ import { ReportCardsModule } from './modules/report-cards/report-cards.module';
 import { TeacherAssignmentsModule } from './modules/teacher-assignments/teacher-assignments.module';
 import { ParentsModule } from './modules/parents/parents.module';
 import { ResultsModule } from './modules/results/results.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 @Module({
   controllers: [AppController],
@@ -40,6 +40,7 @@ import { ResultsModule } from './modules/results/results.module';
     TeacherAssignmentsModule,
     ParentsModule,
     ResultsModule,
+    ReportsModule,
     ScheduleModule.forRoot(),
   ],
 })

@@ -240,18 +240,66 @@ export class StudentsService {
   }
 
   // students.service.ts
-async getMyResults(userId: string) {
-    // 1. Find the student linked to this user ID
+  async getMyResults(userId: string) {
     const student = await this.prisma.student.findFirst({
-      where: { OR: [{ id: userId }, { userId: userId }] },
+      where: { OR: [{ id: userId }, { userId }] },
+      select: {
+        id: true,
+        classSectionId: true,
+        StudentEnrollment: {
+          where: { status: 'ACTIVE' },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1,
+          select: { academicYearId: true },
+        },
+      },
     });
-    
-    if (!student) return [];
+    if (!student) return { grades: [], subjectResults: [] };
 
-    // 2. Query the grade table directly without any invalid relation includes
-    return await this.prisma.grade.findMany({
+    // ── 1. Legacy Grade rows (component scores: mid/quiz/final etc.) ──────────
+    const grades = await this.prisma.grade.findMany({
       where: { studentId: student.id },
+      orderBy: { createdAt: 'desc' },
     });
+
+    // ── 2. Homeroom-finalized SubjectResult rows (SUBMITTED only) ─────────────
+    const academicYearId = student.StudentEnrollment[0]?.academicYearId;
+    const subjectResults = academicYearId
+      ? await (this.prisma as any).subjectResult.findMany({
+          where: {
+            studentId: student.id,
+            status: 'SUBMITTED',
+            ...(student.classSectionId ? { classSectionId: student.classSectionId } : {}),
+          },
+          include: { Subject: { select: { id: true, name: true, code: true } } },
+          orderBy: [{ term: 'asc' }, { Subject: { name: 'asc' } }],
+        })
+      : [];
+
+    return {
+      grades: grades.map((g) => ({
+        id: g.id,
+        subject: g.subject ?? '—',
+        quarter: g.quarter ?? '—',
+        mid: g.mid ?? 0,
+        assignment: g.assignment ?? 0,
+        quiz: g.quiz ?? 0,
+        classwork: g.classwork ?? 0,
+        final: g.final ?? 0,
+        score: Number(g.score) || 0,
+        createdAt: g.createdAt,
+      })),
+      subjectResults: subjectResults.map((r: any) => ({
+        id: r.id,
+        subjectId: r.subjectId,
+        subjectName: r.Subject?.name ?? '—',
+        subjectCode: r.Subject?.code ?? '—',
+        term: r.term,           // "TERM_1" … "TERM_4"
+        marks: r.marks,
+        status: r.status,
+        updatedAt: r.updatedAt,
+      })),
+    };
   }
 
   // --- Heran's Method ---
