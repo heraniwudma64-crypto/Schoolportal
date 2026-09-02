@@ -1,59 +1,89 @@
-import React, { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Download, Printer } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Download, Printer, RefreshCw, AlertCircle, Clock } from 'lucide-react';
 import { getAcademicYears } from '../../api/academicStructure';
 import { api } from '../../lib/api';
 
-type ConsolidatedRosterData = {
-  section: { name: string; grade?: string; homeroomTeacher: string | null };
-  subjects: Array<{ id: string; name: string; code: string }>;
-  students: Array<{
-    studentId: string;
-    admissionNo: string;
-    studentName: string;
-    sex: string;
-    subjectScores: Array<{
-      subjectId: string;
-      subject: string;
-      term1: number | null;
-      term2: number | null;
-      term3: number | null;
-      term4: number | null;
-      sem1Avg: number | null;
-      sem2Avg: number | null;
-      yearlyAverage: number | null;
-    }>;
-    sum: number;
-    average: number | null;
-    rank: number;
-    absentDays: number;
-    conduct: string | null;
-  }>;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type SubjectScore = {
+  subjectId: string;
+  subject: string;
+  code: string;
+  term1: number | null;
+  term2: number | null;
+  term3: number | null;
+  term4: number | null;
+  sem1Avg: number | null;
+  sem2Avg: number | null;
+  yearlyAverage: number | null;
 };
+
+type RosterStudent = {
+  studentId: string;
+  admissionNo: string;
+  studentName: string;
+  sex: string;
+  subjectScores: SubjectScore[];
+  sum: number;
+  average: number | null;
+  rank: number;
+  absentDays: number;
+  conduct: string | null;
+};
+
+type ConsolidatedRosterData = {
+  section: { id?: string; name: string; grade?: string; homeroomTeacher: string | null };
+  subjects: Array<{ id: string; name: string; code: string }>;
+  students: RosterStudent[];
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmt(v: number | null | undefined): string {
+  return v != null ? v.toFixed(1) : '—';
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomRosterRedesigned() {
   const [data, setData] = useState<ConsolidatedRosterData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [viewMode, setViewMode] = useState<'view' | 'edit'>('view');
-  const [editedData, setEditedData] = useState<ConsolidatedRosterData | null>(null);
+
+  // Cached context — never re-fetched after initial load.
+  const sectionIdRef = useRef<string | null>(null);
+  const yearIdRef = useRef<string | null>(null);
+
+  // ── Fetch helper ──────────────────────────────────────────────────────────
+
+  const fetchRoster = async (sectionId: string, yearId: string) =>
+    api.get<ConsolidatedRosterData>(
+      `/roster/consolidated?academicYearId=${yearId}&classSectionId=${sectionId}`,
+    );
+
+  // ── Initial load ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
+      setError('');
       try {
         const [context, years] = await Promise.all([
           api.get<{ assignedSection: { id: string } | null }>('/teachers/me/homeroom-context'),
           getAcademicYears(),
         ]);
-        const year = years.find((item) => item.isCurrent) || years[0];
-        if (!context.assignedSection || !year) throw new Error('No homeroom section or academic year is assigned');
-        
-        const rosterData = await api.get<ConsolidatedRosterData>(
-          `/roster/consolidated?academicYearId=${year.id}&classSectionId=${context.assignedSection.id}`
-        );
+        const year = years.find((y) => y.isCurrent) || years[0];
+        if (!context.assignedSection || !year) {
+          throw new Error('No homeroom section or academic year assigned to your account');
+        }
+        sectionIdRef.current = context.assignedSection.id;
+        yearIdRef.current = year.id;
+
+        const rosterData = await fetchRoster(context.assignedSection.id, year.id);
         setData(rosterData);
-        setEditedData(rosterData);
       } catch (err: any) {
-        setError(err.message || 'Could not load the consolidated roster');
+        setError(err?.response?.data?.message ?? err?.message ?? 'Could not load the consolidated roster');
       } finally {
         setLoading(false);
       }
@@ -61,195 +91,280 @@ export default function HomeroomRosterRedesigned() {
     load();
   }, []);
 
-  const handlePrint = () => {
-    window.print();
+  // ── Refresh ───────────────────────────────────────────────────────────────
+
+  const handleRefresh = async () => {
+    const sectionId = sectionIdRef.current;
+    const yearId = yearIdRef.current;
+    if (!sectionId || !yearId) return;
+
+    setRefreshing(true);
+    try {
+      const rosterData = await fetchRoster(sectionId, yearId);
+      setData(rosterData);
+      setError('');
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Refresh failed');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const handleExportExcel = () => {
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  const handleExportCsv = () => {
     if (!data) return;
-    // Generate CSV
-    const headers = ['No', 'Name', 'Sex', ...data.subjects.flatMap(s => [
-      `${s.code} 1st`, `${s.code} 2nd`, `${s.code} 3rd`, `${s.code} 4th`, 
-      `${s.code} Ave1`, `${s.code} Ave2`, `${s.code} Year`
-    ]), 'Sum', 'Avg', 'Rank', 'Abs D', 'Conduct'];
-    
+
+    const subjectCols = data.subjects.flatMap((s) => [
+      `${s.code} 1st`, `${s.code} 2nd`, `${s.code} 3rd`, `${s.code} 4th`,
+      `${s.code} Ave1`, `${s.code} Ave2`, `${s.code} Year`,
+    ]);
+    const headers = ['No', 'Admission No', 'Name', 'Sex', ...subjectCols, 'Sum', 'Avg', 'Rank', 'Abs D', 'Conduct'];
+
     const rows = data.students.map((student, idx) => {
-      const row = [idx + 1, `${student.admissionNo} ${student.studentName}`, student.sex];
-      student.subjectScores.forEach(score => {
-        row.push(score.term1 ?? '', score.term2 ?? '', score.term3 ?? '', score.term4 ?? '', 
-                 score.sem1Avg ?? '', score.sem2Avg ?? '', score.yearlyAverage ?? '');
-      });
-      row.push(student.sum, student.average ?? '', student.rank || '', student.absentDays, student.conduct || '');
-      return row;
+      const scoreCols = student.subjectScores.flatMap((sc) => [
+        sc.term1 ?? '', sc.term2 ?? '', sc.term3 ?? '', sc.term4 ?? '',
+        sc.sem1Avg != null ? sc.sem1Avg.toFixed(1) : '',
+        sc.sem2Avg != null ? sc.sem2Avg.toFixed(1) : '',
+        sc.yearlyAverage != null ? sc.yearlyAverage.toFixed(1) : '',
+      ]);
+      return [
+        idx + 1, student.admissionNo, student.studentName, student.sex,
+        ...scoreCols,
+        student.sum, student.average != null ? student.average.toFixed(1) : '',
+        student.rank || '', student.absentDays, student.conduct || '',
+      ];
     });
 
-    const csv = [headers, ...rows].map(row => 
-      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
+    const csv = [headers, ...rows]
+      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
 
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    link.download = `${data.section.name}-Roster.csv`;
-    link.click();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `${data.section.name}-Consolidated-Roster.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   };
 
-  if (loading) return <div className="flex items-center justify-center h-96 text-gray-500">Loading consolidated roster...</div>;
-  if (error) return <div className="text-red-600 p-4">{error}</div>;
-  if (!data) return <div className="text-gray-500 p-4">No roster data available</div>;
+  // ── Render states ─────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <Clock className="w-10 h-10 text-blue-900 mx-auto mb-3 animate-spin" />
+          <p className="text-gray-500">Loading consolidated roster…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold text-red-900">Could Not Load Roster</p>
+          <p className="text-red-700 text-sm mt-1">{error}</p>
+          <button
+            onClick={handleRefresh}
+            className="mt-3 text-sm font-semibold text-red-800 underline"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) return <div className="text-gray-500 p-6">No roster data available</div>;
+
+  // Determine whether any subject results have been submitted yet
+  const hasSubmittedResults = data.students.some((s) =>
+    s.subjectScores.some(
+      (sc) =>
+        sc.term1 != null || sc.term2 != null || sc.term3 != null || sc.term4 != null,
+    ),
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Class Consolidated Roster</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {data.section.grade ? `${data.section.grade} ` : ''}{data.section.name}
+            {data.section.grade ? `${data.section.grade} ` : ''}
+            {data.section.name}
             {data.section.homeroomTeacher && ` • Homeroom: ${data.section.homeroomTeacher}`}
           </p>
         </div>
-        <div className="flex gap-2 no-print">
+        <div className="flex gap-2 no-print shrink-0">
           <button
-            onClick={() => setViewMode(viewMode === 'view' ? 'edit' : 'view')}
-            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            title="Reload submitted results"
           >
-            {viewMode === 'view' ? 'Edit' : 'View'}
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           <button
-            onClick={handleExportExcel}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700"
+            onClick={handleExportCsv}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
           >
-            <Download className="w-4 h-4" /> Excel
+            <Download className="w-4 h-4" /> Export CSV
           </button>
           <button
-            onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-lg text-sm font-semibold hover:bg-blue-800"
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors"
           >
             <Printer className="w-4 h-4" /> Print
           </button>
         </div>
       </div>
 
-      {/* Main Table - Scrollable */}
-      <div className="bg-white border rounded-xl overflow-auto shadow-sm">
-        <table className="min-w-full border-collapse text-xs">
-          <thead>
-            {/* Header Row 1: Subject Names */}
-            <tr className="bg-gray-900 text-white">
-              <th className="border border-gray-300 p-2 text-left" rowSpan={3}>No</th>
-              <th className="border border-gray-300 p-2 text-left" rowSpan={3} style={{ minWidth: '150px' }}>Name</th>
-              <th className="border border-gray-300 p-2 text-center" rowSpan={3}>Sex</th>
+      {/* ── Pending-results notice ── */}
+      {!hasSubmittedResults && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3 no-print">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-amber-800">No submitted results yet</p>
+            <p className="text-sm text-amber-700 mt-0.5">
+              Subject teachers haven't sent any results to this homeroom yet. The marks columns will
+              populate automatically once they submit. Press <strong>Refresh</strong> to check for
+              updates.
+            </p>
+          </div>
+        </div>
+      )}
 
-              {data.subjects.map((subject) => (
-                <th
-                  key={subject.id}
-                  className="border border-gray-300 p-2 text-center bg-gray-800"
-                  colSpan={7}
-                  style={{ minWidth: '140px' }}
-                >
-                  {subject.name}
+      {/* ── Empty students ── */}
+      {data.students.length === 0 ? (
+        <div className="bg-white border rounded-xl p-10 text-center text-gray-400">
+          <p className="font-semibold text-gray-500">No students enrolled in this section.</p>
+          <p className="text-sm mt-1">
+            Enroll students from the Admin panel, then refresh this page.
+          </p>
+        </div>
+      ) : (
+        // ── Main table ──
+        <div className="bg-white border rounded-xl overflow-auto shadow-sm">
+          <table className="min-w-full border-collapse text-xs">
+            <thead>
+              {/* Row 1 — subject names spanning 7 cols each */}
+              <tr className="bg-gray-900 text-white">
+                <th className="border border-gray-700 p-2 text-left" rowSpan={3}>No</th>
+                <th className="border border-gray-700 p-2 text-left" rowSpan={3} style={{ minWidth: 160 }}>
+                  Name
                 </th>
-              ))}
+                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Sex</th>
+                {data.subjects.map((s) => (
+                  <th
+                    key={s.id}
+                    className="border border-gray-700 p-2 text-center bg-gray-800"
+                    colSpan={7}
+                    style={{ minWidth: 140 }}
+                  >
+                    {s.name}
+                  </th>
+                ))}
+                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Sum</th>
+                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Avg</th>
+                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Rank</th>
+                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Abs D</th>
+                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Conduct</th>
+              </tr>
 
-              <th className="border border-gray-300 p-2 text-center" rowSpan={3}>Sum</th>
-              <th className="border border-gray-300 p-2 text-center" rowSpan={3}>Avg</th>
-              <th className="border border-gray-300 p-2 text-center" rowSpan={3}>Rank</th>
-              <th className="border border-gray-300 p-2 text-center" rowSpan={3}>Abs D</th>
-              <th className="border border-gray-300 p-2 text-center" rowSpan={3}>Conduct</th>
-            </tr>
-
-            {/* Header Row 2: Quarter/Semester Averages */}
-            <tr className="bg-gray-700 text-white">
-              {data.subjects.map((subject) => (
-                <React.Fragment key={`${subject.id}-row2`}>
-                  <th className="border border-gray-300 p-2 text-center">1st</th>
-                  <th className="border border-gray-300 p-2 text-center">2nd</th>
-                  <th className="border border-gray-300 p-2 text-center">3rd</th>
-                  <th className="border border-gray-300 p-2 text-center">4th</th>
-                  <th className="border border-gray-300 p-2 text-center bg-blue-700">Ave1</th>
-                  <th className="border border-gray-300 p-2 text-center bg-blue-700">Ave2</th>
-                  <th className="border border-gray-300 p-2 text-center bg-green-700">Year</th>
-                </React.Fragment>
-              ))}
-            </tr>
-
-            {/* Header Row 3: Subject Codes (Optional) */}
-            <tr className="bg-gray-600 text-white text-xs">
-              {data.subjects.map((subject) => (
-                <React.Fragment key={`${subject.id}-row3`}>
-                  {[subject.code, subject.code, subject.code, subject.code, subject.code, subject.code, subject.code].map(
-                    (code, idx) => (
-                      <th key={`${subject.id}-${idx}`} className="border border-gray-300 p-1 text-center">
-                        {code}
-                      </th>
-                    )
-                  )}
-                </React.Fragment>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {data.students.map((student, rowIdx) => (
-              <tr key={student.studentId} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                <td className="border border-gray-300 p-2 text-center font-semibold">{rowIdx + 1}</td>
-                <td className="border border-gray-300 p-2 text-left font-semibold">
-                  {student.admissionNo} {student.studentName}
-                </td>
-                <td className="border border-gray-300 p-2 text-center">{student.sex}</td>
-
-                {student.subjectScores.map((score) => (
-                  <React.Fragment key={score.subjectId}>
-                    <td className="border border-gray-300 p-2 text-center">
-                      {viewMode === 'view' ? (
-                        score.term1 ?? '-'
-                      ) : (
-                        <input type="number" defaultValue={score.term1 ?? ''} className="w-full border rounded p-1" />
-                      )}
-                    </td>
-                    <td className="border border-gray-300 p-2 text-center">
-                      {viewMode === 'view' ? score.term2 ?? '-' : <input type="number" defaultValue={score.term2 ?? ''} className="w-full border rounded p-1" />}
-                    </td>
-                    <td className="border border-gray-300 p-2 text-center">
-                      {viewMode === 'view' ? score.term3 ?? '-' : <input type="number" defaultValue={score.term3 ?? ''} className="w-full border rounded p-1" />}
-                    </td>
-                    <td className="border border-gray-300 p-2 text-center">
-                      {viewMode === 'view' ? score.term4 ?? '-' : <input type="number" defaultValue={score.term4 ?? ''} className="w-full border rounded p-1" />}
-                    </td>
-                    <td className="border border-gray-300 p-2 text-center bg-blue-50 font-semibold">
-                      {score.sem1Avg?.toFixed(1) ?? '-'}
-                    </td>
-                    <td className="border border-gray-300 p-2 text-center bg-blue-50 font-semibold">
-                      {score.sem2Avg?.toFixed(1) ?? '-'}
-                    </td>
-                    <td className="border border-gray-300 p-2 text-center bg-green-50 font-bold">
-                      {score.yearlyAverage?.toFixed(1) ?? '-'}
-                    </td>
+              {/* Row 2 — quarter/semester sub-headers */}
+              <tr className="bg-gray-700 text-white">
+                {data.subjects.map((s) => (
+                  <React.Fragment key={`${s.id}-r2`}>
+                    <th className="border border-gray-600 p-2 text-center">1st</th>
+                    <th className="border border-gray-600 p-2 text-center">2nd</th>
+                    <th className="border border-gray-600 p-2 text-center">3rd</th>
+                    <th className="border border-gray-600 p-2 text-center">4th</th>
+                    <th className="border border-gray-600 p-2 text-center bg-blue-800">Ave1</th>
+                    <th className="border border-gray-600 p-2 text-center bg-blue-800">Ave2</th>
+                    <th className="border border-gray-600 p-2 text-center bg-green-800">Year</th>
                   </React.Fragment>
                 ))}
-
-                <td className="border border-gray-300 p-2 text-center font-semibold">{student.sum}</td>
-                <td className="border border-gray-300 p-2 text-center font-semibold">{student.average?.toFixed(1) ?? '-'}</td>
-                <td className="border border-gray-300 p-2 text-center font-bold">{student.rank || '-'}</td>
-                <td className="border border-gray-300 p-2 text-center">{student.absentDays}</td>
-                <td className="border border-gray-300 p-2 text-center font-semibold">{student.conduct || '-'}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
-      {/* Print Styles */}
-      <style>
-        {`
-          @media print {
-            body { margin: 0; padding: 0; }
-            .no-print { display: none !important; }
-            table { font-size: 8px; }
-            @page { size: A4 landscape; margin: 0.5cm; }
-          }
-        `}
-      </style>
+              {/* Row 3 — subject codes */}
+              <tr className="bg-gray-600 text-white">
+                {data.subjects.map((s) =>
+                  Array.from({ length: 7 }, (_, i) => (
+                    <th key={`${s.id}-c${i}`} className="border border-gray-600 p-1 text-center">
+                      {s.code}
+                    </th>
+                  )),
+                )}
+              </tr>
+            </thead>
+
+            <tbody>
+              {data.students.map((student, rowIdx) => (
+                <tr
+                  key={student.studentId}
+                  className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+                >
+                  <td className="border border-gray-200 p-2 text-center font-semibold">
+                    {rowIdx + 1}
+                  </td>
+                  <td className="border border-gray-200 p-2 text-left font-semibold whitespace-nowrap">
+                    <span className="text-gray-400 mr-1">{student.admissionNo}</span>
+                    {student.studentName}
+                  </td>
+                  <td className="border border-gray-200 p-2 text-center">{student.sex || '—'}</td>
+
+                  {student.subjectScores.map((sc) => (
+                    <React.Fragment key={sc.subjectId}>
+                      <td className="border border-gray-200 p-2 text-center">{sc.term1 ?? '—'}</td>
+                      <td className="border border-gray-200 p-2 text-center">{sc.term2 ?? '—'}</td>
+                      <td className="border border-gray-200 p-2 text-center">{sc.term3 ?? '—'}</td>
+                      <td className="border border-gray-200 p-2 text-center">{sc.term4 ?? '—'}</td>
+                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">
+                        {fmt(sc.sem1Avg)}
+                      </td>
+                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">
+                        {fmt(sc.sem2Avg)}
+                      </td>
+                      <td className="border border-gray-200 p-2 text-center bg-green-50 font-bold">
+                        {fmt(sc.yearlyAverage)}
+                      </td>
+                    </React.Fragment>
+                  ))}
+
+                  <td className="border border-gray-200 p-2 text-center font-semibold">
+                    {student.sum}
+                  </td>
+                  <td className="border border-gray-200 p-2 text-center font-semibold">
+                    {fmt(student.average)}
+                  </td>
+                  <td className="border border-gray-200 p-2 text-center font-bold">
+                    {student.rank || '—'}
+                  </td>
+                  <td className="border border-gray-200 p-2 text-center">{student.absentDays}</td>
+                  <td className="border border-gray-200 p-2 text-center font-semibold">
+                    {student.conduct || '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { margin: 0; padding: 0; }
+          table { font-size: 8px; }
+          @page { size: A4 landscape; margin: 0.5cm; }
+        }
+      `}</style>
     </div>
   );
 }

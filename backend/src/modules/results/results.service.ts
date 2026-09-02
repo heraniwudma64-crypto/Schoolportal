@@ -121,47 +121,130 @@ export class ResultsService {
   }
 
   // Subject Teacher submits grades to Homeroom Teacher (Locks editing)
-  async submitToHomeroom(dto: { classSectionId: string; subjectId: string; academicYearId: string; term: string; homeroomTeacherId?: string }, userId: string) {
+  async submitToHomeroom(
+    dto: {
+      classSectionId: string;
+      subjectId: string;
+      academicYearId: string;
+      term: string;
+      homeroomTeacherId?: string;
+      // Optional inline grades array — if provided, we save the draft first so
+      // the teacher never has to press "Save" before pressing "Send to Homeroom".
+      grades?: Array<{ studentId: string; marks: number }>;
+    },
+    userId: string,
+  ) {
     await this.assertAssignment(userId, dto.classSectionId, dto.subjectId, dto.academicYearId);
-    
-    // Verify the class section exists
+
+    // Verify the class section and resolve its homeroom teacher
     const classSection = await this.prisma.classSection.findUnique({
       where: { id: dto.classSectionId },
-      include: { Teacher: true }
+      select: { teacherId: true },
     });
-    if (!classSection) {
-      throw new BadRequestException('Class section not found');
-    }
-
-    // Results always belong to the teacher assigned to this section's homeroom.
-    // Accepting an arbitrary teacher here made submissions disappear from the
-    // actual homeroom teacher's matrix.
-    const homeroomTeacherId = classSection.teacherId;
-    if (!homeroomTeacherId) {
-      throw new BadRequestException('No homeroom teacher assigned to this class section');
-    }
+    if (!classSection) throw new BadRequestException('Class section not found');
+    if (!classSection.teacherId) throw new BadRequestException('No homeroom teacher assigned to this class section');
 
     const activeStudentIds = await this.getActiveRosterStudentIds(dto.classSectionId, dto.academicYearId);
     const enrolledCount = activeStudentIds.size;
-    const resultCount = await (this.prisma as any).subjectResult.count({
-      where: { classSectionId: dto.classSectionId, subjectId: dto.subjectId, academicYearId: dto.academicYearId, term: dto.term, studentId: { in: [...activeStudentIds] } },
-    });
-    if (resultCount === 0) throw new BadRequestException('Save at least one result before submitting');
-    if (enrolledCount > 0 && resultCount < enrolledCount) {
-      throw new BadRequestException(`Complete results for all ${enrolledCount} enrolled students before submitting`);
+    if (enrolledCount === 0) throw new BadRequestException('No active students enrolled in this class section');
+
+    // ── Auto-save any grades passed inline ───────────────────────────────────
+    // This lets the frontend call submit-to-homeroom in a single round-trip
+    // without requiring a prior explicit draft save.
+    if (dto.grades && dto.grades.length > 0) {
+      const validGrades = dto.grades.filter((g) => activeStudentIds.has(g.studentId));
+      if (validGrades.length > 0) {
+        // Only upsert if results are not already locked (SUBMITTED)
+        const lockedCount = await (this.prisma as any).subjectResult.count({
+          where: {
+            classSectionId: dto.classSectionId,
+            subjectId: dto.subjectId,
+            academicYearId: dto.academicYearId,
+            term: dto.term,
+            status: 'SUBMITTED',
+          },
+        });
+        if (lockedCount === 0) {
+          const upserts = validGrades.map((g) =>
+            (this.prisma as any).subjectResult.upsert({
+              where: {
+                studentId_subjectId_classSectionId_academicYearId_term: {
+                  studentId: g.studentId,
+                  subjectId: dto.subjectId,
+                  classSectionId: dto.classSectionId,
+                  academicYearId: dto.academicYearId,
+                  term: dto.term,
+                },
+              },
+              update: { marks: g.marks },
+              create: {
+                studentId: g.studentId,
+                subjectId: dto.subjectId,
+                classSectionId: dto.classSectionId,
+                academicYearId: dto.academicYearId,
+                term: dto.term,
+                marks: g.marks,
+                status: 'DRAFT',
+              },
+            }),
+          );
+          await this.prisma.$transaction(upserts);
+        }
+      }
     }
+
+    // ── Validation: every active enrolled student must have a result row ─────
+    // We count rows that exist regardless of status, so a teacher who saved a
+    // draft for all students can submit even before individual rows are SUBMITTED.
+    const resultCount = await (this.prisma as any).subjectResult.count({
+      where: {
+        classSectionId: dto.classSectionId,
+        subjectId: dto.subjectId,
+        academicYearId: dto.academicYearId,
+        term: dto.term,
+        studentId: { in: [...activeStudentIds] },
+      },
+    });
+
+    if (resultCount === 0) {
+      throw new BadRequestException('Enter marks for at least one student before submitting to homeroom');
+    }
+    if (resultCount < enrolledCount) {
+      const missingCount = enrolledCount - resultCount;
+      throw new BadRequestException(
+        `${missingCount} enrolled student${missingCount > 1 ? 's are' : ' is'} still missing marks. ` +
+          `Fill in all ${enrolledCount} students or use "Save Class Results" first.`,
+      );
+    }
+
+    // ── Atomically mark all results SUBMITTED ────────────────────────────────
     const updated = await (this.prisma as any).subjectResult.updateMany({
-      where: { classSectionId: dto.classSectionId, subjectId: dto.subjectId, academicYearId: dto.academicYearId, term: dto.term, studentId: { in: [...activeStudentIds] } },
+      where: {
+        classSectionId: dto.classSectionId,
+        subjectId: dto.subjectId,
+        academicYearId: dto.academicYearId,
+        term: dto.term,
+        studentId: { in: [...activeStudentIds] },
+      },
       data: { status: 'SUBMITTED' },
     });
-    return { success: true, count: updated.count, homeroomTeacherId };
+
+    return { success: true, count: updated.count, homeroomTeacherId: classSection.teacherId };
   }
 
   // Homeroom Teacher checks submission status across all subjects
   async getHomeroomSubmissionMatrix(classSectionId: string, academicYearId: string, term: string, userId: string) {
     const homeroom = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
-    const section = homeroom && await this.prisma.classSection.findFirst({
-      where: { id: classSectionId, teacherId: homeroom.id },
+    if (!homeroom) throw new ForbiddenException('Only the homeroom teacher can view this submission matrix');
+
+    // Accept the request when the teacher is set as homeroom via either the
+    // direct teacherId FK or the named HomeroomTeacher relation (both point at
+    // the same DB column — this guard is a belt-and-suspenders safety check).
+    const section = await this.prisma.classSection.findFirst({
+      where: {
+        id: classSectionId,
+        teacherId: homeroom.id,
+      },
       include: { AcademicYear: true, GradeLevel: true },
     });
     if (!section) throw new ForbiddenException('Only the homeroom teacher can view this submission matrix');

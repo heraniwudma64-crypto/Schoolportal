@@ -1,51 +1,402 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { RefreshCw, Printer, Download, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { getAcademicYears } from '../../api/academicStructure';
 import { api } from '../../lib/api';
 
-type Matrix = {
-  allSubmitted: boolean;
-  matrix?: Array<{ subjectName: string; teacherName: string; isSubmitted: boolean }>;
-  subjects?: Array<{ subjectName: string; teacherName: string; isSubmitted: boolean }>;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type SubjectSubmission = {
+  subjectId?: string;
+  subjectName: string;
+  teacherName: string;
+  isSubmitted: boolean;
 };
-type PreparedRoster = { students: Array<{ studentId: string; admissionNo: string; studentName: string; average: number | null; rank: number }> };
+
+type SubmissionMatrix = {
+  allSubmitted: boolean;
+  // Backend returns both keys; we accept either.
+  matrix?: SubjectSubmission[];
+  subjects?: SubjectSubmission[];
+  totalSubmitted?: number;
+  totalSubjects?: number;
+};
+
+type RosterStudent = {
+  studentId: string;
+  admissionNo: string;
+  studentName: string;
+  average: number | null;
+  rank: number;
+};
+
+type ConsolidatedRoster = {
+  students: RosterStudent[];
+};
+
+// Static term list — mirrors the TERM_1..4 codes stored in SubjectResult.
+const STATIC_TERMS = [
+  { code: 'TERM_1', label: 'Term 1' },
+  { code: 'TERM_2', label: 'Term 2' },
+  { code: 'TERM_3', label: 'Term 3' },
+  { code: 'TERM_4', label: 'Term 4' },
+];
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomReportCards() {
-  const [matrix, setMatrix] = useState<Matrix | null>(null);
-  const [preparedRoster, setPreparedRoster] = useState<PreparedRoster | null>(null);
+  const [matrix, setMatrix] = useState<SubmissionMatrix | null>(null);
+  const [preparedRoster, setPreparedRoster] = useState<ConsolidatedRoster | null>(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [isPrinting, setIsPrinting] = useState(false);
+
+  // Cached immutable context — never re-fetched after initial load.
+  const sectionIdRef = useRef<string | null>(null);
+  const yearIdRef = useRef<string | null>(null);
+
+  // ── Data fetcher ──────────────────────────────────────────────────────────
+
+  const fetchData = async (sectionId: string, yearId: string, term: string) => {
+    const [submissionMatrix, roster] = await Promise.all([
+      api.get<SubmissionMatrix>(
+        `/results/homeroom-matrix?classSectionId=${sectionId}&academicYearId=${yearId}&term=${term}`,
+      ),
+      api.get<ConsolidatedRoster>(
+        `/roster/consolidated?academicYearId=${yearId}&classSectionId=${sectionId}`,
+      ),
+    ]);
+    return { submissionMatrix, roster };
+  };
+
+  // ── Initial load ──────────────────────────────────────────────────────────
+
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
+      setError('');
       try {
-        const [context, years] = await Promise.all([api.get<{ assignedSection: { id: string } | null }>('/teachers/me/homeroom-context'), getAcademicYears()]);
-        const year = years.find((item) => item.isCurrent) || years[0];
-        if (!context.assignedSection || !year) throw new Error('No homeroom section or academic year is assigned');
-        const sectionId = context.assignedSection.id;
-        const [submissionMatrix, roster] = await Promise.all([
-          api.get<Matrix>(`/results/homeroom-matrix?classSectionId=${sectionId}&academicYearId=${year.id}&term=TERM_1`),
-          api.get<PreparedRoster>(`/roster/consolidated?academicYearId=${year.id}&classSectionId=${sectionId}`),
+        const [context, years] = await Promise.all([
+          api.get<{ assignedSection: { id: string } | null }>('/teachers/me/homeroom-context'),
+          getAcademicYears(),
         ]);
+        const year = years.find((y) => y.isCurrent) || years[0];
+        if (!context.assignedSection || !year) {
+          throw new Error('No homeroom section or academic year assigned to your account');
+        }
+        sectionIdRef.current = context.assignedSection.id;
+        yearIdRef.current = year.id;
+
+        const { submissionMatrix, roster } = await fetchData(
+          context.assignedSection.id,
+          year.id,
+          selectedTerm,
+        );
         setMatrix(submissionMatrix);
         setPreparedRoster(roster);
-      } catch (err: any) { setMessage(err.message || 'Could not load subject submissions'); }
-      finally { setLoading(false); }
+      } catch (err: any) {
+        setError(err?.response?.data?.message ?? err?.message ?? 'Could not load report card data');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
-  }, []);
-  if (loading) return <p className="text-gray-500">Checking subject submissions...</p>;
-  if (message) return <p className="text-red-600">{message}</p>;
-  const students = preparedRoster?.students || [];
-  const subjectRows = matrix?.matrix ?? matrix?.subjects ?? [];
-  const selected = students.filter((student) => selectedStudents.includes(student.studentId));
-  const printCards = () => { if (selected.length === 0) return window.alert('Select at least one report card'); setIsPrinting(true); window.setTimeout(() => { window.print(); setIsPrinting(false); }, 0); };
-  const exportExcel = () => {
-    if (selected.length === 0) return window.alert('Select at least one report card');
-    const rows = selected.map((student) => [student.admissionNo, student.studentName, student.average ?? '', student.rank || '']);
-    const csv = [['Admission No', 'Student', 'Yearly Average', 'Rank'], ...rows].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
-    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); link.download = 'report-cards.xls'; link.click(); URL.revokeObjectURL(link.href);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // runs once
+
+  // ── Term change ───────────────────────────────────────────────────────────
+
+  const handleTermChange = async (term: string) => {
+    setSelectedTerm(term);
+    const sectionId = sectionIdRef.current;
+    const yearId = yearIdRef.current;
+    if (!sectionId || !yearId) return;
+
+    try {
+      // Only the matrix depends on term; the consolidated roster is year-wide.
+      const newMatrix = await api.get<SubmissionMatrix>(
+        `/results/homeroom-matrix?classSectionId=${sectionId}&academicYearId=${yearId}&term=${term}`,
+      );
+      setMatrix(newMatrix);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Failed to load data for selected term');
+    }
   };
+
+  // ── Manual refresh ────────────────────────────────────────────────────────
+
+  const handleRefresh = async () => {
+    const sectionId = sectionIdRef.current;
+    const yearId = yearIdRef.current;
+    if (!sectionId || !yearId) return;
+
+    setRefreshing(true);
+    try {
+      const { submissionMatrix, roster } = await fetchData(sectionId, yearId, selectedTerm);
+      setMatrix(submissionMatrix);
+      setPreparedRoster(roster);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Refresh failed');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // ── Print / Export ────────────────────────────────────────────────────────
+
+  const students = preparedRoster?.students ?? [];
+  const selected = students.filter((s) => selectedStudents.includes(s.studentId));
+
+  const printCards = () => {
+    if (selected.length === 0) return window.alert('Select at least one student to print');
+    setIsPrinting(true);
+    window.setTimeout(() => {
+      window.print();
+      setIsPrinting(false);
+    }, 0);
+  };
+
+  const exportCsv = () => {
+    if (selected.length === 0) return window.alert('Select at least one student to export');
+    const rows = selected.map((s) => [
+      s.admissionNo,
+      s.studentName,
+      s.average ?? '',
+      s.rank || '',
+    ]);
+    const csv = [['Admission No', 'Student', 'Yearly Average', 'Rank'], ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `report-cards-${selectedTerm}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  // ── Render states ─────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <Clock className="w-10 h-10 text-blue-900 mx-auto mb-3 animate-spin" />
+          <p className="text-gray-500">Checking subject submissions…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6 flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold text-red-900">Error</p>
+          <p className="text-red-700 text-sm mt-1">{error}</p>
+          <button
+            onClick={handleRefresh}
+            className="mt-3 text-sm font-semibold text-red-800 underline"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const subjectRows: SubjectSubmission[] = matrix?.matrix ?? matrix?.subjects ?? [];
   const visibleStudents = isPrinting ? selected : students;
-  return <div className="max-w-4xl space-y-6"><div className="flex items-start justify-between gap-4"><div><h1 className="text-2xl font-bold">Report Card Preparation</h1><p className="text-sm text-gray-500">Compile cards from results submitted by subject teachers.</p></div><div className="flex gap-2 print:hidden"><button onClick={printCards} className="border rounded-lg px-3 py-2 text-sm">Print / PDF</button><button onClick={exportExcel} className="bg-blue-900 text-white rounded-lg px-3 py-2 text-sm">Export Excel</button></div></div><div className="bg-white border rounded-xl p-6 print:hidden"><p className={matrix?.allSubmitted ? 'text-green-700 font-semibold' : 'text-amber-700 font-semibold'}>{matrix?.allSubmitted ? 'All subjects submitted. Report cards are ready to compile.' : 'Waiting for all subject teachers to submit results.'}</p><div className="mt-5 divide-y">{subjectRows.map((item) => <div key={item.subjectName} className="py-3 flex justify-between"><span>{item.subjectName} <span className="text-gray-400">({item.teacherName})</span></span><span className={item.isSubmitted ? 'text-green-700' : 'text-amber-700'}>{item.isSubmitted ? 'Submitted' : 'Pending'}</span></div>)}</div></div><div className="bg-white border rounded-xl overflow-hidden"><div className="p-5 border-b print:hidden"><h2 className="font-bold">Prepared Student Cards</h2><p className="text-sm text-gray-500">Select individual cards or select all for batch printing.</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={selectedStudents.length === students.length && students.length > 0} onChange={(event) => setSelectedStudents(event.target.checked ? students.map((student) => student.studentId) : [])} /> Select all</label></div><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="p-3 print:hidden">Select</th><th className="p-3 text-left">Student</th><th className="p-3 text-center">Yearly Average</th><th className="p-3 text-center">Rank</th></tr></thead><tbody className="divide-y">{visibleStudents.map((student) => <tr key={student.studentId}><td className="p-3 text-center print:hidden"><input type="checkbox" checked={selectedStudents.includes(student.studentId)} onChange={(event) => setSelectedStudents((current) => event.target.checked ? [...current, student.studentId] : current.filter((id) => id !== student.studentId))} /></td><td className="p-3">{student.admissionNo} {student.studentName}</td><td className="p-3 text-center">{student.average ?? '-'}</td><td className="p-3 text-center">{student.rank || '-'}</td></tr>)}</tbody></table></div></div>;
+
+  return (
+    <div className="max-w-4xl space-y-6">
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Report Card Preparation</h1>
+          <p className="text-sm text-gray-500">
+            Compile cards from results submitted by subject teachers.
+          </p>
+        </div>
+        <div className="flex gap-2 print:hidden shrink-0">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+          <button
+            onClick={printCards}
+            className="flex items-center gap-2 border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-50"
+          >
+            <Printer className="w-4 h-4" /> Print / PDF
+          </button>
+          <button
+            onClick={exportCsv}
+            className="flex items-center gap-2 bg-blue-900 text-white rounded-lg px-3 py-2 text-sm font-semibold hover:bg-blue-800"
+          >
+            <Download className="w-4 h-4" /> Export CSV
+          </button>
+        </div>
+      </div>
+
+      {/* ── Term selector ── */}
+      <div className="bg-white border rounded-xl p-4 print:hidden">
+        <p className="text-sm font-semibold text-gray-700 mb-2">Select Term</p>
+        <div className="flex gap-2 flex-wrap">
+          {STATIC_TERMS.map((t) => (
+            <button
+              key={t.code}
+              onClick={() => handleTermChange(t.code)}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                selectedTerm === t.code
+                  ? 'bg-blue-900 text-white border-blue-900'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Submission status panel ── */}
+      <div className="bg-white border rounded-xl p-6 print:hidden">
+        {matrix?.allSubmitted ? (
+          <div className="flex items-center gap-3 text-green-700">
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <p className="font-semibold">
+              All subjects submitted for{' '}
+              {STATIC_TERMS.find((t) => t.code === selectedTerm)?.label ?? selectedTerm}.
+              Report cards are ready to compile.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-3 text-amber-700">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">
+                Waiting for subject teachers to submit results for{' '}
+                {STATIC_TERMS.find((t) => t.code === selectedTerm)?.label ?? selectedTerm}.
+              </p>
+              <p className="text-sm mt-0.5 text-amber-600">
+                Press <strong>Refresh</strong> after teachers submit to update this view.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {subjectRows.length > 0 && (
+          <div className="mt-4 divide-y border rounded-lg overflow-hidden">
+            {subjectRows.map((item) => (
+              <div
+                key={item.subjectName}
+                className="flex items-center justify-between px-4 py-2.5 text-sm"
+              >
+                <span className="text-gray-800">
+                  {item.subjectName}{' '}
+                  <span className="text-gray-400 font-normal">({item.teacherName})</span>
+                </span>
+                {item.isSubmitted ? (
+                  <span className="flex items-center gap-1 text-green-700 font-semibold text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Submitted
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-amber-600 font-semibold text-xs">
+                    <AlertCircle className="w-3.5 h-3.5" /> Pending
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Student list ── */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="p-5 border-b print:hidden">
+          <h2 className="font-bold text-gray-900">Prepared Student Cards</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Select cards for batch printing or CSV export.
+          </p>
+          {students.length > 0 && (
+            <label className="mt-3 flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={selectedStudents.length === students.length && students.length > 0}
+                onChange={(e) =>
+                  setSelectedStudents(e.target.checked ? students.map((s) => s.studentId) : [])
+                }
+              />
+              Select all ({students.length} students)
+            </label>
+          )}
+        </div>
+
+        {students.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">
+            <p className="font-semibold">No students enrolled in this section.</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="p-3 print:hidden" />
+                <th className="p-3 text-left font-semibold text-gray-700">Student</th>
+                <th className="p-3 text-center font-semibold text-gray-700">Yearly Average</th>
+                <th className="p-3 text-center font-semibold text-gray-700">Rank</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {visibleStudents.map((student) => (
+                <tr key={student.studentId} className="hover:bg-gray-50">
+                  <td className="p-3 text-center print:hidden">
+                    <input
+                      type="checkbox"
+                      checked={selectedStudents.includes(student.studentId)}
+                      onChange={(e) =>
+                        setSelectedStudents((prev) =>
+                          e.target.checked
+                            ? [...prev, student.studentId]
+                            : prev.filter((id) => id !== student.studentId),
+                        )
+                      }
+                    />
+                  </td>
+                  <td className="p-3">
+                    <span className="font-semibold text-gray-900">{student.studentName}</span>
+                    <span className="text-xs text-gray-400 ml-2">{student.admissionNo}</span>
+                  </td>
+                  <td className="p-3 text-center">
+                    {student.average != null ? (
+                      <span
+                        className={`font-bold ${
+                          student.average >= 80
+                            ? 'text-green-700'
+                            : student.average >= 60
+                            ? 'text-blue-700'
+                            : 'text-amber-700'
+                        }`}
+                      >
+                        {student.average.toFixed(1)}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="p-3 text-center font-semibold text-gray-700">
+                    {student.rank > 0 ? student.rank : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
 }
