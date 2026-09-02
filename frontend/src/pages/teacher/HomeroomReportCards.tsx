@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Printer, Download, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import {
+  RefreshCw, Printer, Download, CheckCircle2, AlertCircle,
+  Clock, Send, BadgeCheck,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { getAcademicYears } from '../../api/academicStructure';
 import { api } from '../../lib/api';
+import { submitReportCardsToAdmin, AdminSubmitReceipt } from '../../api/adminReports';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,7 +19,6 @@ type SubjectSubmission = {
 
 type SubmissionMatrix = {
   allSubmitted: boolean;
-  // Backend returns both keys; we accept either.
   matrix?: SubjectSubmission[];
   subjects?: SubjectSubmission[];
   totalSubmitted?: number;
@@ -33,7 +37,6 @@ type ConsolidatedRoster = {
   students: RosterStudent[];
 };
 
-// Static term list — mirrors the TERM_1..4 codes stored in SubjectResult.
 const STATIC_TERMS = [
   { code: 'TERM_1', label: 'Term 1' },
   { code: 'TERM_2', label: 'Term 2' },
@@ -48,6 +51,8 @@ export default function HomeroomReportCards() {
   const [preparedRoster, setPreparedRoster] = useState<ConsolidatedRoster | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitReceipt, setSubmitReceipt] = useState<AdminSubmitReceipt | null>(null);
   const [error, setError] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
@@ -104,7 +109,7 @@ export default function HomeroomReportCards() {
     };
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // runs once
+  }, []);
 
   // ── Term change ───────────────────────────────────────────────────────────
 
@@ -115,7 +120,6 @@ export default function HomeroomReportCards() {
     if (!sectionId || !yearId) return;
 
     try {
-      // Only the matrix depends on term; the consolidated roster is year-wide.
       const newMatrix = await api.get<SubmissionMatrix>(
         `/results/homeroom-matrix?classSectionId=${sectionId}&academicYearId=${yearId}&term=${term}`,
       );
@@ -141,6 +145,45 @@ export default function HomeroomReportCards() {
       setError(err?.response?.data?.message ?? 'Refresh failed');
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  // ── Submit to Admin ───────────────────────────────────────────────────────
+
+  const handleSubmitToAdmin = async () => {
+    const sectionId = sectionIdRef.current;
+    const yearId = yearIdRef.current;
+    if (!sectionId || !yearId) return;
+
+    // Surface the exact subjects still pending so the teacher knows what to fix
+    const pendingSubjects = (matrix?.matrix ?? matrix?.subjects ?? [])
+      .filter((s) => !s.isSubmitted)
+      .map((s) => s.subjectName);
+
+    if (pendingSubjects.length > 0) {
+      toast.error(
+        `Cannot submit — the following subject${pendingSubjects.length > 1 ? 's are' : ' is'} still pending: ${pendingSubjects.join(', ')}`,
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Send finalized report cards to the admin portal for review?\n\n' +
+      'Once submitted, the admin will be able to see and approve your section\'s report cards.',
+    );
+    if (!confirmed) return;
+
+    setSubmitting(true);
+    try {
+      const receipt = await submitReportCardsToAdmin(sectionId, yearId);
+      setSubmitReceipt(receipt);
+      toast.success(receipt.message);
+    } catch (err: any) {
+      const msg: string =
+        err?.response?.data?.message ?? err?.message ?? 'Failed to submit to admin';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -209,9 +252,11 @@ export default function HomeroomReportCards() {
 
   const subjectRows: SubjectSubmission[] = matrix?.matrix ?? matrix?.subjects ?? [];
   const visibleStudents = isPrinting ? selected : students;
+  const canSubmit = matrix?.allSubmitted === true && !submitReceipt;
 
   return (
     <div className="max-w-4xl space-y-6">
+
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -220,7 +265,7 @@ export default function HomeroomReportCards() {
             Compile cards from results submitted by subject teachers.
           </p>
         </div>
-        <div className="flex gap-2 print:hidden shrink-0">
+        <div className="flex gap-2 print:hidden shrink-0 flex-wrap justify-end">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -241,8 +286,53 @@ export default function HomeroomReportCards() {
           >
             <Download className="w-4 h-4" /> Export CSV
           </button>
+
+          {/* ── Submit to Admin ── */}
+          <button
+            onClick={handleSubmitToAdmin}
+            disabled={!canSubmit || submitting}
+            title={
+              submitReceipt
+                ? 'Already submitted to admin'
+                : !matrix?.allSubmitted
+                ? 'All subjects must be submitted before sending to admin'
+                : 'Send finalized report cards to the admin portal'
+            }
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm ${
+              submitReceipt
+                ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
+                : canSubmit
+                ? 'bg-green-700 text-white hover:bg-green-800 shadow-green-700/20'
+                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+            }`}
+          >
+            {submitReceipt ? (
+              <><BadgeCheck className="w-4 h-4" /> Submitted to Admin</>
+            ) : submitting ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Submitting…</>
+            ) : (
+              <><Send className="w-4 h-4" /> Submit to Admin</>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* ── Submission receipt banner ── */}
+      {submitReceipt && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3 print:hidden">
+          <BadgeCheck className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-green-900">Successfully submitted to admin portal</p>
+            <p className="text-sm text-green-800 mt-0.5">{submitReceipt.message}</p>
+            <p className="text-xs text-green-600 mt-1">
+              Submitted by <strong>{submitReceipt.submittedBy}</strong> on{' '}
+              {new Date(submitReceipt.submittedAt).toLocaleString()} &bull;{' '}
+              {submitReceipt.enrolledStudents} students &bull;{' '}
+              {submitReceipt.submittedSubjects} subjects
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Term selector ── */}
       <div className="bg-white border rounded-xl p-4 print:hidden">
@@ -272,7 +362,7 @@ export default function HomeroomReportCards() {
             <p className="font-semibold">
               All subjects submitted for{' '}
               {STATIC_TERMS.find((t) => t.code === selectedTerm)?.label ?? selectedTerm}.
-              Report cards are ready to compile.
+              {!submitReceipt && ' Report cards are ready to submit to admin.'}
             </p>
           </div>
         ) : (
@@ -285,6 +375,7 @@ export default function HomeroomReportCards() {
               </p>
               <p className="text-sm mt-0.5 text-amber-600">
                 Press <strong>Refresh</strong> after teachers submit to update this view.
+                The <strong>Submit to Admin</strong> button will unlock once all subjects are complete.
               </p>
             </div>
           </div>

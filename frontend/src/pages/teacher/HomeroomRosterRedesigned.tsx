@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Printer, RefreshCw, AlertCircle, Clock } from 'lucide-react';
+import {
+  Download, Printer, RefreshCw, AlertCircle, Clock,
+  Send, BadgeCheck,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import { getAcademicYears } from '../../api/academicStructure';
 import { api } from '../../lib/api';
+import { submitRosterToAdmin, AdminSubmitReceipt } from '../../api/adminReports';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +54,8 @@ export default function HomeroomRosterRedesigned() {
   const [data, setData] = useState<ConsolidatedRosterData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitReceipt, setSubmitReceipt] = useState<AdminSubmitReceipt | null>(null);
   const [error, setError] = useState('');
 
   // Cached context — never re-fetched after initial load.
@@ -83,7 +90,9 @@ export default function HomeroomRosterRedesigned() {
         const rosterData = await fetchRoster(context.assignedSection.id, year.id);
         setData(rosterData);
       } catch (err: any) {
-        setError(err?.response?.data?.message ?? err?.message ?? 'Could not load the consolidated roster');
+        setError(
+          err?.response?.data?.message ?? err?.message ?? 'Could not load the consolidated roster',
+        );
       } finally {
         setLoading(false);
       }
@@ -110,6 +119,33 @@ export default function HomeroomRosterRedesigned() {
     }
   };
 
+  // ── Submit to Admin ───────────────────────────────────────────────────────
+
+  const handleSubmitToAdmin = async () => {
+    const sectionId = sectionIdRef.current;
+    const yearId = yearIdRef.current;
+    if (!sectionId || !yearId) return;
+
+    const confirmed = window.confirm(
+      'Send the finalized class roster to the admin portal for review?\n\n' +
+      'The admin will be able to view and approve the submitted roster.',
+    );
+    if (!confirmed) return;
+
+    setSubmitting(true);
+    try {
+      const receipt = await submitRosterToAdmin(sectionId, yearId);
+      setSubmitReceipt(receipt);
+      toast.success(receipt.message);
+    } catch (err: any) {
+      const msg: string =
+        err?.response?.data?.message ?? err?.message ?? 'Failed to submit roster to admin';
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // ── Export ────────────────────────────────────────────────────────────────
 
   const handleExportCsv = () => {
@@ -119,7 +155,10 @@ export default function HomeroomRosterRedesigned() {
       `${s.code} 1st`, `${s.code} 2nd`, `${s.code} 3rd`, `${s.code} 4th`,
       `${s.code} Ave1`, `${s.code} Ave2`, `${s.code} Year`,
     ]);
-    const headers = ['No', 'Admission No', 'Name', 'Sex', ...subjectCols, 'Sum', 'Avg', 'Rank', 'Abs D', 'Conduct'];
+    const headers = [
+      'No', 'Admission No', 'Name', 'Sex', ...subjectCols,
+      'Sum', 'Avg', 'Rank', 'Abs D', 'Conduct',
+    ];
 
     const rows = data.students.map((student, idx) => {
       const scoreCols = student.subjectScores.flatMap((sc) => [
@@ -131,7 +170,8 @@ export default function HomeroomRosterRedesigned() {
       return [
         idx + 1, student.admissionNo, student.studentName, student.sex,
         ...scoreCols,
-        student.sum, student.average != null ? student.average.toFixed(1) : '',
+        student.sum,
+        student.average != null ? student.average.toFixed(1) : '',
         student.rank || '', student.absentDays, student.conduct || '',
       ];
     });
@@ -180,16 +220,18 @@ export default function HomeroomRosterRedesigned() {
 
   if (!data) return <div className="text-gray-500 p-6">No roster data available</div>;
 
-  // Determine whether any subject results have been submitted yet
+  // The Submit to Admin button is enabled when there are any submitted results
+  // to send — the backend enforces the stricter "all subjects complete" check.
   const hasSubmittedResults = data.students.some((s) =>
     s.subjectScores.some(
-      (sc) =>
-        sc.term1 != null || sc.term2 != null || sc.term3 != null || sc.term4 != null,
+      (sc) => sc.term1 != null || sc.term2 != null || sc.term3 != null || sc.term4 != null,
     ),
   );
+  const canSubmit = hasSubmittedResults && !submitReceipt;
 
   return (
     <div className="space-y-6">
+
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -200,7 +242,7 @@ export default function HomeroomRosterRedesigned() {
             {data.section.homeroomTeacher && ` • Homeroom: ${data.section.homeroomTeacher}`}
           </p>
         </div>
-        <div className="flex gap-2 no-print shrink-0">
+        <div className="flex gap-2 no-print shrink-0 flex-wrap justify-end">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -222,8 +264,53 @@ export default function HomeroomRosterRedesigned() {
           >
             <Printer className="w-4 h-4" /> Print
           </button>
+
+          {/* ── Submit to Admin ── */}
+          <button
+            onClick={handleSubmitToAdmin}
+            disabled={!canSubmit || submitting}
+            title={
+              submitReceipt
+                ? 'Roster already submitted to admin'
+                : !hasSubmittedResults
+                ? 'No submitted results available to send yet'
+                : 'Send finalized roster to the admin portal for review'
+            }
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm ${
+              submitReceipt
+                ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
+                : canSubmit
+                ? 'bg-green-700 text-white hover:bg-green-800 shadow-green-700/20'
+                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
+            }`}
+          >
+            {submitReceipt ? (
+              <><BadgeCheck className="w-4 h-4" /> Submitted to Admin</>
+            ) : submitting ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Submitting…</>
+            ) : (
+              <><Send className="w-4 h-4" /> Submit to Admin</>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* ── Submission receipt banner ── */}
+      {submitReceipt && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3 no-print">
+          <BadgeCheck className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold text-green-900">Roster successfully submitted to admin portal</p>
+            <p className="text-sm text-green-800 mt-0.5">{submitReceipt.message}</p>
+            <p className="text-xs text-green-600 mt-1">
+              Submitted by <strong>{submitReceipt.submittedBy}</strong> on{' '}
+              {new Date(submitReceipt.submittedAt).toLocaleString()} &bull;{' '}
+              {submitReceipt.enrolledStudents} students &bull;{' '}
+              {submitReceipt.submittedSubjects} subjects
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Pending-results notice ── */}
       {!hasSubmittedResults && (
@@ -232,9 +319,8 @@ export default function HomeroomRosterRedesigned() {
           <div>
             <p className="font-semibold text-amber-800">No submitted results yet</p>
             <p className="text-sm text-amber-700 mt-0.5">
-              Subject teachers haven't sent any results to this homeroom yet. The marks columns will
-              populate automatically once they submit. Press <strong>Refresh</strong> to check for
-              updates.
+              Subject teachers haven't sent any results to this homeroom yet. Marks columns will
+              populate once they submit. Press <strong>Refresh</strong> to check for updates.
             </p>
           </div>
         </div>
@@ -249,11 +335,10 @@ export default function HomeroomRosterRedesigned() {
           </p>
         </div>
       ) : (
-        // ── Main table ──
         <div className="bg-white border rounded-xl overflow-auto shadow-sm">
           <table className="min-w-full border-collapse text-xs">
             <thead>
-              {/* Row 1 — subject names spanning 7 cols each */}
+              {/* Row 1 — subject names */}
               <tr className="bg-gray-900 text-white">
                 <th className="border border-gray-700 p-2 text-left" rowSpan={3}>No</th>
                 <th className="border border-gray-700 p-2 text-left" rowSpan={3} style={{ minWidth: 160 }}>

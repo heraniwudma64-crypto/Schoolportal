@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 // ─── Shared grade-letter helper ───────────────────────────────────────────────
@@ -284,5 +284,115 @@ export class ReportsService {
     compiled.sort((a, b) => b.overallAverage - a.overallAverage);
     compiled.forEach((c, i) => { c.overallRank = c.overallAverage > 0 ? i + 1 : 0; });
     return compiled;
+  }
+
+  // ── Homeroom teacher: submit to admin ─────────────────────────────────────
+
+  /**
+   * Called by a homeroom teacher to formally dispatch their finalized
+   * roster and/or report cards to the admin portal for review.
+   *
+   * Guards:
+   *  1. Caller must be a Teacher with a profile record.
+   *  2. Caller must be the designated homeroom teacher for the section
+   *     (ClassSection.teacherId === teacher.id).
+   *  3. Every assigned subject must have SUBMITTED results covering all
+   *     enrolled students — prevents partial dispatches reaching admin.
+   *
+   * The ClassSection.status field is stamped 'SUBMITTED_TO_ADMIN' so the
+   * admin section-list reflects the dispatch without a new DB table.
+   */
+  async submitToAdmin(
+    classSectionId: string,
+    academicYearId: string,
+    type: 'roster' | 'report-cards' | 'both',
+    userId: string,
+  ) {
+    // 1. Resolve caller to a Teacher record
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (!teacher) {
+      throw new ForbiddenException('Only registered teachers can submit reports to admin');
+    }
+
+    // 2. Verify homeroom ownership
+    const section = await this.prisma.classSection.findFirst({
+      where: { id: classSectionId, teacherId: teacher.id },
+      include: {
+        GradeLevel: { select: { name: true } },
+        AcademicYear: { select: { year: true } },
+      },
+    });
+    if (!section) {
+      throw new ForbiddenException(
+        'You are not the homeroom teacher for this section, or the section does not exist',
+      );
+    }
+
+    // 3. Ensure active enrolment exists
+    const enrolledCount = await this.prisma.studentEnrollment.count({
+      where: { classSectionId, academicYearId, status: 'ACTIVE' },
+    });
+    if (enrolledCount === 0) {
+      throw new BadRequestException('No active students are enrolled in this section');
+    }
+
+    // 4. Ensure every assigned subject is fully SUBMITTED
+    const assignedSubjects = await (this.prisma as any).sectionSubjectTeacher.findMany({
+      where: { classSectionId, academicYearId },
+      select: { subjectId: true },
+    });
+    if (assignedSubjects.length === 0) {
+      throw new BadRequestException('No subjects are assigned to this section');
+    }
+
+    const pendingSubjectNames: string[] = [];
+    for (const { subjectId } of assignedSubjects) {
+      const submittedCount = await (this.prisma as any).subjectResult.count({
+        where: { classSectionId, subjectId, academicYearId, status: 'SUBMITTED' },
+      });
+      if (submittedCount < enrolledCount) {
+        const subject = await this.prisma.subject.findUnique({
+          where: { id: subjectId },
+          select: { name: true },
+        });
+        pendingSubjectNames.push(subject?.name ?? subjectId);
+      }
+    }
+    if (pendingSubjectNames.length > 0) {
+      throw new BadRequestException(
+        `Cannot submit to admin — the following subject${pendingSubjectNames.length > 1 ? 's are' : ' is'} not fully submitted yet: ${pendingSubjectNames.join(', ')}`,
+      );
+    }
+
+    // 5. Stamp the section status so admin list shows the dispatch
+    await this.prisma.classSection.update({
+      where: { id: classSectionId },
+      data: { status: 'SUBMITTED_TO_ADMIN' },
+    });
+
+    // 6. Return a submission receipt
+    const gradeName = section.GradeLevel?.name ?? '';
+    const displayName = /^grade\b/i.test(gradeName)
+      ? `${gradeName} ${section.name}`
+      : `Grade ${gradeName} ${section.name}`.trim();
+
+    return {
+      success: true,
+      submittedAt: new Date().toISOString(),
+      submittedBy: `${teacher.firstName} ${teacher.lastName}`.trim(),
+      classSectionId,
+      classSectionName: displayName,
+      academicYear: section.AcademicYear?.year ?? academicYearId,
+      type,
+      enrolledStudents: enrolledCount,
+      submittedSubjects: assignedSubjects.length,
+      message: `${
+        type === 'both' ? 'Roster and report cards' :
+        type === 'roster' ? 'Class roster' : 'Report cards'
+      } for ${displayName} successfully submitted to the admin portal.`,
+    };
   }
 }

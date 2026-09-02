@@ -58,6 +58,19 @@ export interface AdminRosterEntry {
   average: number;
 }
 
+export interface AdminSubmitReceipt {
+  success: boolean;
+  submittedAt: string;
+  submittedBy: string;
+  classSectionId: string;
+  classSectionName: string;
+  academicYear: string;
+  type: 'roster' | 'report-cards' | 'both';
+  enrolledStudents: number;
+  submittedSubjects: number;
+  message: string;
+}
+
 // ─── API calls ────────────────────────────────────────────────────────────────
 
 export const getAdminSections = (academicYearId?: string) =>
@@ -74,3 +87,44 @@ export const getAdminSectionRoster = (classSectionId: string, academicYearId: st
   api.get<AdminRosterEntry[]>(
     `/admin/reports/sections/${classSectionId}/roster?academicYearId=${academicYearId}&term=${term}`,
   );
+
+/**
+ * Homeroom teacher dispatches their section's report cards to admin.
+ * Backend validates homeroom ownership + all subjects submitted.
+ */
+export const submitReportCardsToAdmin = (
+  classSectionId: string,
+  academicYearId: string,
+) =>
+  api.post<AdminSubmitReceipt>('/admin/reports/homeroom/submit-to-admin', {
+    classSectionId,
+    academicYearId,
+    type: 'report-cards',
+  });
+
+/**
+ * Homeroom teacher dispatches their section's consolidated roster to admin.
+ * Backend validates homeroom ownership + all subjects submitted.
+ */
+export const submitRosterToAdmin = (
+  classSectionId: string,
+  academicYearId: string,
+) =>
+  api.post<AdminSubmitReceipt>('/admin/reports/homeroom/submit-to-admin', {
+    classSectionId,
+    academicYearId,
+    type: 'roster',
+  });
+
+/**
+ * Dispatch both roster and report cards in a single call.
+ */
+export const submitBothToAdmin = (
+  classSectionId: string,
+  academicYearId: string,
+) =>
+  api.post<AdminSubmitReceipt>('/admin/reports/homeroom/submit-to-admin', {
+    classSectionId,
+    academicYearId,
+    type: 'both',
+  });
