@@ -85,29 +85,33 @@ export function useUsers() {
   }, []);
 
   const fetchClassSections = useCallback(async () => {
+    if (classSections.length > 0) return classSections;
     try {
       const sections = await api.get<ClassSection[]>('/users/class-sections');
       setClassSections(sections);
+      return sections;
     } catch {
       // non-critical
+      return [];
     }
-  }, []);
+  }, [classSections.length]);
 
   const fetchParentsList = useCallback(async () => {
+    if (parentsList.length > 0) return parentsList;
     try {
       const list = await api.get<ParentLookupOption[]>('/users/parents-list');
       setParentsList(list);
+      return list;
     } catch {
       // non-critical
+      return [];
     }
-  }, []);
+  }, [parentsList.length]);
 
-  // Initial load
+  // Initial load: fetch users list and summary stats only
   useEffect(() => {
     void fetchUsers(filters);
     void fetchStats();
-    void fetchClassSections();
-    void fetchParentsList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -133,8 +137,8 @@ export function useUsers() {
   const refresh = useCallback(() => {
     void fetchUsers(filters);
     void fetchStats();
-    void fetchParentsList();
-  }, [filters, fetchUsers, fetchStats, fetchParentsList]);
+    if (parentsList.length > 0) void fetchParentsList();
+  }, [filters, fetchUsers, fetchStats, fetchParentsList, parentsList.length]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -223,6 +227,8 @@ export function useUsers() {
     error,
     applyFilters,
     refresh,
+    fetchClassSections,
+    fetchParentsList,
     createUser,
     updateUser,
     activateUser,

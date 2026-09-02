@@ -95,6 +95,7 @@ model SubjectResult {
   AcademicYear AcademicYear @relation(fields: [academicYearId], references: [id])
 
   @@unique([studentId, subjectId, classSectionId, academicYearId, term])
+  @@index([academicYearId, classSectionId, status])
 }
 
 model ReportCard {
@@ -146,6 +147,8 @@ model User {
   StudentAttendance StudentAttendance[]
   Teacher           Teacher?
   materials         Material[]
+
+  @@index([isDeleted, role, isActive])
 }
 
 // ─── Academic Year & Terms ────────────────────────────────────────────────────
@@ -229,6 +232,7 @@ model ClassSection {
   // Canonical identity for newly-created sections. Legacy rows may have a
   // missing year/grade and are deliberately excluded from enrollment flows.
   @@unique([academicYearId, gradeLevelId, name])
+  @@index([teacherId])
 }
 
 model Class {
@@ -298,6 +302,9 @@ model Student {
   grades            Grade[]
   subjectResults    SubjectResult[]
   reportCards       ReportCard[]
+
+  @@index([classSectionId, status])
+  @@index([parentId])
 }
 
 model Teacher {
@@ -474,6 +481,9 @@ model Examination {
   grades       Grade[]
   questions    Question[]
   results      StudentExamResult[]
+
+  @@index([teacherId, status])
+  @@index([classSectionId])
 }
 
 model Question {
@@ -580,6 +590,8 @@ model Assignment {
   submissions       Submission[]
   grades            Grade[]
 
+  @@index([teacherId])
+  @@index([classSectionId])
   @@map("Assignment")
 }
 
@@ -670,6 +682,8 @@ model Notice {
   ClassSection ClassSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   Student      Student?      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   Parent       Parent?       @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@index([status, publishedAt])
 }
 
 model Grade {
@@ -715,6 +729,7 @@ model SectionSubjectTeacher {
   AcademicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
 
   @@unique([classSectionId, subjectId, academicYearId])
+  @@index([teacherId, academicYearId])
 }
 
 

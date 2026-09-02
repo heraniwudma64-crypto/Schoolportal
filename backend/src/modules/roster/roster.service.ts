@@ -130,19 +130,36 @@ export class RosterService {
     if (!academicYearId || !classSectionId) throw new BadRequestException('Academic Year and Class Section are required');
 
     const [section, enrollments, results, assignments, absences] = await Promise.all([
-      this.prisma.classSection.findUnique({ where: { id: classSectionId }, include: { GradeLevel: true, homeroomTeacher: true } }),
+      this.prisma.classSection.findUnique({
+        where: { id: classSectionId },
+        select: {
+          id: true,
+          name: true,
+          GradeLevel: { select: { name: true } },
+          homeroomTeacher: { select: { firstName: true, lastName: true } },
+        },
+      }),
       this.prisma.studentEnrollment.findMany({
         where: { academicYearId, classSectionId, status: 'ACTIVE' },
-        include: { Student: { select: { id: true, admissionNo: true, firstName: true, lastName: true, gender: true } } },
+        select: {
+          Student: { select: { id: true, admissionNo: true, firstName: true, lastName: true, gender: true } },
+        },
         orderBy: { Student: { lastName: 'asc' } },
       }),
       (this.prisma as any).subjectResult.findMany({
         where: { academicYearId, classSectionId, status: 'SUBMITTED' },
-        include: { Subject: { select: { id: true, name: true, code: true } } },
+        select: {
+          studentId: true,
+          term: true,
+          marks: true,
+          Subject: { select: { id: true, name: true, code: true } },
+        },
       }),
       (this.prisma as any).sectionSubjectTeacher.findMany({
         where: { academicYearId, classSectionId },
-        include: { Subject: { select: { id: true, name: true, code: true } } },
+        select: {
+          Subject: { select: { id: true, name: true, code: true } },
+        },
       }),
       this.prisma.studentAttendance.findMany({
         where: { classSectionId, status: 'ABSENT' },

@@ -99,11 +99,27 @@ export class TeachersService {
 
   async getDashboard(userId: string) {
     try {
-      const teacherId = await this.resolveTeacherId(userId);
-      const assignments = await this.prisma.sectionSubjectTeacher.findMany({
-        where: { teacherId },
-        select: { subjectId: true, classSectionId: true },
+      const teacher = await this.prisma.teacher.findFirst({
+        where: {
+          OR: [
+            { id: userId },
+            { userId },
+          ],
+        },
+        select: {
+          id: true,
+          subjectSections: {
+            select: { subjectId: true, classSectionId: true },
+          },
+        },
       });
+
+      if (!teacher) {
+        throw new NotFoundException('Teacher profile not found. Please contact your administrator.');
+      }
+
+      const teacherId = teacher.id;
+      const assignments = teacher.subjectSections;
       const sectionIds = [...new Set(assignments.map((assignment) => assignment.classSectionId))];
       const [assignmentCount, pendingExamCount, activeStudentCount, attendanceRecords, recentAssignments, recentExams] = await Promise.all([
         this.prisma.assignment.count({ where: { teacherId } }),
@@ -145,22 +161,25 @@ export class TeachersService {
   async getMyHomeroomContext(userId: string) {
     const teacher = await this.prisma.teacher.findFirst({
       where: { userId },
-      select: { id: true, firstName: true, lastName: true },
+      select: {
+        id: true,
+        homeroomSections: {
+          select: {
+            id: true,
+            name: true,
+            GradeLevel: { select: { name: true } },
+            _count: { select: { students: true } },
+          },
+          take: 1,
+        },
+      },
     });
 
     if (!teacher) {
       throw new NotFoundException('Teacher profile not found');
     }
 
-    const homeroomSection = await this.prisma.classSection.findFirst({
-      where: { teacherId: teacher.id },
-      include: {
-        GradeLevel: true,
-        students: {
-          select: { id: true, firstName: true, lastName: true },
-        },
-      },
-    });
+    const homeroomSection = teacher.homeroomSections[0] || null;
 
     return {
       teacherId: teacher.id,
@@ -170,15 +189,21 @@ export class TeachersService {
             id: homeroomSection.id,
             name: homeroomSection.name,
             grade: homeroomSection.GradeLevel?.name,
-            studentCount: homeroomSection.students.length,
+            studentCount: homeroomSection._count.students,
           }
         : null,
     };
   }
 
   async verifyHomeroomAccess(userId: string, classSectionId: string) {
-    const context = await this.getMyHomeroomContext(userId);
-    if (!context.isHomeroomTeacher || context.assignedSection?.id !== classSectionId) {
+    const isHomeroom = await this.prisma.classSection.findFirst({
+      where: {
+        id: classSectionId,
+        homeroomTeacher: { userId },
+      },
+      select: { id: true },
+    });
+    if (!isHomeroom) {
       throw new ForbiddenException('You are not authorized as the homeroom teacher for this section.');
     }
   }

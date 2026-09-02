@@ -11,37 +11,30 @@ export class StudentsService {
 
   // --- Attendance Method ---
   async getMyAttendance(userId: string) {
-    console.log("DEBUG: Looking up attendance for JWT User ID:", userId);
-
     const student = await this.prisma.student.findFirst({
       where: {
         OR: [
           { id: userId },
-          { userId: userId },
+          { userId },
         ],
       },
+      select: {
+        StudentAttendance: {
+          include: {
+            ClassSection: true,
+          },
+          orderBy: {
+            date: 'desc',
+          },
+        },
+      },
     });
-
-    console.log("DEBUG: Found student record:", student);
 
     if (!student) {
       return [];
     }
 
-    const records = await this.prisma.studentAttendance.findMany({
-      where: {
-        studentId: student.id,
-      },
-      include: {
-        ClassSection: true,
-      },
-      orderBy: {
-        date: 'desc',
-      },
-    });
-
-    console.log("DEBUG: Found attendance records count:", records.length);
-    return records;
+    return student.StudentAttendance;
   }
 
   // --- Assignments Method ---
@@ -175,15 +168,17 @@ export class StudentsService {
   async getMyCourses(userId: string) {
     const student = await this.prisma.student.findUnique({
       where: { userId },
-      select: { id: true },
+      select: {
+        id: true,
+        StudentEnrollment: {
+          where: { status: 'ACTIVE' },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1,
+          select: { academicYearId: true, gradeLevelId: true, GradeLevel: { select: { name: true } } },
+        },
+      },
     });
-    if (!student) return [];
-
-    const enrollment = await this.prisma.studentEnrollment.findFirst({
-      where: { studentId: student.id, status: 'ACTIVE' },
-      orderBy: { enrollmentDate: 'desc' },
-      select: { academicYearId: true, gradeLevelId: true, GradeLevel: { select: { name: true } } },
-    });
+    const enrollment = student?.StudentEnrollment[0];
     if (!enrollment) return [];
 
     const subjects = await this.prisma.gradeSubject.findMany({
@@ -239,19 +234,16 @@ export class StudentsService {
     });
   }
 
-  // students.service.ts
-async getMyResults(userId: string) {
-    // 1. Find the student linked to this user ID
+  async getMyResults(userId: string) {
     const student = await this.prisma.student.findFirst({
-      where: { OR: [{ id: userId }, { userId: userId }] },
+      where: { OR: [{ id: userId }, { userId }] },
+      select: {
+        grades: true,
+      },
     });
-    
-    if (!student) return [];
 
-    // 2. Query the grade table directly without any invalid relation includes
-    return await this.prisma.grade.findMany({
-      where: { studentId: student.id },
-    });
+    if (!student) return [];
+    return student.grades;
   }
 
   // --- Heran's Method ---

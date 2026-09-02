@@ -1,41 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import { Download, Printer, RefreshCw, AlertCircle, Clock } from 'lucide-react';
-import { getAcademicYears } from '../../api/academicStructure';
-import { api } from '../../lib/api';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type SubjectScore = {
-  subjectId: string;
-  subject: string;
-  code: string;
-  term1: number | null;
-  term2: number | null;
-  term3: number | null;
-  term4: number | null;
-  sem1Avg: number | null;
-  sem2Avg: number | null;
-  yearlyAverage: number | null;
-};
-
-type RosterStudent = {
-  studentId: string;
-  admissionNo: string;
-  studentName: string;
-  sex: string;
-  subjectScores: SubjectScore[];
-  sum: number;
-  average: number | null;
-  rank: number;
-  absentDays: number;
-  conduct: string | null;
-};
-
-type ConsolidatedRosterData = {
-  section: { id?: string; name: string; grade?: string; homeroomTeacher: string | null };
-  subjects: Array<{ id: string; name: string; code: string }>;
-  students: RosterStudent[];
-};
+import { toast } from 'sonner';
+import { useAcademicYears } from '../../hooks/useAcademicStructure';
+import {
+  useHomeroomContext,
+  useConsolidatedRoster,
+  ConsolidatedRosterData,
+} from '../../hooks/useHomeroom';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -46,67 +17,40 @@ function fmt(v: number | null | undefined): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomRosterRedesigned() {
-  const [data, setData] = useState<ConsolidatedRosterData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
+  // 1. Shared Homeroom Context & Academic Years (from Cache)
+  const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
+  const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
-  // Cached context — never re-fetched after initial load.
-  const sectionIdRef = useRef<string | null>(null);
-  const yearIdRef = useRef<string | null>(null);
+  const currentYear = years.find((y) => y.isCurrent) || years[0];
+  const sectionId = homeroomContext?.assignedSection?.id;
+  const yearId = currentYear?.id;
 
-  // ── Fetch helper ──────────────────────────────────────────────────────────
+  // 2. Consolidated Roster Query
+  const {
+    data,
+    isLoading: rosterLoading,
+    isFetching: refreshing,
+    error: rosterError,
+    refetch,
+  } = useConsolidatedRoster(sectionId, yearId);
 
-  const fetchRoster = async (sectionId: string, yearId: string) =>
-    api.get<ConsolidatedRosterData>(
-      `/roster/consolidated?academicYearId=${yearId}&classSectionId=${sectionId}`,
-    );
-
-  // ── Initial load ──────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const [context, years] = await Promise.all([
-          api.get<{ assignedSection: { id: string } | null }>('/teachers/me/homeroom-context'),
-          getAcademicYears(),
-        ]);
-        const year = years.find((y) => y.isCurrent) || years[0];
-        if (!context.assignedSection || !year) {
-          throw new Error('No homeroom section or academic year assigned to your account');
-        }
-        sectionIdRef.current = context.assignedSection.id;
-        yearIdRef.current = year.id;
-
-        const rosterData = await fetchRoster(context.assignedSection.id, year.id);
-        setData(rosterData);
-      } catch (err: any) {
-        setError(err?.response?.data?.message ?? err?.message ?? 'Could not load the consolidated roster');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+  const loading = contextLoading || yearsLoading || (rosterLoading && !data);
+  const error =
+    (contextError as any)?.response?.data?.message ||
+    (contextError as any)?.message ||
+    (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
+    (rosterError as any)?.response?.data?.message ||
+    (rosterError as any)?.message ||
+    '';
 
   // ── Refresh ───────────────────────────────────────────────────────────────
 
   const handleRefresh = async () => {
-    const sectionId = sectionIdRef.current;
-    const yearId = yearIdRef.current;
-    if (!sectionId || !yearId) return;
-
-    setRefreshing(true);
     try {
-      const rosterData = await fetchRoster(sectionId, yearId);
-      setData(rosterData);
-      setError('');
+      await refetch();
+      toast.success('Roster refreshed');
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Refresh failed');
-    } finally {
-      setRefreshing(false);
+      toast.error(err?.response?.data?.message ?? 'Refresh failed');
     }
   };
 

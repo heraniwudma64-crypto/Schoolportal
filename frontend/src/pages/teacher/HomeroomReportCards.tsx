@@ -1,7 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { RefreshCw, Printer, Download, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
-import { getAcademicYears } from '../../api/academicStructure';
-import { api } from '../../lib/api';
+import { toast } from 'sonner';
+import { useAcademicYears } from '../../hooks/useAcademicStructure';
+import {
+  useHomeroomContext,
+  useHomeroomSubmissionMatrix,
+  useConsolidatedRoster,
+} from '../../hooks/useHomeroom';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,18 +26,6 @@ type SubmissionMatrix = {
   totalSubjects?: number;
 };
 
-type RosterStudent = {
-  studentId: string;
-  admissionNo: string;
-  studentName: string;
-  average: number | null;
-  rank: number;
-};
-
-type ConsolidatedRoster = {
-  students: RosterStudent[];
-};
-
 // Static term list — mirrors the TERM_1..4 codes stored in SubjectResult.
 const STATIC_TERMS = [
   { code: 'TERM_1', label: 'Term 1' },
@@ -44,103 +37,62 @@ const STATIC_TERMS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomReportCards() {
-  const [matrix, setMatrix] = useState<SubmissionMatrix | null>(null);
-  const [preparedRoster, setPreparedRoster] = useState<ConsolidatedRoster | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [isPrinting, setIsPrinting] = useState(false);
 
-  // Cached immutable context — never re-fetched after initial load.
-  const sectionIdRef = useRef<string | null>(null);
-  const yearIdRef = useRef<string | null>(null);
+  // 1. Shared Homeroom Context & Academic Years (from Cache)
+  const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
+  const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
-  // ── Data fetcher ──────────────────────────────────────────────────────────
+  const currentYear = years.find((y) => y.isCurrent) || years[0];
+  const sectionId = homeroomContext?.assignedSection?.id;
+  const yearId = currentYear?.id;
 
-  const fetchData = async (sectionId: string, yearId: string, term: string) => {
-    const [submissionMatrix, roster] = await Promise.all([
-      api.get<SubmissionMatrix>(
-        `/results/homeroom-matrix?classSectionId=${sectionId}&academicYearId=${yearId}&term=${term}`,
-      ),
-      api.get<ConsolidatedRoster>(
-        `/roster/consolidated?academicYearId=${yearId}&classSectionId=${sectionId}`,
-      ),
-    ]);
-    return { submissionMatrix, roster };
-  };
+  // 2. Data Queries
+  const {
+    data: matrix,
+    isLoading: matrixLoading,
+    isFetching: matrixFetching,
+    error: matrixError,
+    refetch: refetchMatrix,
+  } = useHomeroomSubmissionMatrix(sectionId, yearId, selectedTerm);
 
-  // ── Initial load ──────────────────────────────────────────────────────────
+  const {
+    data: preparedRoster,
+    isLoading: rosterLoading,
+    isFetching: rosterFetching,
+    error: rosterError,
+    refetch: refetchRoster,
+  } = useConsolidatedRoster(sectionId, yearId);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const [context, years] = await Promise.all([
-          api.get<{ assignedSection: { id: string } | null }>('/teachers/me/homeroom-context'),
-          getAcademicYears(),
-        ]);
-        const year = years.find((y) => y.isCurrent) || years[0];
-        if (!context.assignedSection || !year) {
-          throw new Error('No homeroom section or academic year assigned to your account');
-        }
-        sectionIdRef.current = context.assignedSection.id;
-        yearIdRef.current = year.id;
+  const loading = contextLoading || yearsLoading || ((matrixLoading || rosterLoading) && !preparedRoster);
+  const refreshing = (matrixFetching || rosterFetching) && !loading;
 
-        const { submissionMatrix, roster } = await fetchData(
-          context.assignedSection.id,
-          year.id,
-          selectedTerm,
-        );
-        setMatrix(submissionMatrix);
-        setPreparedRoster(roster);
-      } catch (err: any) {
-        setError(err?.response?.data?.message ?? err?.message ?? 'Could not load report card data');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // runs once
+  const error =
+    (contextError as any)?.response?.data?.message ||
+    (contextError as any)?.message ||
+    (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
+    (matrixError as any)?.response?.data?.message ||
+    (matrixError as any)?.message ||
+    (rosterError as any)?.response?.data?.message ||
+    (rosterError as any)?.message ||
+    '';
 
   // ── Term change ───────────────────────────────────────────────────────────
 
-  const handleTermChange = async (term: string) => {
+  const handleTermChange = (term: string) => {
     setSelectedTerm(term);
-    const sectionId = sectionIdRef.current;
-    const yearId = yearIdRef.current;
-    if (!sectionId || !yearId) return;
-
-    try {
-      // Only the matrix depends on term; the consolidated roster is year-wide.
-      const newMatrix = await api.get<SubmissionMatrix>(
-        `/results/homeroom-matrix?classSectionId=${sectionId}&academicYearId=${yearId}&term=${term}`,
-      );
-      setMatrix(newMatrix);
-    } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Failed to load data for selected term');
-    }
   };
 
   // ── Manual refresh ────────────────────────────────────────────────────────
 
   const handleRefresh = async () => {
-    const sectionId = sectionIdRef.current;
-    const yearId = yearIdRef.current;
-    if (!sectionId || !yearId) return;
-
-    setRefreshing(true);
     try {
-      const { submissionMatrix, roster } = await fetchData(sectionId, yearId, selectedTerm);
-      setMatrix(submissionMatrix);
-      setPreparedRoster(roster);
+      await Promise.all([refetchMatrix(), refetchRoster()]);
+      toast.success('Report card data refreshed');
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Refresh failed');
-    } finally {
-      setRefreshing(false);
+      toast.error(err?.response?.data?.message ?? 'Refresh failed');
     }
   };
 

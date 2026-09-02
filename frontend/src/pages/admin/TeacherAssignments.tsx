@@ -1,24 +1,47 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Users, UserPlus, ClipboardList, Building2, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
-import { getAcademicYears, getGradeLevels, getGradeSubjects, AcademicYear, GradeLevel, GradeSubject } from '../../api/academicStructure';
-import { teachersApi, Teacher } from '../../api/teachers';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAcademicYears, useGradeLevels, useGradeSubjects } from '../../hooks/useAcademicStructure';
+import { useTeachers } from '../../hooks/useTeachers';
 import { teacherAssignmentsApi, TeacherAssignment, SubjectTeacherAssignment } from '../../api/teacherAssignments';
 import { toast } from 'sonner';
 
 export const TeacherAssignments = () => {
+  const queryClient = useQueryClient();
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
 
-  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [academicYearId, setAcademicYearId] = useState<string>('');
+  // Centralized cached queries running in parallel
+  const { data: academicYears = [], isLoading: loadingYears } = useAcademicYears();
+  const { data: gradeLevels = [], isLoading: loadingGrades } = useGradeLevels();
+  const { data: gradeSubjects = [], isLoading: loadingSubjects } = useGradeSubjects();
+  const { data: teachers = [], isLoading: loadingTeachers } = useTeachers();
 
-  const [gradeLevels, setGradeLevels] = useState<GradeLevel[]>([]);
-  const [gradeSubjects, setGradeSubjects] = useState<GradeSubject[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
 
-  const [homeRoomAssignments, setHomeRoomAssignments] = useState<TeacherAssignment[]>([]);
-  const [subjectAssignments, setSubjectAssignments] = useState<SubjectTeacherAssignment[]>([]);
+  const currentYear = academicYears.find((y) => y.isCurrent) || academicYears[0];
+  const academicYearId = selectedAcademicYearId || currentYear?.id || '';
+
+  const { data: homeRoomAssignments = [], isLoading: loadingHR } = useQuery<TeacherAssignment[]>({
+    queryKey: ['teacher-assignments', 'homeroom', academicYearId],
+    queryFn: async () => {
+      const res = await teacherAssignmentsApi.getHomeRoomAssignments(academicYearId || undefined);
+      return Array.isArray(res) ? res : (res as any)?.data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: subjectAssignments = [], isLoading: loadingSub } = useQuery<SubjectTeacherAssignment[]>({
+    queryKey: ['teacher-assignments', 'subject', academicYearId],
+    queryFn: async () => {
+      const res = await teacherAssignmentsApi.getSubjectAssignments(academicYearId || undefined);
+      return Array.isArray(res) ? res : (res as any)?.data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const loading = (loadingYears || loadingGrades || loadingSubjects || loadingTeachers || loadingHR || loadingSub) && !academicYears.length;
 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignmentType, setAssignmentType] = useState<'HomeRoom' | 'Subject'>('HomeRoom');
@@ -28,69 +51,6 @@ export const TeacherAssignments = () => {
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  // --- CHANGED AREA 1: Safely unwrap data from APIs ---
-  const fetchInitialData = async () => {
-    try {
-      setLoading(true);
-      const [yearsRes, gradesRes, subjectsRes, teachersRes] = await Promise.all([
-        getAcademicYears(),
-        getGradeLevels(),
-        getGradeSubjects(),
-        teachersApi.getTeachers(),
-      ]);
-
-      // Many APIs wrap data in a "data" or "teachers" object. This safely extracts the array.
-      const years = Array.isArray(yearsRes) ? yearsRes : (yearsRes as any)?.data || [];
-      const grades = Array.isArray(gradesRes) ? gradesRes : (gradesRes as any)?.data || [];
-      const subjects = Array.isArray(subjectsRes) ? subjectsRes : (subjectsRes as any)?.data || [];
-      const teachList = Array.isArray(teachersRes) ? teachersRes : (teachersRes as any)?.teachers || (teachersRes as any)?.data || [];
-
-      setAcademicYears(years);
-      setGradeLevels(grades);
-      setGradeSubjects(subjects);
-      setTeachers(teachList);
-
-      const current = years.find((y: AcademicYear) => y.isCurrent) || years[0];
-      if (current) {
-        setAcademicYearId(current.id);
-      }
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to load basic data');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- CHANGED AREA 2: Safely unwrap assignment data ---
-  const fetchAssignments = async (yearId: string) => {
-    if (!yearId) return;
-    try {
-      const [hrRes, subRes] = await Promise.all([
-        teacherAssignmentsApi.getHomeRoomAssignments(yearId),
-        teacherAssignmentsApi.getSubjectAssignments(yearId),
-      ]);
-
-      const hr = Array.isArray(hrRes) ? hrRes : (hrRes as any)?.data || [];
-      const sub = Array.isArray(subRes) ? subRes : (subRes as any)?.data || [];
-
-      setHomeRoomAssignments(hr);
-      setSubjectAssignments(sub);
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to load assignments');
-    }
-  };
-
-  useEffect(() => {
-    fetchInitialData();
-  }, []);
-
- useEffect(() => {
-  if (academicYearId) {
-    fetchAssignments(academicYearId);
-  }
-}, [academicYearId]);
 
   const handleAssignClick = (type: 'HomeRoom' | 'Subject', editItem?: any) => {
     setAssignmentType(type);
@@ -138,14 +98,14 @@ export const TeacherAssignments = () => {
 
     setIsSaving(true);
     try {
-    if (assignmentType === 'HomeRoom') {
-  await teacherAssignmentsApi.assignHomeRoomTeacher(
-    selectedSectionId,
-    selectedTeacherId || null,
-    academicYearId
-  );
-  toast.success('Home Room teacher updated');
-}else {
+      if (assignmentType === 'HomeRoom') {
+        await teacherAssignmentsApi.assignHomeRoomTeacher(
+          selectedSectionId,
+          selectedTeacherId || null,
+          academicYearId
+        );
+        toast.success('Home Room teacher updated');
+      } else {
         await teacherAssignmentsApi.assignSubjectTeacher({
           classSectionId: selectedSectionId,
           subjectId: selectedSubjectId,
@@ -155,7 +115,7 @@ export const TeacherAssignments = () => {
         toast.success('Subject teacher updated');
       }
       setIsAssignModalOpen(false);
-      fetchAssignments(academicYearId);
+      queryClient.invalidateQueries({ queryKey: ['teacher-assignments'] });
     } catch (err: any) {
       toast.error(err.response?.data?.message || err.message || 'Failed to save assignment');
     } finally {
@@ -168,7 +128,7 @@ export const TeacherAssignments = () => {
     try {
       await teacherAssignmentsApi.removeSubjectTeacher(id);
       toast.success('Assignment removed');
-      fetchAssignments(academicYearId);
+      queryClient.invalidateQueries({ queryKey: ['teacher-assignments'] });
     } catch (err: any) {
       toast.error(err?.message || 'Failed to remove assignment');
     }
@@ -244,7 +204,7 @@ export const TeacherAssignments = () => {
         <div className="flex items-center gap-3">
           <select
             value={academicYearId}
-            onChange={(e) => setAcademicYearId(e.target.value)}
+            onChange={(e) => setSelectedAcademicYearId(e.target.value)}
             className="h-12 px-4 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all shadow-sm"
             disabled={loading}
           >

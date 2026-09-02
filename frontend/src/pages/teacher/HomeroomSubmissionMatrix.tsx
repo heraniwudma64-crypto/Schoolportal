@@ -1,8 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { CheckCircle2, AlertCircle, Clock, Users, Download, Printer, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAcademicYears } from '../../api/academicStructure';
-import { api } from '../../lib/api';
+import { useAcademicYears } from '../../hooks/useAcademicStructure';
+import {
+  useHomeroomContext,
+  useHomeroomSubmissionMatrix,
+  useHomeroomStudentResults,
+} from '../../hooks/useHomeroom';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,7 +40,7 @@ type StudentResult = {
   marks: number;
   subjectId: string;
   term: string;
-  status: 'DRAFT' | 'SUBMITTED';
+  status: 'DRAFT' | 'SUBMITTED' | string;
 };
 
 // Static term definitions — we don't rely on Term DB rows because the
@@ -51,107 +55,53 @@ const STATIC_TERMS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomSubmissionMatrix() {
-  const [matrix, setMatrix] = useState<SubmissionMatrix | null>(null);
-  const [studentResults, setStudentResults] = useState<StudentResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
 
-  // Cache the immutable context values so term changes never re-fetch them.
-  const sectionIdRef = useRef<string | null>(null);
-  const yearIdRef = useRef<string | null>(null);
+  // 1. Homeroom Context & Academic Years (Shared React Query Cache)
+  const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
+  const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  const currentYear = years.find((y) => y.isCurrent) || years[0];
+  const sectionId = homeroomContext?.assignedSection?.id;
+  const yearId = currentYear?.id;
 
-  const fetchMatrixAndResults = async (sectionId: string, yearId: string, term: string) => {
-    const [matrixData, resultsData] = await Promise.all([
-      api.get<SubmissionMatrix>(
-        `/results/homeroom-matrix?classSectionId=${sectionId}&academicYearId=${yearId}&term=${term}`,
-      ),
-      api.get<StudentResult[]>(
-        `/results/student-results?classSectionId=${sectionId}&academicYearId=${yearId}&term=${term}`,
-      ),
-    ]);
-    return { matrixData, resultsData };
-  };
+  // 2. Page Data Queries (React Query)
+  const {
+    data: matrix,
+    isLoading: matrixLoading,
+    isFetching: matrixFetching,
+    error: matrixError,
+    refetch: refetchMatrix,
+  } = useHomeroomSubmissionMatrix(sectionId, yearId, selectedTerm);
 
-  // ── Initial load — resolve context once, then fetch matrix ────────────────
+  const {
+    data: studentResults = [],
+    isFetching: resultsFetching,
+    refetch: refetchResults,
+  } = useHomeroomStudentResults(sectionId, yearId, selectedTerm);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const [context, years] = await Promise.all([
-          api.get<{ assignedSection: { id: string; name: string } | null }>('/teachers/me/homeroom-context'),
-          getAcademicYears(),
-        ]);
+  const loading = contextLoading || yearsLoading || (matrixLoading && !matrix);
+  const refreshing = (matrixFetching || resultsFetching) && !matrixLoading;
 
-        const year = years.find((y) => y.isCurrent) || years[0];
-        if (!context.assignedSection || !year) {
-          throw new Error('No homeroom section or academic year assigned to your account');
-        }
+  const error =
+    (contextError as any)?.response?.data?.message ||
+    (contextError as any)?.message ||
+    (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
+    (matrixError as any)?.response?.data?.message ||
+    (matrixError as any)?.message ||
+    '';
 
-        // Cache so term-change handler never calls these again.
-        sectionIdRef.current = context.assignedSection.id;
-        yearIdRef.current = year.id;
-
-        const { matrixData, resultsData } = await fetchMatrixAndResults(
-          context.assignedSection.id,
-          year.id,
-          selectedTerm,
-        );
-        setMatrix(matrixData);
-        setStudentResults(resultsData);
-      } catch (err: any) {
-        const msg = err?.response?.data?.message ?? err?.message ?? 'Could not load submission matrix';
-        setError(msg);
-        toast.error(msg);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // runs once
-
-  // ── Term change — use cached sectionId + yearId ────────────────────────────
-
-  const handleTermChange = async (newTerm: string) => {
+  const handleTermChange = (newTerm: string) => {
     setSelectedTerm(newTerm);
-    const sectionId = sectionIdRef.current;
-    const yearId = yearIdRef.current;
-    if (!sectionId || !yearId) return; // context not loaded yet
-
-    try {
-      const { matrixData, resultsData } = await fetchMatrixAndResults(sectionId, yearId, newTerm);
-      setMatrix(matrixData);
-      setStudentResults(resultsData);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Failed to load data for selected term');
-    }
   };
-
-  // ── Manual refresh ─────────────────────────────────────────────────────────
 
   const handleRefresh = async () => {
-    const sectionId = sectionIdRef.current;
-    const yearId = yearIdRef.current;
-    if (!sectionId || !yearId) return;
-
-    setRefreshing(true);
     try {
-      const { matrixData, resultsData } = await fetchMatrixAndResults(sectionId, yearId, selectedTerm);
-      setMatrix(matrixData);
-      setStudentResults(resultsData);
+      await Promise.all([refetchMatrix(), refetchResults()]);
       toast.success('Submission matrix refreshed');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Refresh failed');
-    } finally {
-      setRefreshing(false);
     }
   };
 

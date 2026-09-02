@@ -98,6 +98,7 @@ const UserManagement: React.FC = () => {
     users, meta, stats, classSections, parentsList, filters,
     isLoading, isStatsLoading, error,
     applyFilters, refresh,
+    fetchClassSections, fetchParentsList,
     createUser, updateUser, activateUser, deactivateUser, resetPassword, deleteUser,
   } = useUsers();
 
@@ -107,6 +108,14 @@ const UserManagement: React.FC = () => {
   const [profileUser, setProfileUser] = useState<ManagedUser | null>(null);
   const [linkChildrenUser, setLinkChildrenUser] = useState<ManagedUser | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Lazy-load lookup options only when modals actually open
+  React.useEffect(() => {
+    if (showAddEdit || linkChildrenUser) {
+      void fetchClassSections();
+      void fetchParentsList();
+    }
+  }, [showAddEdit, linkChildrenUser, fetchClassSections, fetchParentsList]);
 
   // Confirm dialog state
   type ConfirmAction =
