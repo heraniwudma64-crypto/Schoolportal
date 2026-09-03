@@ -1,6 +1,5 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { 
   LayoutDashboard, 
@@ -91,6 +90,7 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
         { name: 'User Management', href: '/users', icon: Users },
         { name: 'Academic Structure', href: '/structure', icon: UserCog },
         { name: 'Teacher Assignments', href: '/teacher-assignments', icon: BookOpen },
+        { name: 'Timetable Management', href: '/timetable', icon: Calendar },
         { name: 'Roster Review', href: '/roster', icon: ClipboardList },
         { name: 'Exam Review', href: '/exam-review', icon: FileCheck },
         { name: 'Report Card Review', href: '/report-cards', icon: FileCheck },

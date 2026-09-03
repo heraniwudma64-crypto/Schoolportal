@@ -14,10 +14,10 @@ import AttendanceWrapper from './components/wrappers/AttendanceWrapper';
 import AssignmentsWrapper from './components/wrappers/AssignmentsWrapper';
 import ExamsWrapper from './components/wrappers/ExamsWrapper';
 import MaterialsWrapper from './components/wrappers/MaterialsWrapper';
+import ScheduleWrapper from './components/wrappers/ScheduleWrapper';
 
 // Student Specific
 import MyCourses from './pages/student/MyCourses';
-import ClassSchedule from './pages/student/ClassSchedule';
 import ReportCard from './pages/student/ReportCard';
 import AssignmentDetails from './pages/student/AssignmentDetails';
 import MyAccount from './pages/student/MyAccount';
@@ -32,6 +32,7 @@ import AuditLogs from './pages/admin/AuditLogs';
 import AdminReportCards from './pages/admin/AdminReportCards';
 import AdminMyAccount from './pages/admin/AdminMyAccount';
 import TeacherAssignments from './pages/admin/TeacherAssignments';
+import TimetableManagement from './pages/admin/TimetableManagement';
 
 // Teacher Specific
 import Performance from './pages/teacher/Performance';
@@ -72,7 +73,8 @@ function App() {
 
             {/* Student Only */}
             <Route path="courses" element={<RequireRole allowedRoles={['student']}><MyCourses /></RequireRole>} />
-            <Route path="schedule" element={<RequireRole allowedRoles={['student', 'teacher']}><ClassSchedule /></RequireRole>} />
+            {/* Shared Schedule Route */}
+            <Route path="schedule" element={<RequireRole allowedRoles={['student', 'teacher']}><ScheduleWrapper /></RequireRole>} />
             <Route path="report-card" element={<RequireRole allowedRoles={['student']}><ReportCard /></RequireRole>} />
             <Route path="account" element={<RequireRole allowedRoles={['student']}><MyAccount /></RequireRole>} />
 
@@ -88,6 +90,7 @@ function App() {
             <Route path="users" element={<RequireRole allowedRoles={['admin']}><UserManagement /></RequireRole>} />
             <Route path="structure" element={<RequireRole allowedRoles={['admin']}><AcademicStructure /></RequireRole>} />
             <Route path="teacher-assignments" element={<RequireRole allowedRoles={['admin']}><TeacherAssignments /></RequireRole>} />
+            <Route path="timetable" element={<RequireRole allowedRoles={['admin']}><TimetableManagement /></RequireRole>} />
             <Route path="roster" element={<RequireRole allowedRoles={['admin']}><ClassRoster /></RequireRole>} />
             <Route path="exam-review" element={<RequireRole allowedRoles={['admin']}><ExamReviewApproval /></RequireRole>} />
             <Route path="report-cards" element={<RequireRole allowedRoles={['admin']}><AdminReportCards /></RequireRole>} />

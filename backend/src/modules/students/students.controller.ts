@@ -32,8 +32,11 @@ export class StudentsController {
   }
 
   @Get('me/schedule')
-  getMySchedule(@Req() req: Request & { user: { id: string } }) {
-    return this.studentsService.getMySchedule(req.user.id);
+  getMySchedule(
+    @Req() req: Request & { user: { id: string } },
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.studentsService.getMySchedule(req.user.id, academicYearId);
   }
 
   @Get('me/results')

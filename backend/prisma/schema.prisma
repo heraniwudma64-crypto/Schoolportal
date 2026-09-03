@@ -77,6 +77,21 @@ enum ResultStatus {
   PUBLISHED
 }
 
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum ScheduleStatus {
+  DRAFT
+  PUBLISHED
+}
+
 model SubjectResult {
   id             String       @id @default(uuid())
   studentId      String
@@ -169,6 +184,9 @@ model AcademicYear {
   subjectResults    SubjectResult[]
   reportCards       ReportCard[]
   sectionSubjectTeachers SectionSubjectTeacher[]
+  schedulePeriods   SchedulePeriod[]
+  classSchedules    ClassSchedule[]
+  scheduleEntries   ScheduleEntry[]
 }
 
 model Term {
@@ -225,6 +243,7 @@ model ClassSection {
   reportCards       ReportCard[]
   subjectTeachers   SectionSubjectTeacher[]
   materials         Material[]
+  classSchedules    ClassSchedule[]
 
   Teacher           Teacher?              @relation("GeneralTeacher", fields: [teacherId], references: [id], map: "ClassSection_general_teacher_fkey")
   homeroomTeacher   Teacher?              @relation("HomeroomTeacher", fields: [teacherId], references: [id], map: "ClassSection_homeroom_teacher_fkey")
@@ -328,6 +347,7 @@ model Teacher {
   examinations       Examination[]
   homeroomSections   ClassSection[] @relation("HomeroomTeacher")
   subjectSections    SectionSubjectTeacher[]
+  scheduleEntries    ScheduleEntry[]
 }
 
 model ClassTeacher {
@@ -418,6 +438,7 @@ model Subject {
   teacher        Teacher?        @relation(fields: [teacherId], references: [id])
   subjectResults SubjectResult[]
   sectionSubjectTeachers SectionSubjectTeacher[]
+  scheduleEntries        ScheduleEntry[]
 }
 
 model GradeSubject {
@@ -434,7 +455,71 @@ model GradeSubject {
   @@unique([academicYearId, gradeLevelId, subjectId])
 }
 
-// ─── Timetable ────────────────────────────────────────────────────────────────
+// ─── Schedule & Timetable ─────────────────────────────────────────────────────
+
+model SchedulePeriod {
+  id             String   @id @default(uuid())
+  academicYearId String
+  periodNumber   Int
+  name           String
+  startTime      String
+  endTime        String
+  isBreak        Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  displayOrder   Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  AcademicYear    AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  scheduleEntries ScheduleEntry[]
+
+  @@unique([academicYearId, periodNumber])
+  @@index([academicYearId, isActive])
+}
+
+model ClassSchedule {
+  id             String         @id @default(uuid())
+  academicYearId String
+  classSectionId String
+  status         ScheduleStatus @default(DRAFT)
+  publishedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  AcademicYear AcademicYear    @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  ClassSection ClassSection    @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  entries      ScheduleEntry[]
+
+  @@unique([academicYearId, classSectionId])
+  @@index([academicYearId, status])
+  @@index([classSectionId])
+}
+
+model ScheduleEntry {
+  id              String         @id @default(uuid())
+  classScheduleId String
+  academicYearId  String
+  dayOfWeek       DayOfWeek
+  periodId        String
+  subjectId       String
+  teacherId       String
+  roomOverride    String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  classSchedule ClassSchedule  @relation(fields: [classScheduleId], references: [id], onDelete: Cascade)
+  academicYear  AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  period        SchedulePeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  subject       Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher       Teacher        @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([classScheduleId, dayOfWeek, periodId])
+  @@unique([teacherId, academicYearId, dayOfWeek, periodId])
+  @@index([classScheduleId, dayOfWeek])
+  @@index([teacherId, academicYearId, dayOfWeek])
+  @@index([academicYearId, dayOfWeek])
+  @@index([subjectId])
+}
 
 model Timetable {
   id             String   @id

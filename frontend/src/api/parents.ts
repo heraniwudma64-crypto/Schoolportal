@@ -245,5 +245,7 @@ export const getChildReportCard = (studentId: string, termId?: string) =>
 export const getChildAssignments = (studentId: string) =>
   api.get<ChildAssignmentsResponse>(`/parents/me/children/${studentId}/assignments`);
 
-export const getChildSchedule = (studentId: string) =>
-  api.get<ChildScheduleResponse>(`/parents/me/children/${studentId}/schedule`);
+export const getChildSchedule = (studentId: string, academicYearId?: string) => {
+  const qs = academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : '';
+  return api.get<ChildScheduleResponse>(`/parents/me/children/${studentId}/schedule${qs}`);
+};

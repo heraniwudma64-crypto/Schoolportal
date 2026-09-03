@@ -69,8 +69,9 @@ export class ParentsController {
   async getChildSchedule(
     @Req() req: AuthRequest,
     @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Query('academicYearId') academicYearId?: string,
   ) {
-    return this.parentsService.getChildSchedule(req.user.id, studentId);
+    return this.parentsService.getChildSchedule(req.user.id, studentId, academicYearId);
   }
 }
 

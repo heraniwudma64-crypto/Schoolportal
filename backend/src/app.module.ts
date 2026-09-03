@@ -19,6 +19,7 @@ import { ReportCardsModule } from './modules/report-cards/report-cards.module';
 import { TeacherAssignmentsModule } from './modules/teacher-assignments/teacher-assignments.module';
 import { ParentsModule } from './modules/parents/parents.module';
 import { ResultsModule } from './modules/results/results.module';
+import { TimetableModule } from './modules/timetable/timetable.module';
 
 @Module({
   controllers: [AppController],
@@ -40,6 +41,7 @@ import { ResultsModule } from './modules/results/results.module';
     TeacherAssignmentsModule,
     ParentsModule,
     ResultsModule,
+    TimetableModule,
     ScheduleModule.forRoot(),
   ],
 })
