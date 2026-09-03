@@ -36,19 +36,57 @@ export interface StudentScheduleEntry {
 
 export const getMySchedule = () => api.get<StudentScheduleEntry[]>('/students/me/schedule');
 
-export interface StudentResult {
+export interface StudentGradeItem {
   id: string;
-  marksObtained: number;
-  grade: string | null;
-  remarks: string | null;
-  Exam: {
-    title: string;
-    totalMarks: number;
-    examDate: string;
-    type: string;
-    Subject: { name: string };
-    Term: { name: string } | null;
-  };
+  subject: string;
+  quarter: string;
+  mid: number;
+  assignment: number;
+  quiz: number;
+  classwork: number;
+  final: number;
+  score: number;
+  createdAt: string;
 }
 
-export const getMyResults = () => api.get<StudentResult[]>('/students/me/results');
+export interface StudentSubjectResultItem {
+  id: string;
+  subjectId: string;
+  subjectName: string;
+  subjectCode: string;
+  term: string;
+  marks: number;
+  status: string;
+  updatedAt: string;
+}
+
+export interface StudentResultsResponse {
+  grades: StudentGradeItem[];
+  subjectResults: StudentSubjectResultItem[];
+}
+
+export const getMyResults = () => api.get<StudentResultsResponse>('/students/me/results');
+
+export interface StudentAssignmentItem {
+  id: string;
+  title: string;
+  instructions: string | null;
+  dueDate: string;
+  targetClass: string | null;
+  classSectionId: string | null;
+  attachmentUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  ClassSection?: { id: string; name: string } | null;
+  Teacher?: { firstName: string; lastName: string } | null;
+  submissions?: Array<{
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    fileName: string | null;
+    grades?: Array<{ id: string }>;
+  }>;
+}
+
+export const getMyAssignments = () => api.get<StudentAssignmentItem[]>('/students/my-assignments');
+

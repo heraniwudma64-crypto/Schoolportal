@@ -1,66 +1,186 @@
-import React from 'react';
-import { MOCK_MATERIALS } from '../../data/mockData';
-import { FileText, Download, ShieldAlert, Book } from 'lucide-react';
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { FileText, Download, ShieldAlert, Book, Bell, ExternalLink, RefreshCw, AlertCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
+import { api } from '../../lib/api';
+
+export interface BackendMaterial {
+  id: string;
+  title: string;
+  description: string | null;
+  fileUrl: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  category: 'materials' | 'rules' | 'notices' | string;
+  targetRole: string;
+  createdAt: string;
+  updatedAt: string;
+  userId: string | null;
+  classSectionId: string | null;
+}
+
+function formatBytes(bytes: number, decimals = 1) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
 
 const Materials = () => {
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'notices' | 'materials' | 'rules'>('all');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const { data: materials = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['materials'],
+    queryFn: () => api.get<BackendMaterial[]>('/materials'),
+  });
+
+  const filteredMaterials = materials.filter((material) => {
+    if (selectedFilter === 'all') return true;
+    const cat = (material.category || '').toLowerCase();
+    return cat.includes(selectedFilter);
+  });
+
+  const handleDownload = async (material: BackendMaterial) => {
+    setDownloadingId(material.id);
+    try {
+      const res = await api.get<{ url?: string; downloadUrl?: string; fileName?: string }>(
+        `/materials/${material.id}/download`,
+      );
+      const downloadUrl = res?.downloadUrl || res?.url;
+      if (downloadUrl && (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://'))) {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        toast.error('Direct download link could not be generated for this material.');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not download file.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Learning Materials & Rules</h2>
-        <div className="flex gap-2">
-          {['All', 'Notices', 'Materials', 'Rules'].map((filter) => (
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Learning Materials & Rules</h2>
+          <p className="text-sm text-gray-500">Access course resources, school policies, and study materials.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(['all', 'materials', 'rules', 'notices'] as const).map((filter) => (
             <button
               key={filter}
+              onClick={() => setSelectedFilter(filter)}
               className={cn(
-                "px-4 py-2 text-sm font-bold rounded-xl transition-colors",
-                filter === 'All' ? "bg-blue-900 text-white" : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                "px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
+                selectedFilter === filter 
+                  ? "bg-[#1e3a8a] text-white shadow-sm" 
+                  : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
               )}
             >
-              {filter}
+              {filter === 'all' ? 'All Resources' : filter}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {MOCK_MATERIALS.map((material) => (
-          <div key={material.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow flex flex-col">
-            <div className={cn(
-              "p-6 flex items-center gap-4",
-              material.category === 'rule' ? "bg-amber-50" : "bg-blue-50"
-            )}>
-              <div className={cn(
-                "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-                material.category === 'rule' ? "bg-amber-600 text-white" : "bg-blue-600 text-white"
-              )}>
-                {material.category === 'rule' ? <ShieldAlert className="w-6 h-6" /> : <Book className="w-6 h-6" />}
+      {isLoading ? (
+        <div className="py-20 text-center text-gray-400">
+          <RefreshCw className="w-10 h-10 animate-spin mx-auto mb-3 text-blue-900" />
+          <p className="text-sm font-bold text-gray-700">Loading resources and materials...</p>
+        </div>
+      ) : isError ? (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-8 text-center text-red-700 space-y-3">
+          <AlertCircle className="w-10 h-10 mx-auto text-red-500" />
+          <p className="font-bold">Could not load materials from server.</p>
+          <button 
+            onClick={() => refetch()}
+            className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+          >
+            Try Again
+          </button>
+        </div>
+      ) : filteredMaterials.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center text-gray-500 space-y-2">
+          <Book className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+          <p className="font-bold text-gray-900">No resources available</p>
+          <p className="text-sm text-gray-400">
+            {selectedFilter === 'all' 
+              ? 'No learning materials or guides have been published for your grade or section yet.' 
+              : `No resources found under the category "${selectedFilter}".`}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredMaterials.map((material) => {
+            const isRule = (material.category || '').toLowerCase().includes('rule');
+            const isNotice = (material.category || '').toLowerCase().includes('notice');
+
+            return (
+              <div 
+                key={material.id} 
+                className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow flex flex-col"
+              >
+                <div className={cn(
+                  "p-6 flex items-center gap-4",
+                  isRule ? "bg-amber-50" : isNotice ? "bg-purple-50" : "bg-blue-50"
+                )}>
+                  <div className={cn(
+                    "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
+                    isRule ? "bg-amber-600 text-white" : isNotice ? "bg-purple-600 text-white" : "bg-blue-600 text-white"
+                  )}>
+                    {isRule ? <ShieldAlert className="w-6 h-6" /> : isNotice ? <Bell className="w-6 h-6" /> : <Book className="w-6 h-6" />}
+                  </div>
+                  <div className="overflow-hidden">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 block mb-1">
+                      {material.category || 'Material'}
+                    </span>
+                    <h3 className="font-bold text-gray-900 truncate" title={material.title}>
+                      {material.title}
+                    </h3>
+                  </div>
+                </div>
+                
+                <div className="p-6 flex-1 flex flex-col justify-between">
+                  <p className="text-sm text-gray-600 mb-6 line-clamp-3">
+                    {material.description || 'No additional description provided.'}
+                  </p>
+                  
+                  <div className="space-y-3 pt-4 border-t border-gray-100">
+                    <div className="flex items-center justify-between text-xs text-gray-400 font-medium">
+                      <span>{material.createdAt ? new Date(material.createdAt).toLocaleDateString() : '—'}</span>
+                      {material.fileSize ? <span>{formatBytes(material.fileSize)}</span> : null}
+                    </div>
+
+                    <button 
+                      onClick={() => handleDownload(material)} 
+                      disabled={downloadingId === material.id}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#1e3a8a] text-white hover:bg-blue-800 text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {downloadingId === material.id ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Preparing Download...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-3.5 h-3.5" />
+                          Download / View File
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 block mb-1">
-                  {material.category}
-                </span>
-                <h3 className="font-bold text-gray-900 line-clamp-1">{material.title}</h3>
-              </div>
-            </div>
-            
-            <div className="p-6 flex-1 flex flex-col">
-              <p className="text-sm text-gray-500 mb-6 flex-1">
-                {material.description}
-              </p>
-              
-              <div className="flex items-center justify-between pt-6 border-t border-gray-100">
-                <span className="text-xs text-gray-400 font-medium">{material.date}</span>
-                <button onClick={() => toast.info('PDF download will be available soon')} className="flex items-center gap-2 text-sm font-bold text-blue-900 hover:text-blue-700 transition-colors group">
-                  <Download className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
-                  Download PDF
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

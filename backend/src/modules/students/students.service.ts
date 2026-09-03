@@ -1,10 +1,26 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { TimetableService } from '../timetable/timetable.service';
 
 @Injectable()
 export class StudentsService {
+  private supabase = createClient(
+    process.env.SUPABASE_URL || this.extractSupabaseUrl(),
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'fake-key-for-now',
+    { auth: { persistSession: false } }
+  );
+
+  private extractSupabaseUrl() {
+    const dbUrl = process.env.DATABASE_URL || '';
+    const userMatch = dbUrl.match(/postgres\.(.*?):/);
+    if (userMatch) {
+      return `https://${userMatch[1]}.supabase.co`;
+    }
+    return '';
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
@@ -40,33 +56,48 @@ export class StudentsService {
   }
 
   // --- Assignments Method ---
- // --- Assignments Method ---
+  // --- Assignments Method ---
   async getMyAssignments(userId: string) {
     const student = await this.prisma.student.findFirst({
       where: {
-        OR: [{ id: userId }, { userId: userId }],
+        OR: [{ id: userId }, { userId }],
       },
-      include: { ClassSection: { select: { name: true } } },
+      include: {
+        StudentEnrollment: {
+          where: { status: 'ACTIVE' },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1,
+          include: { ClassSection: { select: { id: true, name: true } } },
+        },
+      },
     });
 
     if (!student) return [];
+    const activeEnrollment = student.StudentEnrollment[0];
+    const sectionId = activeEnrollment?.classSectionId || student.classSectionId;
+    const sectionName = activeEnrollment?.ClassSection?.name;
 
-   return this.prisma.assignment.findMany({
-      // Publications can target either a section ID or the existing targetClass
-      // field.  Keep both conventions without returning another section's work.
+    if (!sectionId && !sectionName) {
+      return [];
+    }
+
+    return this.prisma.assignment.findMany({
       where: {
         OR: [
-          ...(student.classSectionId ? [{ classSectionId: student.classSectionId }] : []),
-          ...(student.ClassSection?.name ? [{ classSectionId: null, targetClass: student.ClassSection.name }] : []),
+          ...(sectionId ? [{ classSectionId: sectionId }] : []),
+          ...(sectionName ? [{ classSectionId: null, targetClass: sectionName }] : []),
           { classSectionId: null, targetClass: null },
         ],
       },
       include: {
         ClassSection: true,
         Teacher: {
-            select: { firstName: true, lastName: true },
+          select: { firstName: true, lastName: true },
         },
-        submissions: { where: { studentId: student.id }, select: { id: true, createdAt: true, updatedAt: true, fileName: true, grades: { select: { id: true } } } },
+        submissions: {
+          where: { studentId: student.id },
+          select: { id: true, createdAt: true, updatedAt: true, fileName: true, grades: { select: { id: true } } },
+        },
       },
       orderBy: {
         dueDate: 'asc',
@@ -77,16 +108,26 @@ export class StudentsService {
   async getMyAssignment(userId: string, assignmentId: string) {
     const student = await this.prisma.student.findFirst({
       where: { OR: [{ id: userId }, { userId }] },
-      select: { id: true, classSectionId: true, ClassSection: { select: { name: true } } },
+      include: {
+        StudentEnrollment: {
+          where: { status: 'ACTIVE' },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1,
+          include: { ClassSection: { select: { id: true, name: true } } },
+        },
+      },
     });
     if (!student) throw new NotFoundException('Student profile not found');
+    const activeEnrollment = student.StudentEnrollment[0];
+    const sectionId = activeEnrollment?.classSectionId || student.classSectionId;
+    const sectionName = activeEnrollment?.ClassSection?.name;
 
     const assignment = await this.prisma.assignment.findFirst({
       where: {
         id: assignmentId,
         OR: [
-          ...(student.classSectionId ? [{ classSectionId: student.classSectionId }] : []),
-          ...(student.ClassSection?.name ? [{ classSectionId: null, targetClass: student.ClassSection.name }] : []),
+          ...(sectionId ? [{ classSectionId: sectionId }] : []),
+          ...(sectionName ? [{ classSectionId: null, targetClass: sectionName }] : []),
           { classSectionId: null, targetClass: null },
         ],
       },
@@ -103,6 +144,86 @@ export class StudentsService {
     return assignment;
   }
 
+  async getAssignmentResourceUrl(userId: string, assignmentId: string) {
+    const assignment = await this.getMyAssignment(userId, assignmentId);
+    if (!assignment.attachmentUrl) {
+      throw new NotFoundException('This assignment does not have an attached resource file');
+    }
+
+    const rawUrl = assignment.attachmentUrl.trim();
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return { 
+        url: rawUrl, 
+        downloadUrl: rawUrl, 
+        fileName: rawUrl.split('/').pop() || 'resource' 
+      };
+    }
+
+    const fileName = rawUrl.split('/').pop() || rawUrl;
+    let pathInBucket = rawUrl;
+    const match = rawUrl.match(/materials\/(.*)$/);
+    if (match) {
+      pathInBucket = match[1];
+    }
+
+    try {
+      // 1. Try direct signed URL for pathInBucket
+      const { data, error } = await this.supabase.storage.from('materials').createSignedUrl(pathInBucket, 300, {
+        download: fileName,
+      });
+
+      if (!error && data?.signedUrl) {
+        return { 
+          url: data.signedUrl, 
+          downloadUrl: data.signedUrl, 
+          fileName 
+        };
+      }
+
+      // 2. If not found by exact path, try matching by clean filename in the materials bucket
+      const { data: allFiles } = await this.supabase.storage.from('materials').list();
+      if (allFiles && allFiles.length > 0) {
+        const normalizedTarget = fileName.toLowerCase().replace(/[^a-z0-9.]/g, '');
+        const matched = allFiles.find((f) => {
+          const clean = f.name.toLowerCase().replace(/[^a-z0-9.]/g, '');
+          return clean.includes(normalizedTarget) || f.name.toLowerCase().includes(fileName.toLowerCase());
+        });
+
+        if (matched) {
+          const { data: signed } = await this.supabase.storage.from('materials').createSignedUrl(matched.name, 300, {
+            download: fileName,
+          });
+          if (signed?.signedUrl) {
+            return { 
+              url: signed.signedUrl, 
+              downloadUrl: signed.signedUrl, 
+              fileName 
+            };
+          }
+        }
+      }
+
+      // 3. Fallback to public URL
+      const { data: publicData } = this.supabase.storage.from('materials').getPublicUrl(pathInBucket, {
+        download: fileName,
+      });
+      return { 
+        url: publicData.publicUrl, 
+        downloadUrl: publicData.publicUrl, 
+        fileName 
+      };
+    } catch (err: any) {
+      const { data: publicData } = this.supabase.storage.from('materials').getPublicUrl(pathInBucket, {
+        download: fileName,
+      });
+      return { 
+        url: publicData.publicUrl, 
+        downloadUrl: publicData.publicUrl, 
+        fileName 
+      };
+    }
+  }
+
   async submitMyAssignment(
     userId: string,
     assignmentId: string,
@@ -111,16 +232,26 @@ export class StudentsService {
   ) {
     const student = await this.prisma.student.findFirst({
       where: { OR: [{ id: userId }, { userId }] },
-      select: { id: true, classSectionId: true, ClassSection: { select: { name: true } } },
+      include: {
+        StudentEnrollment: {
+          where: { status: 'ACTIVE' },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1,
+          include: { ClassSection: { select: { id: true, name: true } } },
+        },
+      },
     });
     if (!student) throw new NotFoundException('Student profile not found');
+    const activeEnrollment = student.StudentEnrollment[0];
+    const sectionId = activeEnrollment?.classSectionId || student.classSectionId;
+    const sectionName = activeEnrollment?.ClassSection?.name;
 
     const assignment = await this.prisma.assignment.findFirst({
       where: {
         id: assignmentId,
         OR: [
-          ...(student.classSectionId ? [{ classSectionId: student.classSectionId }] : []),
-          ...(student.ClassSection?.name ? [{ classSectionId: null, targetClass: student.ClassSection.name }] : []),
+          ...(sectionId ? [{ classSectionId: sectionId }] : []),
+          ...(sectionName ? [{ classSectionId: null, targetClass: sectionName }] : []),
           { classSectionId: null, targetClass: null },
         ],
       },
@@ -183,7 +314,7 @@ export class StudentsService {
     const enrollment = student?.StudentEnrollment[0];
     if (!enrollment) return [];
 
-    const subjects = await this.prisma.gradeSubject.findMany({
+    const gradeSubjects = await this.prisma.gradeSubject.findMany({
       where: {
         gradeLevelId: enrollment.gradeLevelId,
         OR: [
@@ -195,7 +326,16 @@ export class StudentsService {
       orderBy: { Subject: { name: 'asc' } },
     });
 
-    return subjects.map(({ id, Subject }) => ({
+    // Deduplicate subjects by subjectId / code to prevent redundant UI cards
+    const uniqueMap = new Map<string, typeof gradeSubjects[0]>();
+    for (const item of gradeSubjects) {
+      const key = item.Subject.code || item.Subject.id;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, item);
+      }
+    }
+
+    return Array.from(uniqueMap.values()).map(({ id, Subject }) => ({
       id,
       code: Subject.code,
       name: Subject.name,

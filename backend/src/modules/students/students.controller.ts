@@ -60,6 +60,13 @@ export class StudentsController {
 
   @UseGuards(RolesGuard)
   @Roles(Role.STUDENT)
+  @Get('my-assignments/:id/resource')
+  async getMyAssignmentResource(@Param('id') id: string, @Req() req: Request & { user: { id: string } }) {
+    return this.studentsService.getAssignmentResourceUrl(req.user.id, id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
   @Post('my-assignments/:id/submission')
   @UseInterceptors(FileInterceptor('file'))
   async submitMyAssignment(

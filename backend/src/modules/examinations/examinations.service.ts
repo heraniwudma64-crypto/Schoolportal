@@ -514,13 +514,27 @@ export class ExaminationsService {
   async getStudentAvailableExams(userId: string) {
     const student = await this.prisma.student.findUnique({
       where: { userId },
-      select: { id: true, classSectionId: true },
+      select: {
+        id: true,
+        classSectionId: true,
+        StudentEnrollment: {
+          where: { status: 'ACTIVE' },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1,
+          select: { classSectionId: true },
+        },
+      },
     });
     if (!student) throw new NotFoundException('Student profile not found');
 
+    const effectiveSectionId = student.StudentEnrollment[0]?.classSectionId || student.classSectionId;
+    if (!effectiveSectionId) {
+      return [];
+    }
+
     const exams = await this.prisma.examination.findMany({
       where: {
-        classSectionId: student.classSectionId ?? undefined,
+        classSectionId: effectiveSectionId,
         status:         ExamStatus.PUBLISHED,
       },
       select: {
@@ -577,9 +591,20 @@ export class ExaminationsService {
   async startSession(examId: string, userId: string, deviceFingerprint?: string) {
     const student = await this.prisma.student.findUnique({
       where: { userId },
-      select: { id: true, classSectionId: true },
+      select: {
+        id: true,
+        classSectionId: true,
+        StudentEnrollment: {
+          where: { status: 'ACTIVE' },
+          orderBy: { enrollmentDate: 'desc' },
+          take: 1,
+          select: { classSectionId: true },
+        },
+      },
     });
     if (!student) throw new NotFoundException('Student profile not found');
+
+    const effectiveSectionId = student.StudentEnrollment[0]?.classSectionId || student.classSectionId;
 
     const exam = await this.prisma.examination.findUnique({
       where: { id: examId },
@@ -590,7 +615,7 @@ export class ExaminationsService {
     if (exam.status !== ExamStatus.APPROVED && exam.status !== ExamStatus.PUBLISHED) {
       throw new BadRequestException('This exam is not available');
     }
-    if (exam.classSectionId !== student.classSectionId) {
+    if (exam.classSectionId !== effectiveSectionId) {
       throw new ForbiddenException('This exam is not assigned to your class');
     }
 

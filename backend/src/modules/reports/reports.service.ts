@@ -16,14 +16,28 @@ export class ReportsService {
 
   // ── Existing homeroom roster ─────────────────────────────────────────────
 
-  async generateClassRoster(classSectionId: string, academicYearId: string, term: string) {
-    const students = await this.prisma.student.findMany({
-      where: { classSectionId },
-      select: { id: true, firstName: true, lastName: true },
+  async generateClassRoster(classSectionId: string, academicYearId: string, term?: string) {
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { classSectionId, academicYearId, status: 'ACTIVE' },
+      include: {
+        Student: {
+          select: { id: true, firstName: true, lastName: true, admissionNo: true },
+        },
+      },
+      orderBy: [{ Student: { lastName: 'asc' } }, { Student: { firstName: 'asc' } }],
     });
 
+    const whereClause: any = {
+      classSectionId,
+      academicYearId,
+      status: 'SUBMITTED',
+    };
+    if (term) {
+      whereClause.term = term;
+    }
+
     const results = await (this.prisma as any).subjectResult.findMany({
-      where: { classSectionId, academicYearId, term, status: 'SUBMITTED' },
+      where: whereClause,
       include: { Subject: true },
     });
 
@@ -32,8 +46,8 @@ export class ReportsService {
       { student: any; subjects: Record<string, number>; totalMarks: number }
     >();
 
-    students.forEach((s: any) => {
-      studentScoresMap.set(s.id, { student: s, subjects: {}, totalMarks: 0 });
+    enrollments.forEach((e: any) => {
+      studentScoresMap.set(e.Student.id, { student: e.Student, subjects: {}, totalMarks: 0 });
     });
 
     results.forEach((res: any) => {
@@ -52,6 +66,7 @@ export class ReportsService {
     return rosterList.map((item, index) => ({
       rank: index + 1,
       studentId: item.student.id,
+      admissionNo: item.student.admissionNo,
       studentName: `${item.student.firstName} ${item.student.lastName}`,
       subjectScores: item.subjects,
       totalMarks: item.totalMarks,
@@ -59,7 +74,7 @@ export class ReportsService {
     }));
   }
 
-  // ── NEW: admin sections summary ──────────────────────────────────────────
+  // ── NEW: admin sections summary (optimized batch aggregation) ───────────
 
   /**
    * List all class sections for an academic year with:
@@ -85,11 +100,6 @@ export class ReportsService {
       include: {
         GradeLevel: { select: { name: true, gradeNumber: true } },
         Teacher: { select: { firstName: true, lastName: true } },
-        _count: {
-          select: {
-            StudentEnrollment: true,
-          },
-        },
       },
       orderBy: [
         { GradeLevel: { gradeNumber: 'asc' } },
@@ -97,77 +107,96 @@ export class ReportsService {
       ],
     });
 
-    // For each section, count assigned subjects and fully-submitted subjects
-    const results = await Promise.all(
-      sections.map(async (section) => {
-        const enrolledCount = await this.prisma.studentEnrollment.count({
-          where: { classSectionId: section.id, academicYearId: yearId!, status: 'ACTIVE' },
-        });
+    if (sections.length === 0) return [];
 
-        const assignedSubjects = await (this.prisma as any).sectionSubjectTeacher.findMany({
-          where: { classSectionId: section.id, academicYearId: yearId },
-          select: { subjectId: true, teacherId: true, Teacher: { select: { firstName: true, lastName: true } } },
-        });
-        const totalSubjects = assignedSubjects.length;
+    const sectionIds = sections.map((s) => s.id);
 
-        // A subject is "fully submitted" when every enrolled student has a
-        // SUBMITTED row for at least one term in this section.
-        let submittedSubjects = 0;
-        if (enrolledCount > 0 && totalSubjects > 0) {
-          for (const assignment of assignedSubjects) {
-            const submittedCount = await (this.prisma as any).subjectResult.count({
-              where: {
-                classSectionId: section.id,
-                subjectId: assignment.subjectId,
-                academicYearId: yearId,
-                status: 'SUBMITTED',
-              },
-            });
-            // At least one term's results submitted for all students
-            if (submittedCount >= enrolledCount) submittedSubjects++;
+    // Batch query 1: count active enrollments per section
+    const enrollments = await this.prisma.studentEnrollment.groupBy({
+      by: ['classSectionId'],
+      where: { classSectionId: { in: sectionIds }, academicYearId: yearId, status: 'ACTIVE' },
+      _count: { studentId: true },
+    });
+    const enrollmentMap = new Map<string, number>();
+    enrollments.forEach((e) => {
+      if (e.classSectionId) enrollmentMap.set(e.classSectionId, e._count.studentId);
+    });
+
+    // Batch query 2: get all assigned subjects per section
+    const assignedSubjects = await (this.prisma as any).sectionSubjectTeacher.findMany({
+      where: { classSectionId: { in: sectionIds }, academicYearId: yearId },
+      select: { classSectionId: true, subjectId: true },
+    });
+    const assignedMap = new Map<string, string[]>();
+    assignedSubjects.forEach((a: any) => {
+      const list = assignedMap.get(a.classSectionId) || [];
+      list.push(a.subjectId);
+      assignedMap.set(a.classSectionId, list);
+    });
+
+    // Batch query 3: count submitted results per section & subject
+    const submittedResults = await (this.prisma as any).subjectResult.groupBy({
+      by: ['classSectionId', 'subjectId'],
+      where: { classSectionId: { in: sectionIds }, academicYearId: yearId, status: 'SUBMITTED' },
+      _count: { id: true },
+    });
+    const submittedMap = new Map<string, number>();
+    submittedResults.forEach((r: any) => {
+      submittedMap.set(`${r.classSectionId}_${r.subjectId}`, r._count.id);
+    });
+
+    return sections.map((section) => {
+      const enrolledCount = enrollmentMap.get(section.id) || 0;
+      const subjects = assignedMap.get(section.id) || [];
+      const totalSubjects = subjects.length;
+
+      let submittedSubjects = 0;
+      if (enrolledCount > 0 && totalSubjects > 0) {
+        for (const subjectId of subjects) {
+          const count = submittedMap.get(`${section.id}_${subjectId}`) || 0;
+          if (count >= enrolledCount) {
+            submittedSubjects++;
           }
         }
+      }
 
-        const submissionStatus =
-          totalSubjects === 0
-            ? 'none'
-            : submittedSubjects === totalSubjects
-            ? 'complete'
-            : submittedSubjects > 0
-            ? 'partial'
-            : 'none';
+      const submissionStatus =
+        totalSubjects === 0
+          ? 'none'
+          : submittedSubjects === totalSubjects
+          ? 'complete'
+          : submittedSubjects > 0
+          ? 'partial'
+          : 'none';
 
-        const homeroomTeacher = section.Teacher
-          ? `${section.Teacher.firstName} ${section.Teacher.lastName}`.trim()
-          : null;
+      const homeroomTeacher = section.Teacher
+        ? `${section.Teacher.firstName} ${section.Teacher.lastName}`.trim()
+        : null;
 
-        const gradeName = section.GradeLevel?.name ?? '';
-        const displayName = /^grade\b/i.test(gradeName)
-          ? `${gradeName} ${section.name}`
-          : `Grade ${gradeName} ${section.name}`.trim();
+      const gradeName = section.GradeLevel?.name ?? '';
+      const displayName = /^grade\b/i.test(gradeName)
+        ? `${gradeName} ${section.name}`
+        : `Grade ${gradeName} ${section.name}`.trim();
 
-        return {
-          id: section.id,
-          name: section.name,
-          displayName,
-          gradeLevelName: gradeName,
-          academicYearId: yearId,
-          homeroomTeacher,
-          enrolledCount,
-          totalSubjects,
-          submittedSubjects,
-          submissionStatus,   // 'complete' | 'partial' | 'none'
-          status:
-            submissionStatus === 'complete'
-              ? 'Submitted'
-              : submissionStatus === 'partial'
-              ? 'Pending Review'
-              : 'Draft',
-        };
-      }),
-    );
-
-    return results;
+      return {
+        id: section.id,
+        name: section.name,
+        displayName,
+        gradeLevelName: gradeName,
+        academicYearId: yearId,
+        homeroomTeacher,
+        enrolledCount,
+        totalSubjects,
+        submittedSubjects,
+        submissionStatus,
+        status:
+          submissionStatus === 'complete'
+            ? 'Submitted'
+            : submissionStatus === 'partial'
+            ? 'Pending Review'
+            : 'Draft',
+      };
+    });
   }
 
   // ── NEW: compiled report cards for admin ────────────────────────────────

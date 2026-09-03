@@ -52,6 +52,7 @@ export interface AdminReportCardStudent {
 export interface AdminRosterEntry {
   rank: number;
   studentId: string;
+  admissionNo?: string;
   studentName: string;
   subjectScores: Record<string, number>;
   totalMarks: number;

@@ -148,8 +148,6 @@ function App() {
               }
             />
 
-            {/* General Account Route */}
-            <Route path="account" element={<AdminMyAccount />} />
           </Route>
 
           {/* Fallback */}
