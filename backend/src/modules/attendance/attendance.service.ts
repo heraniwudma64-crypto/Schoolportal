@@ -8,9 +8,18 @@ export class AttendanceService {
   async getAttendanceHistory(classSectionId?: string) {
     return this.prisma.studentAttendance.findMany({
       where: classSectionId ? { classSectionId } : {},
-      include: {
-        Student: true,
-        User: true,
+      select: {
+        id: true,
+        date: true,
+        period: true,
+        status: true,
+        remarks: true,
+        Student: {
+          select: { id: true, firstName: true, lastName: true, admissionNo: true },
+        },
+        User: {
+          select: { id: true, name: true, role: true },
+        },
       },
       orderBy: {
         date: 'desc',
@@ -62,41 +71,41 @@ export class AttendanceService {
       throw new BadRequestException('No valid User found in the database to record attendance.');
     }
 
-    const results = [];
     const attendanceDate = new Date(dto.date || Date.now());
     const periodNum = dto.period || 1;
 
-    for (const record of dto.records) {
-      // Upsert prevents duplicate entry crashes
-      const saved = await this.prisma.studentAttendance.upsert({
-        where: {
-          studentId_date_period: {
+    // Batch upserts inside a single Prisma transaction to avoid sequential connection pool latency
+    const results = await this.prisma.$transaction(
+      dto.records.map((record) =>
+        this.prisma.studentAttendance.upsert({
+          where: {
+            studentId_date_period: {
+              studentId: record.studentId,
+              date: attendanceDate,
+              period: periodNum,
+            },
+          },
+          update: {
+            status: record.status as any,
+            remarks: record.remarks || null,
+            classSectionId: classSection.id,
+            recordedById: user.id,
+            updatedAt: new Date(),
+          },
+          create: {
+            id: crypto.randomUUID(),
             studentId: record.studentId,
+            classSectionId: classSection.id,
+            recordedById: user.id,
             date: attendanceDate,
             period: periodNum,
+            status: record.status as any,
+            remarks: record.remarks || null,
+            updatedAt: new Date(),
           },
-        },
-        update: {
-          status: record.status as any,
-          remarks: record.remarks || null,
-          classSectionId: classSection.id,
-          recordedById: user.id,
-          updatedAt: new Date(),
-        },
-        create: {
-          id: crypto.randomUUID(),
-          studentId: record.studentId,
-          classSectionId: classSection.id,
-          recordedById: user.id,
-          date: attendanceDate,
-          period: periodNum,
-          status: record.status as any,
-          remarks: record.remarks || null,
-          updatedAt: new Date(),
-        },
-      });
-      results.push(saved);
-    }
+        }),
+      ),
+    );
 
     return { success: true, count: results.length, data: results };
   }

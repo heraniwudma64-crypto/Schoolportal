@@ -28,7 +28,17 @@ export class TeachersService {
 
   async getAllTeachers() {
     return this.prisma.teacher.findMany({
+      select: {
+        id: true,
+        userId: true,
+        firstName: true,
+        lastName: true,
+        staffId: true,
+        phoneNumber: true,
+        qualification: true,
+      },
       orderBy: { lastName: 'asc' },
+      take: 100,
     });
   }
 
@@ -55,9 +65,24 @@ export class TeachersService {
 
       return this.prisma.classSection.findMany({
         where: { teacherId },
-        include: { 
-          GradeLevel: true, 
-          students: true,
+        select: {
+          id: true,
+          name: true,
+          roomNumber: true,
+          capacity: true,
+          gradeLevelId: true,
+          academicYearId: true,
+          GradeLevel: { select: { id: true, name: true } },
+          students: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              admissionNo: true,
+              status: true,
+            },
+          },
+          _count: { select: { students: true } },
         },
       });
     } catch (error) {

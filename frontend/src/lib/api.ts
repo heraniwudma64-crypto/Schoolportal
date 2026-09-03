@@ -46,6 +46,9 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
+// In-flight GET request deduplication cache to prevent cascading duplicate fetches
+const inFlightGetRequests = new Map<string, Promise<any>>();
+
 async function request<T>(
   method: string,
   path: string,
@@ -62,11 +65,32 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
-  });
+  const startTime = performance.now();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
+    });
+  } catch (netErr: any) {
+    const elapsed = Math.round(performance.now() - startTime);
+    console.error(`[API Network Error] ${method} ${path} failed after ${elapsed}ms:`, netErr);
+    throw netErr;
+  }
+
+  const elapsed = Math.round(performance.now() - startTime);
+  const serverTime = res.headers.get('x-response-time') || 'n/a';
+
+  if (elapsed >= 500) {
+    console.warn(
+      `[SLOW API] ${method} ${path} took ${elapsed}ms (server: ${serverTime}, status: ${res.status})`,
+    );
+  } else if (import.meta.env.DEV) {
+    console.debug(
+      `[API] ${method} ${path} - ${elapsed}ms (server: ${serverTime}, status: ${res.status})`,
+    );
+  }
 
   if (!res.ok) {
     const msg = await parseError(res);
@@ -78,8 +102,22 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
+function deduplicatedGet<T>(path: string): Promise<T> {
+  const existing = inFlightGetRequests.get(path);
+  if (existing) {
+    return existing as Promise<T>;
+  }
+
+  const promise = request<T>('GET', path).finally(() => {
+    inFlightGetRequests.delete(path);
+  });
+
+  inFlightGetRequests.set(path, promise);
+  return promise;
+}
+
 export const api = {
-  get: <T>(path: string) => request<T>('GET', path),
+  get: <T>(path: string) => deduplicatedGet<T>(path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),

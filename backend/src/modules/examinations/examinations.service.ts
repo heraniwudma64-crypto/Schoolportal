@@ -40,12 +40,29 @@ export class ExaminationsService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   async findTeacherExaminations(userId: string) {
-    const teacher = await this.prisma.teacher.findUnique({ where: { userId } });
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
     return this.prisma.examination.findMany({
       where: { teacherId: teacher.id },
-      include: { Subject: true, Class: true, ClassSection: true },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        duration: true,
+        totalMarks: true,
+        examDate: true,
+        instructions: true,
+        windowStart: true,
+        windowEnd: true,
+        delayMinutes: true,
+        createdAt: true,
+        updatedAt: true,
+        Subject: { select: { id: true, name: true, code: true } },
+        Class: { select: { id: true, name: true } },
+        ClassSection: { select: { id: true, name: true } },
+      },
       orderBy: { createdAt: 'desc' },
+      take: 100,
     });
   }
 
@@ -194,19 +211,38 @@ export class ExaminationsService {
   async findApprovedExaminations() {
     return this.prisma.examination.findMany({
       where: { status: ExamStatus.APPROVED },
-      include: {
-        Subject:      { select: { id: true, name: true } },
-        Teacher:      { select: { firstName: true, lastName: true } },
+      select: {
+        id: true,
+        title: true,
+        totalMarks: true,
+        duration: true,
+        examDate: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        Subject:      { select: { id: true, name: true, code: true } },
+        Teacher:      { select: { firstName: true, lastName: true, staffId: true } },
         Class:        { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
       },
+      orderBy: { updatedAt: 'desc' },
+      take: 100,
     });
   }
 
   async findPendingExaminations() {
     return this.prisma.examination.findMany({
       where: { status: ExamStatus.PENDING },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        totalMarks: true,
+        duration: true,
+        examDate: true,
+        status: true,
+        instructions: true,
+        createdAt: true,
+        updatedAt: true,
         Subject: { select: { id: true, name: true, code: true } },
         Teacher: {
           select: {
@@ -218,9 +254,18 @@ export class ExaminationsService {
         },
         Class:        { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
-        questions:    { include: { options: true } },
+        questions: {
+          select: {
+            id: true,
+            text: true,
+            options: {
+              select: { id: true, optionText: true, isCorrect: true },
+            },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
+      take: 50,
     });
   }
 
@@ -261,13 +306,26 @@ export class ExaminationsService {
 
     return this.prisma.examination.findMany({
       where: { teacherId: teacher.id, status: ExamStatus.APPROVED },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        totalMarks: true,
+        duration: true,
+        examDate: true,
+        status: true,
+        instructions: true,
+        windowStart: true,
+        windowEnd: true,
+        delayMinutes: true,
+        createdAt: true,
+        updatedAt: true,
         Subject:      { select: { id: true, name: true } },
         Class:        { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
         questions:    { select: { id: true, text: true } },
       },
       orderBy: { updatedAt: 'desc' },
+      take: 100,
     });
   }
 
@@ -277,12 +335,27 @@ export class ExaminationsService {
 
     const exams = await this.prisma.examination.findMany({
       where: { teacherId: teacher.id, status: ExamStatus.PUBLISHED },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        totalMarks: true,
+        duration: true,
+        examDate: true,
+        status: true,
+        instructions: true,
+        windowStart: true,
+        windowEnd: true,
+        delayMinutes: true,
+        resultsReleased: true,
+        resultsReleasedAt: true,
+        createdAt: true,
+        updatedAt: true,
         Subject:      { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
         questions:    { select: { id: true } },
       },
       orderBy: { updatedAt: 'desc' },
+      take: 100,
     });
 
     const now = new Date();
@@ -294,19 +367,21 @@ export class ExaminationsService {
         else windowStatus = 'OPEN';
       }
       return {
-        id:            e.id,
-        title:         e.title,
-        duration:      e.duration,
-        totalMarks:    e.totalMarks,
-        status:        e.status,
-        Subject:       e.Subject,
-        ClassSection:  e.ClassSection,
-        questionCount: e.questions?.length ?? 0,
-        windowStart:   e.windowStart?.toISOString() ?? null,
-        windowEnd:     e.windowEnd?.toISOString()   ?? null,
-        delayMinutes:  e.delayMinutes ?? 0,
+        id:                e.id,
+        title:             e.title,
+        duration:          e.duration,
+        totalMarks:        e.totalMarks,
+        status:            e.status,
+        Subject:           e.Subject,
+        ClassSection:      e.ClassSection,
+        questionCount:     e.questions?.length ?? 0,
+        windowStart:       e.windowStart?.toISOString() ?? null,
+        windowEnd:         e.windowEnd?.toISOString()   ?? null,
+        delayMinutes:      e.delayMinutes ?? 0,
+        resultsReleased:   e.resultsReleased,
+        resultsReleasedAt: e.resultsReleasedAt?.toISOString() ?? null,
         windowStatus,
-        updatedAt:     e.updatedAt,
+        updatedAt:         e.updatedAt,
       };
     });
   }
@@ -526,11 +601,21 @@ export class ExaminationsService {
       select: {
         id: true, title: true, duration: true, totalMarks: true, examDate: true,
         windowStart: true, windowEnd: true, delayMinutes: true,
+        resultsReleased: true, resultsReleasedAt: true,
         Subject:   { select: { id: true, name: true } },
         questions: { select: { id: true } },
         sessions: {
           where:  { studentId: student.id },
-          select: { id: true, status: true, timeRemainingSeconds: true, startedAt: true },
+          select: {
+            id: true,
+            status: true,
+            timeRemainingSeconds: true,
+            startedAt: true,
+            completedAt: true,
+            score: true,
+            totalMarks: true,
+            percentage: true,
+          },
         },
       },
       orderBy: { examDate: 'asc' },
@@ -546,23 +631,29 @@ export class ExaminationsService {
         else windowStatus = 'OPEN';
       }
       return {
-        id:            exam.id,
-        title:         exam.title,
-        duration:      exam.duration,
-        totalMarks:    exam.totalMarks,
-        examDate:      exam.examDate,
-        windowStart:   exam.windowStart?.toISOString() ?? null,
-        windowEnd:     exam.windowEnd?.toISOString()   ?? null,
-        delayMinutes:  exam.delayMinutes ?? 0,
+        id:                exam.id,
+        title:             exam.title,
+        duration:          exam.duration,
+        totalMarks:        exam.totalMarks,
+        examDate:          exam.examDate,
+        windowStart:       exam.windowStart?.toISOString() ?? null,
+        windowEnd:         exam.windowEnd?.toISOString()   ?? null,
+        delayMinutes:      exam.delayMinutes ?? 0,
+        resultsReleased:   exam.resultsReleased,
+        resultsReleasedAt: exam.resultsReleasedAt?.toISOString() ?? null,
         windowStatus,
-        subject:       exam.Subject,
-        questionCount: exam.questions?.length ?? 0,
+        subject:           exam.Subject,
+        questionCount:     exam.questions?.length ?? 0,
         session: session
           ? {
               id:                   session.id,
               status:               session.status,
               timeRemainingSeconds: session.timeRemainingSeconds,
               startedAt:            session.startedAt,
+              completedAt:          session.completedAt?.toISOString() ?? null,
+              score:                session.score,
+              totalMarks:           session.totalMarks,
+              percentage:           session.percentage,
             }
           : null,
         serverNow: now.toISOString(),
@@ -721,13 +812,31 @@ export class ExaminationsService {
       data: {
         answersJson:          JSON.stringify(dto.answers),
         timeRemainingSeconds: 0,
+        score:                gradingResult.score,
+        totalMarks:           gradingResult.totalMarks,
+        percentage:           gradingResult.percentage,
         status:               ExamSessionStatus.COMPLETED,
         completedAt:          new Date(),
         lastSavedAt:          new Date(),
       },
     });
 
-    return { ...gradingResult, sessionStatus: 'COMPLETED' };
+    const exam = await this.prisma.examination.findUnique({
+      where: { id: examId },
+      select: { resultsReleased: true },
+    });
+
+    const isReleased = exam?.resultsReleased ?? false;
+
+    return {
+      success: true,
+      score: gradingResult.score,
+      totalMarks: gradingResult.totalMarks,
+      percentage: gradingResult.percentage,
+      breakdown: isReleased ? gradingResult.breakdown : [],
+      resultsReleased: isReleased,
+      sessionStatus: 'COMPLETED',
+    };
   }
 
   async reportInterruption(examId: string, userId: string, dto: { sessionToken: string }) {
@@ -896,6 +1005,357 @@ export class ExaminationsService {
       totalMarks: totalPossibleMarks,
       percentage: totalPossibleMarks > 0 ? Math.round((earnedScore / totalPossibleMarks) * 100) : 0,
       breakdown:  gradedAnswers,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // POST-EXAM REVIEW & RESULTS RELEASE
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  async toggleResultsRelease(examId: string, teacherUserId: string, release: boolean) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId: teacherUserId },
+      select: { id: true },
+    });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+
+    const exam = await this.prisma.examination.findUnique({
+      where: { id: examId },
+      select: { id: true, teacherId: true, title: true, status: true },
+    });
+    if (!exam) throw new NotFoundException('Examination not found');
+    if (exam.teacherId !== teacher.id) {
+      throw new ForbiddenException('You do not have permission to manage this examination');
+    }
+
+    const updated = await this.prisma.examination.update({
+      where: { id: examId },
+      data: {
+        resultsReleased: release,
+        resultsReleasedAt: release ? new Date() : null,
+      },
+      select: {
+        id: true,
+        title: true,
+        resultsReleased: true,
+        resultsReleasedAt: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: release
+        ? `Exam review and results successfully released to students for "${exam.title}".`
+        : `Exam review retracted. Students can no longer access the answer key.`,
+      exam: updated,
+    };
+  }
+
+  async getTeacherExamResultsSummary(examId: string, teacherUserId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId: teacherUserId },
+      select: { id: true },
+    });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+
+    const exam = await this.prisma.examination.findUnique({
+      where: { id: examId },
+      select: {
+        id: true,
+        title: true,
+        totalMarks: true,
+        duration: true,
+        status: true,
+        teacherId: true,
+        resultsReleased: true,
+        resultsReleasedAt: true,
+        windowStart: true,
+        windowEnd: true,
+        classSectionId: true,
+        Subject: { select: { id: true, name: true, code: true } },
+        ClassSection: { select: { id: true, name: true } },
+        questions: {
+          select: {
+            id: true,
+            text: true,
+            options: {
+              select: { id: true, optionText: true, isCorrect: true },
+            },
+          },
+        },
+      },
+    });
+    if (!exam) throw new NotFoundException('Examination not found');
+    if (exam.teacherId !== teacher.id) {
+      throw new ForbiddenException('You do not have permission to view this examination');
+    }
+
+    // Fetch all enrolled students in this class section
+    const enrolledStudents = await this.prisma.student.findMany({
+      where: { classSectionId: exam.classSectionId },
+      select: {
+        id: true,
+        admissionNo: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
+      },
+      orderBy: { firstName: 'asc' },
+    });
+
+    // Fetch all exam sessions for this exam
+    const sessions = await this.prisma.examSession.findMany({
+      where: { examinationId: examId },
+      select: {
+        id: true,
+        studentId: true,
+        status: true,
+        score: true,
+        totalMarks: true,
+        percentage: true,
+        answersJson: true,
+        startedAt: true,
+        completedAt: true,
+        lastSavedAt: true,
+      },
+    });
+
+    const sessionMap = new Map(sessions.map((s) => [s.studentId, s]));
+
+    const studentRows = enrolledStudents.map((st) => {
+      const s = sessionMap.get(st.id);
+      let answersCount = 0;
+      if (s?.answersJson) {
+        try {
+          answersCount = Object.keys(JSON.parse(s.answersJson)).length;
+        } catch {
+          answersCount = 0;
+        }
+      }
+
+      const score = s?.score ?? null;
+      const totalMarks = s?.totalMarks ?? exam.totalMarks;
+      const percentage = s?.percentage ?? (score !== null && totalMarks > 0 ? Math.round((score / totalMarks) * 100) : null);
+      const passed = percentage !== null ? percentage >= 60 : null;
+
+      return {
+        studentId: st.id,
+        admissionNo: st.admissionNo,
+        studentName: `${st.firstName} ${st.lastName}`.trim(),
+        gender: st.gender,
+        sessionId: s?.id ?? null,
+        sessionStatus: s?.status ?? 'NOT_STARTED',
+        startedAt: s?.startedAt?.toISOString() ?? null,
+        completedAt: s?.completedAt?.toISOString() ?? null,
+        score,
+        totalMarks,
+        percentage,
+        passed,
+        answeredQuestionsCount: answersCount,
+      };
+    });
+
+    const completed = studentRows.filter((r) => r.sessionStatus === 'COMPLETED' || r.sessionStatus === 'TIMED_OUT');
+    const scores = completed.map((r) => r.score ?? 0);
+    const averageScore = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : 0;
+    const highestScore = scores.length > 0 ? Math.max(...scores) : 0;
+    const lowestScore = scores.length > 0 ? Math.min(...scores) : 0;
+    const passCount = completed.filter((r) => r.passed).length;
+    const passRate = completed.length > 0 ? Math.round((passCount / completed.length) * 100) : 0;
+
+    return {
+      exam: {
+        id: exam.id,
+        title: exam.title,
+        totalMarks: exam.totalMarks,
+        duration: exam.duration,
+        resultsReleased: exam.resultsReleased,
+        resultsReleasedAt: exam.resultsReleasedAt?.toISOString() ?? null,
+        subject: exam.Subject,
+        classSection: exam.ClassSection,
+        questionCount: exam.questions.length,
+      },
+      stats: {
+        totalEnrolled: enrolledStudents.length,
+        submissionsCount: completed.length,
+        pendingCount: enrolledStudents.length - completed.length,
+        averageScore,
+        highestScore,
+        lowestScore,
+        passRate,
+        passCount,
+      },
+      students: studentRows,
+    };
+  }
+
+  async deleteStudentExamResult(examId: string, studentId: string, teacherUserId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId: teacherUserId },
+      select: { id: true },
+    });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+
+    const exam = await this.prisma.examination.findUnique({
+      where: { id: examId },
+      select: { id: true, teacherId: true },
+    });
+    if (!exam) throw new NotFoundException('Examination not found');
+    if (exam.teacherId !== teacher.id) {
+      throw new ForbiddenException('You do not have permission to manage this examination');
+    }
+
+    await this.prisma.examSession.deleteMany({
+      where: {
+        examinationId: examId,
+        studentId,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Student exam session and results have been reset.',
+    };
+  }
+
+  async getStudentExamReview(examId: string, studentUserId: string) {
+    const student = await this.prisma.student.findUnique({
+      where: { userId: studentUserId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (!student) throw new NotFoundException('Student profile not found');
+
+    const exam = await this.prisma.examination.findUnique({
+      where: { id: examId },
+      select: {
+        id: true,
+        title: true,
+        totalMarks: true,
+        duration: true,
+        resultsReleased: true,
+        resultsReleasedAt: true,
+        instructions: true,
+        Subject: { select: { id: true, name: true, code: true } },
+        ClassSection: { select: { id: true, name: true } },
+        questions: {
+          select: {
+            id: true,
+            text: true,
+            options: {
+              select: {
+                id: true,
+                optionText: true,
+                isCorrect: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!exam) throw new NotFoundException('Examination not found');
+
+    // STRICT SECURITY CHECK:
+    if (!exam.resultsReleased) {
+      throw new ForbiddenException(
+        'Exam review and correct answers have not been released by your teacher yet.',
+      );
+    }
+
+    const session = await this.prisma.examSession.findUnique({
+      where: {
+        examinationId_studentId: {
+          examinationId: examId,
+          studentId: student.id,
+        },
+      },
+    });
+
+    if (!session || (session.status !== ExamSessionStatus.COMPLETED && session.status !== ExamSessionStatus.TIMED_OUT)) {
+      throw new BadRequestException('You have not completed this exam yet.');
+    }
+
+    let studentAnswers: Record<string, string> = {};
+    if (session.answersJson) {
+      try {
+        studentAnswers = JSON.parse(session.answersJson);
+      } catch {
+        studentAnswers = {};
+      }
+    }
+
+    const perQ = exam.questions.length > 0 && exam.totalMarks > 0 ? exam.totalMarks / exam.questions.length : 10;
+    let totalEarnedScore = 0;
+    let correctCount = 0;
+    let incorrectCount = 0;
+    let unansweredCount = 0;
+
+    const questionBreakdown = exam.questions.map((q, idx) => {
+      const qMarks = (q as any).marks || perQ;
+      const selectedOptionId = studentAnswers[q.id] || null;
+      const correctOption = q.options.find((o) => o.isCorrect) || null;
+      const isAnswered = Boolean(selectedOptionId);
+      const isCorrect = isAnswered && correctOption ? selectedOptionId === correctOption.id : false;
+
+      if (isCorrect) {
+        totalEarnedScore += qMarks;
+        correctCount += 1;
+      } else if (!isAnswered) {
+        unansweredCount += 1;
+      } else {
+        incorrectCount += 1;
+      }
+
+      return {
+        questionNumber: idx + 1,
+        questionId: q.id,
+        questionText: q.text,
+        maxMarks: qMarks,
+        earnedMarks: isCorrect ? qMarks : 0,
+        status: isCorrect ? 'CORRECT' : !isAnswered ? 'UNANSWERED' : 'INCORRECT',
+        studentAnswer: {
+          optionId: selectedOptionId,
+          optionText: q.options.find((o) => o.id === selectedOptionId)?.optionText ?? null,
+        },
+        correctAnswer: {
+          optionId: correctOption?.id ?? null,
+          optionText: correctOption?.optionText ?? null,
+        },
+        options: q.options.map((opt) => ({
+          id: opt.id,
+          text: opt.optionText,
+          isCorrect: opt.isCorrect,
+          isSelected: opt.id === selectedOptionId,
+        })),
+      };
+    });
+
+    const finalScore = session.score ?? totalEarnedScore;
+    const finalTotalMarks = session.totalMarks ?? exam.totalMarks;
+    const percentage = session.percentage ?? (finalTotalMarks > 0 ? Math.round((finalScore / finalTotalMarks) * 100) : 0);
+
+    return {
+      exam: {
+        id: exam.id,
+        title: exam.title,
+        totalMarks: finalTotalMarks,
+        duration: exam.duration,
+        subjectName: exam.Subject?.name ?? 'Subject',
+        subjectCode: exam.Subject?.code ?? '',
+        classSection: exam.ClassSection?.name ?? '',
+        resultsReleasedAt: exam.resultsReleasedAt?.toISOString() ?? null,
+      },
+      summary: {
+        score: finalScore,
+        totalMarks: finalTotalMarks,
+        percentage,
+        passed: percentage >= 60,
+        totalQuestions: exam.questions.length,
+        correctCount,
+        incorrectCount,
+        unansweredCount,
+        completedAt: session.completedAt?.toISOString() ?? session.lastSavedAt.toISOString(),
+      },
+      questions: questionBreakdown,
     };
   }
 

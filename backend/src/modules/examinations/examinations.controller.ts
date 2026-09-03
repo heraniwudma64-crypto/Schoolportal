@@ -221,6 +221,50 @@ export class ExaminationsController {
     return this.examinationsService.reviewExam(id, body.status, body.rejectionReason);
   }
 
+  // ── Teacher: release / retract exam review & results ──────────────────────
+  @Post(':id/release-results')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.TEACHER)
+  toggleResultsRelease(
+    @Param('id') id: string,
+    @Body() body: { release: boolean },
+    @Req() req: any,
+  ) {
+    const userId = req.user?.sub || req.user?.id;
+    return this.examinationsService.toggleResultsRelease(id, userId, body.release ?? true);
+  }
+
+  // ── Teacher: get class exam performance & results summary ─────────────────
+  @Get(':id/results-summary')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.TEACHER)
+  getTeacherExamResultsSummary(@Param('id') id: string, @Req() req: any) {
+    const userId = req.user?.sub || req.user?.id;
+    return this.examinationsService.getTeacherExamResultsSummary(id, userId);
+  }
+
+  // ── Teacher: reset / delete student submission ───────────────────────────
+  @Delete(':id/results/:studentId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.TEACHER)
+  deleteStudentExamResult(
+    @Param('id') id: string,
+    @Param('studentId') studentId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user?.sub || req.user?.id;
+    return this.examinationsService.deleteStudentExamResult(id, studentId, userId);
+  }
+
+  // ── Student: view graded review with correct answers (once released) ──────
+  @Get(':id/review')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.STUDENT)
+  getStudentExamReview(@Param('id') id: string, @Req() req: any) {
+    const userId = req.user?.sub || req.user?.id;
+    return this.examinationsService.getStudentExamReview(id, userId);
+  }
+
   // ── Student: legacy submit & auto-grade (kept for compatibility) ──────────
   @Post('submit')
   submitExam(@Body() dto: any) {

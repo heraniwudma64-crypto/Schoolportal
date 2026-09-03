@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AlertCircle, Clock, Lock, ArrowRight, RefreshCw,
-  CheckCircle2, Timer, BookOpen, BadgeCheck, Hourglass,
+  CheckCircle2, Timer, BookOpen, BadgeCheck, Hourglass, Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import ExamSession, { LiveExamData } from './ExamSession';
+import ExamReviewModal from './ExamReviewModal';
 
 // ─── API types (mirrors backend getStudentAvailableExams response) ─────────────
 
@@ -27,6 +28,8 @@ interface AvailableExam {
   windowStart: string | null;
   windowEnd: string | null;
   delayMinutes: number;
+  resultsReleased?: boolean;
+  resultsReleasedAt?: string | null;
   windowStatus: WindowStatus;
   subject: { id: string; name: string } | null;
   questionCount: number;
@@ -35,6 +38,10 @@ interface AvailableExam {
     status: SessionStatus;
     timeRemainingSeconds: number;
     startedAt: string;
+    completedAt?: string | null;
+    score?: number | null;
+    totalMarks?: number | null;
+    percentage?: number | null;
   } | null;
   serverNow: string;  // ISO — lets us sync the client clock
 }
@@ -105,6 +112,7 @@ export default function OnlineExams() {
   const [exams, setExams] = useState<AvailableExam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [startingExamId, setStartingExamId] = useState<string | null>(null);
+  const [reviewingExamId, setReviewingExamId] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState(Date.now());
 
   // Active exam session data — set when student starts/resumes
@@ -331,10 +339,18 @@ export default function OnlineExams() {
                 fetchedAt={fetchedAt}
                 onStart={() => handleStartOrResume(exam)}
                 onRefresh={() => loadExams(true)}
+                onReview={(id) => setReviewingExamId(id)}
               />
             );
           })}
         </div>
+      )}
+
+      {reviewingExamId && (
+        <ExamReviewModal
+          examId={reviewingExamId}
+          onClose={() => setReviewingExamId(null)}
+        />
       )}
     </div>
   );
@@ -348,12 +364,14 @@ function ExamCard({
   fetchedAt,
   onStart,
   onRefresh,
+  onReview,
 }: {
   exam: AvailableExam;
   isStarting: boolean;
   fetchedAt: number;
   onStart: () => void;
   onRefresh: () => void;
+  onReview: (examId: string) => void;
 }) {
   const session = exam.session;
   const ws = exam.windowStatus;
@@ -477,9 +495,28 @@ function ExamCard({
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
           <div />
           {cta === 'done' && (
-            <span className="flex items-center gap-2 px-5 py-2 bg-green-100 text-green-700 rounded-xl text-sm font-bold">
-              <BadgeCheck className="w-4 h-4" /> Completed
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 rounded-xl text-xs font-bold">
+                <BadgeCheck className="w-3.5 h-3.5" /> Completed
+                {session?.score !== null && session?.score !== undefined && (
+                  <span className="ml-1 font-black">({session.score} / {exam.totalMarks} marks)</span>
+                )}
+              </span>
+
+              {exam.resultsReleased ? (
+                <button
+                  type="button"
+                  onClick={() => onReview(exam.id)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-900 hover:bg-blue-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-sm shadow-blue-900/20"
+                >
+                  <Eye className="w-3.5 h-3.5" /> Review Exam &amp; Answers
+                </button>
+              ) : (
+                <span className="text-[11px] font-semibold text-gray-400 bg-gray-50 border border-gray-100 px-2.5 py-1.5 rounded-xl">
+                  Answer key pending release
+                </span>
+              )}
+            </div>
           )}
           {cta === 'awaiting' && (
             <span className="flex items-center gap-2 px-5 py-2 bg-amber-100 text-amber-700 rounded-xl text-sm font-bold">

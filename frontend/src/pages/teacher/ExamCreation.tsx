@@ -3,12 +3,13 @@ import {
   Plus, Trash2, Clock, CheckCircle2, Save, Send, HelpCircle,
   AlertCircle, FolderOpen, X, BadgeCheck, XCircle, RefreshCw,
   FileText, AlertTriangle, Rocket, Calendar, Globe, Timer,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Award,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
 import { api } from '../../lib/api';
 import { formatClassSection } from '../../lib/classSection';
+import TeacherExamResultsModal from './TeacherExamResultsModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,12 +53,15 @@ interface PublishedExam {
   title: string;
   status: string;
   duration: number;
+  totalMarks?: number;
   Subject?: { name: string } | null;
   ClassSection?: { name: string } | null;
   questionCount: number;
   windowStart: string | null;
   windowEnd: string | null;
   delayMinutes: number;
+  resultsReleased?: boolean;
+  resultsReleasedAt?: string | null;
   windowStatus: 'SCHEDULED' | 'OPEN' | 'CLOSED' | 'NO_WINDOW';
 }
 
@@ -278,6 +282,9 @@ export default function ExamCreation() {
   // Publish modal
   const [publishModalExam, setPublishModalExam] = useState<TeacherExam | null>(null);
 
+  // Results & Review modal
+  const [resultsModalExamId, setResultsModalExamId] = useState<string | null>(null);
+
   // ── Data loaders ─────────────────────────────────────────────────────────────
 
   const loadTeacherExams = useCallback(async () => {
@@ -293,17 +300,18 @@ export default function ExamCreation() {
   }, []);
 
   useEffect(() => {
-    api.get<{ assignments: TeachingAssignment[] }>('/examinations/form-data')
-      .then((data) => {
-        setTeachingAssignments(data.assignments);
-        const first = data.assignments[0];
-        if (first) setExamData((p) => ({ ...p, subjectId: first.subjectId, classSectionId: first.classSectionId }));
-      })
-      .catch((err) => toast.error('Failed to load form data: ' + err.message));
-
-    loadTeacherExams();
-    loadApprovedExams();
-    loadPublishedExams();
+    Promise.allSettled([
+      api.get<{ assignments: TeachingAssignment[] }>('/examinations/form-data')
+        .then((data) => {
+          setTeachingAssignments(data.assignments);
+          const first = data.assignments[0];
+          if (first) setExamData((p) => ({ ...p, subjectId: first.subjectId, classSectionId: first.classSectionId }));
+        })
+        .catch((err) => toast.error('Failed to load form data: ' + err.message)),
+      loadTeacherExams(),
+      loadApprovedExams(),
+      loadPublishedExams(),
+    ]);
   }, [loadTeacherExams, loadApprovedExams, loadPublishedExams]);
 
   // ── After a publish succeeds: move exam from approved to published ──────────
@@ -638,10 +646,29 @@ export default function ExamCreation() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      {exam.resultsReleased ? (
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border text-emerald-700 bg-emerald-50 border-emerald-200 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Review Released
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border text-gray-500 bg-gray-50 border-gray-200">
+                          Review Unreleased
+                        </span>
+                      )}
                       <span className={cn('px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border', windowBadge.cls)}>
                         {windowBadge.label}
                       </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setResultsModalExamId(exam.id);
+                        }}
+                        className="px-3.5 py-1.5 bg-blue-900 hover:bg-blue-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-900/20"
+                      >
+                        <Award className="w-3.5 h-3.5" /> Results &amp; Review
+                      </button>
                       {expandedPublished[exam.id] ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                     </div>
                   </div>
@@ -888,6 +915,15 @@ export default function ExamCreation() {
           exam={publishModalExam}
           onClose={() => setPublishModalExam(null)}
           onPublished={handlePublished}
+        />
+      )}
+
+      {/* ── Results & Review Release Modal ── */}
+      {resultsModalExamId && (
+        <TeacherExamResultsModal
+          examId={resultsModalExamId}
+          onClose={() => setResultsModalExamId(null)}
+          onExamUpdated={loadPublishedExams}
         />
       )}
 

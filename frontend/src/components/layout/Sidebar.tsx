@@ -68,7 +68,6 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
         { name: 'Grade Entry', href: '/results', icon: GraduationCap },
         { name: 'Exam Creation', href: '/exams', icon: FileText },
         { name: 'Materials', href: '/materials', icon: Book },
-        { name: 'Performance', href: '/performance', icon: Users },
       ];
 
       // Add Homeroom-specific routes if teacher holds homeroom duty

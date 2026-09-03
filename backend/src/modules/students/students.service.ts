@@ -22,8 +22,14 @@ export class StudentsService {
       },
       select: {
         StudentAttendance: {
-          include: {
-            ClassSection: true,
+          take: 100,
+          select: {
+            id: true,
+            date: true,
+            period: true,
+            status: true,
+            remarks: true,
+            ClassSection: { select: { id: true, name: true } },
           },
           orderBy: {
             date: 'desc',
@@ -40,20 +46,21 @@ export class StudentsService {
   }
 
   // --- Assignments Method ---
- // --- Assignments Method ---
   async getMyAssignments(userId: string) {
     const student = await this.prisma.student.findFirst({
       where: {
         OR: [{ id: userId }, { userId: userId }],
       },
-      include: { ClassSection: { select: { name: true } } },
+      select: {
+        id: true,
+        classSectionId: true,
+        ClassSection: { select: { name: true } },
+      },
     });
 
     if (!student) return [];
 
-   return this.prisma.assignment.findMany({
-      // Publications can target either a section ID or the existing targetClass
-      // field.  Keep both conventions without returning another section's work.
+    return this.prisma.assignment.findMany({
       where: {
         OR: [
           ...(student.classSectionId ? [{ classSectionId: student.classSectionId }] : []),
@@ -61,16 +68,29 @@ export class StudentsService {
           { classSectionId: null, targetClass: null },
         ],
       },
-      include: {
-        ClassSection: true,
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        instructions: true,
+        subject: true,
+        targetClass: true,
+        dueDate: true,
+        attachmentUrl: true,
+        createdAt: true,
+        ClassSection: { select: { id: true, name: true } },
         Teacher: {
-            select: { firstName: true, lastName: true },
+          select: { firstName: true, lastName: true },
         },
-        submissions: { where: { studentId: student.id }, select: { id: true, createdAt: true, updatedAt: true, fileName: true, grades: { select: { id: true } } } },
+        submissions: {
+          where: { studentId: student.id },
+          select: { id: true, createdAt: true, updatedAt: true, fileName: true, grades: { select: { id: true } } },
+        },
       },
       orderBy: {
         dueDate: 'asc',
       },
+      take: 50,
     });
   }
 
@@ -234,7 +254,20 @@ export class StudentsService {
     // ── 1. Legacy Grade rows (component scores: mid/quiz/final etc.) ──────────
     const grades = await this.prisma.grade.findMany({
       where: { studentId: student.id },
+      select: {
+        id: true,
+        subject: true,
+        quarter: true,
+        mid: true,
+        assignment: true,
+        quiz: true,
+        classwork: true,
+        final: true,
+        score: true,
+        createdAt: true,
+      },
       orderBy: { createdAt: 'desc' },
+      take: 100,
     });
 
     // ── 2. Homeroom-finalized SubjectResult rows (SUBMITTED only) ─────────────
@@ -248,6 +281,7 @@ export class StudentsService {
           },
           include: { Subject: { select: { id: true, name: true, code: true } } },
           orderBy: [{ term: 'asc' }, { Subject: { name: 'asc' } }],
+          take: 100,
         })
       : [];
 
@@ -288,6 +322,7 @@ export class StudentsService {
           { name: decodedIdentifier },
         ],
       },
+      select: { id: true },
     });
 
     if (!section) {
@@ -296,7 +331,13 @@ export class StudentsService {
 
     return this.prisma.student.findMany({
       where: { classSectionId: section.id },
-      include: {
+      select: {
+        id: true,
+        admissionNo: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
+        status: true,
         User: {
           select: {
             id: true,

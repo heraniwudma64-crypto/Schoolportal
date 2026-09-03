@@ -326,22 +326,30 @@ export class AuthService {
     }
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Look up by the exact registered email only — loginId is not accepted here.
+    // Fetch and verify the exact email address the user used during initial registration (sign-up)
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
       select: { id: true, email: true, isActive: true, isDeleted: true },
     });
 
-    // Uniform response: never reveal whether an account exists for the address.
-    if (!user || user.isDeleted || !user.isActive) {
-      return { message: 'If that email is registered, a password reset code has been sent.' };
+    // Strictly reject if no registered account exists with this exact email
+    if (!user || user.isDeleted) {
+      throw new BadRequestException(
+        'The entered email does not match any registered account. Please verify the email used during sign-up.',
+      );
     }
 
-    // Guard: the email on record must exactly match what was submitted.
-    // (findUnique already guarantees this, but the explicit check documents
-    //  the contract and catches any future case-folding drift.)
-    if (user.email !== normalizedEmail) {
-      return { message: 'If that email is registered, a password reset code has been sent.' };
+    if (!user.isActive) {
+      throw new BadRequestException(
+        'This account is currently inactive. Please contact the school administrator.',
+      );
+    }
+
+    // Guard: the email on record must strictly match what was submitted
+    if (!user.email || user.email.toLowerCase() !== normalizedEmail) {
+      throw new BadRequestException(
+        'The entered email does not match the registered account email.',
+      );
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -375,7 +383,7 @@ export class AuthService {
       throw new InternalServerErrorException('Failed to send password reset email. Please try again later.');
     }
 
-    return { message: 'If that email is registered, a password reset code has been sent.' };
+    return { message: 'Password reset code has been sent to your registered email address.' };
   }
 
   async verifyOtp(email: string, otp: string) {
@@ -385,22 +393,21 @@ export class AuthService {
     const normalizedEmail = email.trim().toLowerCase();
 
     // The user must supply the exact email that is stored on their account.
-    // Any mismatch — including submitting a loginId or an unregistered address
-    // — is treated as an invalid OTP to prevent information leakage.
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
       select: { id: true, email: true, resetOtp: true, resetOtpExpiresAt: true, isDeleted: true },
     });
 
+    if (!user || user.isDeleted || !user.email || user.email.toLowerCase() !== normalizedEmail) {
+      throw new BadRequestException('The provided email does not match any registered account.');
+    }
+
     if (
-      !user ||
-      user.isDeleted ||
-      user.email !== normalizedEmail ||          // exact-match guard
       user.resetOtp !== otp.trim() ||
       !user.resetOtpExpiresAt ||
       user.resetOtpExpiresAt < new Date()
     ) {
-      throw new BadRequestException('Invalid or expired OTP code');
+      throw new BadRequestException('Invalid or expired verification code');
     }
 
     return { message: 'OTP verified successfully' };
@@ -415,17 +422,17 @@ export class AuthService {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Same strict email-match rule as verifyOtp — no loginId or unregistered
-    // address may be used to reset a password.
+    // Verify exact registered email match
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
       select: { id: true, email: true, resetOtp: true, resetOtpExpiresAt: true, isDeleted: true },
     });
 
+    if (!user || user.isDeleted || !user.email || user.email.toLowerCase() !== normalizedEmail) {
+      throw new BadRequestException('The provided email does not match any registered account.');
+    }
+
     if (
-      !user ||
-      user.isDeleted ||
-      user.email !== normalizedEmail ||          // exact-match guard
       user.resetOtp !== otp.trim() ||
       !user.resetOtpExpiresAt ||
       user.resetOtpExpiresAt < new Date()

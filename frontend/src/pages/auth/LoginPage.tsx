@@ -5,6 +5,8 @@ import { GraduationCap, Lock, User, ArrowRight, Mail } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { APP_NAME, APP_DESCRIPTION } from '../../config/branding';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 const LoginPage = () => {
   const [idNumber, setIdNumber] = useState('');
   const [password, setPassword] = useState('');
@@ -51,53 +53,69 @@ const LoginPage = () => {
   };
 
   // Step 1: Send OTP to Email
-  const handleSendOtp = async (e) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!resetEmail.trim()) {
+      toast.error('Please enter your registered email address.');
+      return;
+    }
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:3000/auth/forgot-password', {
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail }),
+        body: JSON.stringify({ email: resetEmail.trim() }),
       });
 
-      if (!response.ok) throw new Error('Failed to send OTP');
+      const data = await response.json().catch(() => ({}));
 
-      toast.success('OTP sent to your email!');
+      if (!response.ok) {
+        throw new Error(data.message || 'The entered email does not match any registered account.');
+      }
+
+      toast.success(data.message || 'Verification code sent to your registered email!');
       setResetStep('otp'); // Move to OTP entry screen
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error('Failed to send OTP. Please check the email.');
+      toast.error(error.message || 'Failed to send OTP. Please check the email.');
     } finally {
       setIsLoading(false);
     }
   };
 
   // Step 2: Verify OTP
-  const handleVerifyOtp = async (e) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!otpCode.trim()) {
+      toast.error('Please enter the verification code.');
+      return;
+    }
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:3000/auth/verify-otp', {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail, otp: otpCode }),
+        body: JSON.stringify({ email: resetEmail.trim(), otp: otpCode.trim() }),
       });
 
-      if (!response.ok) throw new Error('Invalid OTP');
+      const data = await response.json().catch(() => ({}));
 
-      toast.success('OTP verified successfully!');
+      if (!response.ok) {
+        throw new Error(data.message || 'Invalid or expired OTP code.');
+      }
+
+      toast.success(data.message || 'OTP verified successfully!');
       setResetStep('reset'); // Move to New Password screen
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error('Invalid or expired OTP code.');
+      toast.error(error.message || 'Invalid or expired OTP code.');
     } finally {
       setIsLoading(false);
     }
   };
 
   // Step 3: Reset Password
-  const handleResetPassword = async (e) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
       toast.error('Passwords do not match!');
@@ -106,24 +124,28 @@ const LoginPage = () => {
 
     setIsLoading(true);
     try {
-      const response = await fetch('http://localhost:3000/auth/reset-password', {
+      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail, otp: otpCode, newPassword }),
+        body: JSON.stringify({ email: resetEmail.trim(), otp: otpCode.trim(), newPassword }),
       });
 
-      if (!response.ok) throw new Error('Failed to reset password');
+      const data = await response.json().catch(() => ({}));
 
-      toast.success('Password reset successfully! You can now log in.');
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to reset password.');
+      }
+
+      toast.success(data.message || 'Password reset successfully! You can now log in.');
       setShowForgotPassword(false);
       setResetStep('email'); // Reset state back to default
       setResetEmail('');
       setOtpCode('');
       setNewPassword('');
       setConfirmPassword('');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error('Failed to update password.');
+      toast.error(error.message || 'Failed to update password.');
     } finally {
       setIsLoading(false);
     }
@@ -173,15 +195,11 @@ const LoginPage = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input type="checkbox" id="remember" className="rounded text-blue-600 focus:ring-blue-500" />
-              <label htmlFor="remember" className="ml-2 text-sm text-gray-600">Remember me</label>
-            </div>
+          <div className="flex justify-end">
             <button 
               type="button" 
               onClick={() => { setShowForgotPassword(true); setResetStep('email'); }} 
-              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+              className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
             >
               Forgot Password?
             </button>

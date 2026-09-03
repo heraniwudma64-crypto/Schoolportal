@@ -4,7 +4,6 @@ import {
   UserCheck, 
   BookOpen, 
   FileCheck,
-  Bell,
   Activity,
   ArrowUpRight,
   TrendingUp
@@ -98,7 +97,6 @@ const AdminOverview = () => {
           <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-8 border-b border-gray-100">
               <h3 className="text-lg font-black text-gray-900 flex items-center gap-3">
-                <Bell className="w-5 h-5 text-amber-500" />
                 System Alerts
               </h3>
             </div>

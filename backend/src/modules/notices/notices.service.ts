@@ -73,6 +73,7 @@ export class NoticesService {
   async getAdminNotices(): Promise<Notice[]> {
     return this.prisma.notice.findMany({
       orderBy: { createdAt: 'desc' },
+      take: 50,
       include: {
         User: { select: { email: true, role: true } },
         GradeLevel: { select: { name: true } },
@@ -164,6 +165,7 @@ export class NoticesService {
         OR: conditions,
       },
       orderBy: { publishedAt: 'desc' },
+      take: 50,
       include: {
         User: { select: { email: true, role: true } },
       }

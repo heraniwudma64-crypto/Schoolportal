@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, Plus, Download, Trash2, Search, Filter, ShieldAlert, Book, X, Edit, UploadCloud, Loader2 } from 'lucide-react';
+import { FileText, Plus, Download, Trash2, Search, Filter, ShieldAlert, Book, X, Edit, UploadCloud, Loader2, Video } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
 import { getMaterials, createMaterial, deleteMaterial, updateMaterial, getMaterialDownloadUrl, Material } from '../../api/materials';
+import AdminVideoReview from './AdminVideoReview';
 
 const MaterialsManagement = () => {
+  const [activeSection, setActiveSection] = useState<'files' | 'videos'>('files');
   const [materials, setMaterials] = useState<Material[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -154,21 +156,59 @@ const MaterialsManagement = () => {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-black text-gray-900">Materials Management</h2>
+          <h2 className="text-3xl font-black text-gray-900">Materials &amp; Media Management</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage administrative documents and review teacher-submitted YouTube video lessons.
+          </p>
         </div>
-        <button
-          onClick={() => {
-            setIsEditing(null);
-            setNewMaterial({ title: '', category: 'Materials', target_role: 'All Users', description: '' });
-            setSelectedFile(null);
-            setIsUploading(true);
-          }}
-          className="flex items-center gap-3 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20"
-        >
-          <Plus className="w-4 h-4" />
-          Upload New Material
-        </button>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center bg-gray-100 p-1 rounded-2xl text-xs font-black shadow-inner">
+            <button
+              onClick={() => setActiveSection('files')}
+              className={`px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 ${
+                activeSection === 'files'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-blue-600" />
+              File Materials
+            </button>
+            <button
+              onClick={() => setActiveSection('videos')}
+              className={`px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 ${
+                activeSection === 'videos'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              <Video className="w-4 h-4" />
+              Video Approvals
+            </button>
+          </div>
+
+          {activeSection === 'files' && (
+            <button
+              onClick={() => {
+                setIsEditing(null);
+                setNewMaterial({ title: '', category: 'Materials', target_role: 'All Users', description: '' });
+                setSelectedFile(null);
+                setIsUploading(true);
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-md shadow-blue-900/20"
+            >
+              <Plus className="w-4 h-4" />
+              Upload Material
+            </button>
+          )}
+        </div>
       </div>
+
+      {activeSection === 'videos' ? (
+        <AdminVideoReview />
+      ) : (
+        <>
 
       {isUploading && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -368,6 +408,8 @@ const MaterialsManagement = () => {
             );
           })}
         </div>
+      )}
+        </>
       )}
       <Toaster position="top-right" />
     </div>

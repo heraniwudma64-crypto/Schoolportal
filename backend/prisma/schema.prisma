@@ -245,6 +245,7 @@ model ClassSection {
   subjectTeachers   SectionSubjectTeacher[]
   materials         Material[]
   classSchedules    ClassSchedule[]
+  educationalVideos EducationalVideo[]
 
   Teacher           Teacher?              @relation("GeneralTeacher", fields: [teacherId], references: [id], map: "ClassSection_general_teacher_fkey")
   homeroomTeacher   Teacher?              @relation("HomeroomTeacher", fields: [teacherId], references: [id], map: "ClassSection_homeroom_teacher_fkey")
@@ -325,6 +326,7 @@ model Student {
 
   @@index([classSectionId, status])
   @@index([parentId])
+  @@index([firstName, lastName])
 }
 
 model Teacher {
@@ -349,6 +351,9 @@ model Teacher {
   homeroomSections   ClassSection[] @relation("HomeroomTeacher")
   subjectSections    SectionSubjectTeacher[]
   scheduleEntries    ScheduleEntry[]
+  educationalVideos  EducationalVideo[]
+
+  @@index([firstName, lastName])
 }
 
 model ClassTeacher {
@@ -440,6 +445,7 @@ model Subject {
   subjectResults SubjectResult[]
   sectionSubjectTeachers SectionSubjectTeacher[]
   scheduleEntries        ScheduleEntry[]
+  educationalVideos      EducationalVideo[]
 }
 
 model GradeSubject {
@@ -536,6 +542,9 @@ model Timetable {
   ClassSection ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
   Subject      Subject      @relation(fields: [subjectId], references: [id])
   Teacher      Teacher      @relation(fields: [teacherId], references: [id])
+
+  @@index([classSectionId])
+  @@index([teacherId])
 }
 
 // ─── Exams & Attempts ─────────────────────────────────────────────────────────
@@ -563,9 +572,15 @@ model Examination {
   // windowStart: when the Start button unlocks for students (server-authoritative)
   // windowEnd:   when the exam closes — no new sessions allowed after this
   // delayMinutes: accumulated teacher-applied delays; added to both window times
-  windowStart    DateTime?
-  windowEnd      DateTime?
-  delayMinutes   Int        @default(0)
+  windowStart       DateTime?
+  windowEnd         DateTime?
+  delayMinutes      Int        @default(0)
+
+  // ── Post-Exam Review Release ────────────────────────────────────────────────
+  // resultsReleased: whether teacher has released graded results & answer key to students
+  // resultsReleasedAt: timestamp when results were released
+  resultsReleased   Boolean    @default(false)
+  resultsReleasedAt DateTime?
 
   ClassSection ClassSection        @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
   Subject      Subject             @relation(fields: [subjectId], references: [id])
@@ -580,6 +595,7 @@ model Examination {
 
   @@index([teacherId, status])
   @@index([classSectionId])
+  @@index([classSectionId, status])
 }
 
 model Question {
@@ -590,6 +606,8 @@ model Question {
   options     Option[]
   grades      Grade[]
   results     StudentExamResult[]
+
+  @@index([examId])
 }
 
 model Option {
@@ -598,6 +616,8 @@ model Option {
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   optionText String
   isCorrect  Boolean  @default(false)
+
+  @@index([questionId])
 }
 
 model StudentExamResult {
@@ -612,6 +632,9 @@ model StudentExamResult {
   questionId    String?
   question      Question?       @relation(fields: [questionId], references: [id], onDelete: SetNull)
   marksObtained Float           @default(0)
+
+  @@index([studentId, examId])
+  @@index([examId])
 }
 
 model StudentAnswer {
@@ -621,6 +644,9 @@ model StudentAnswer {
   questionId       String
   selectedOptionId String
   isCorrect        Boolean
+
+  @@index([resultId])
+  @@index([questionId])
 }
 
 model ExamAttempt {
@@ -637,6 +663,7 @@ model ExamAttempt {
   Student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@unique([examId, studentId])
+  @@index([studentId])
 }
 
 // ─── Attendance ───────────────────────────────────────────────────────────────
@@ -705,6 +732,9 @@ model Submission {
   fileType     String?
   fileSize     Int?
   grades       Grade[]
+
+  @@index([assignmentId])
+  @@index([studentId])
 }
 
 model StudentAssignment {
@@ -716,6 +746,9 @@ model StudentAssignment {
 
   Assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   Student    Student?   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([assignmentId])
 }
 
 // ─── Fees ─────────────────────────────────────────────────────────────────────
@@ -733,6 +766,8 @@ model FeeInvoice {
 
   Student    Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
   FeePayment FeePayment[]
+
+  @@index([studentId])
 }
 
 model FeePayment {
@@ -747,6 +782,8 @@ model FeePayment {
   updatedAt     DateTime
 
   FeeInvoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
 }
 
 // ─── Notices ──────────────────────────────────────────────────────────────────
@@ -811,6 +848,10 @@ model Grade {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([examinationId])
+  @@index([assignmentId])
 }
 model SectionSubjectTeacher {
   id             String       @id @default(uuid())
@@ -877,6 +918,9 @@ model ExamSession {
   // Snapshot of answers as JSON: { [questionId]: selectedOptionId }
   answersJson          String            @default("{}")
   deviceFingerprint    String?           // browser UA + IP hash for single-device check
+  score                Float?
+  totalMarks           Float?
+  percentage           Float?
   startedAt            DateTime          @default(now())
   lastSavedAt          DateTime          @default(now())
   completedAt          DateTime?
@@ -889,4 +933,42 @@ model ExamSession {
   @@unique([examinationId, studentId])
   @@index([status])
   @@index([examinationId, status])
+}
+
+// ─── Educational YouTube Videos ───────────────────────────────────────────────
+
+enum VideoStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+model EducationalVideo {
+  id              String      @id @default(uuid())
+  title           String
+  description     String?
+  youtubeUrl      String
+  youtubeVideoId  String
+  thumbnailUrl    String?
+  subjectId       String
+  classSectionId  String?
+  teacherId       String
+  status          VideoStatus @default(DRAFT)
+  rejectionReason String?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  reviewedById    String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @default(now()) @updatedAt
+
+  Subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  ClassSection ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
+  Teacher      Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([classSectionId, status])
+  @@index([teacherId])
+  @@index([subjectId])
+  @@map("educational_videos")
 }

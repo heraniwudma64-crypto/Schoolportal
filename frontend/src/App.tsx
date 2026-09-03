@@ -35,7 +35,6 @@ import TeacherAssignments from './pages/admin/TeacherAssignments';
 import TimetableManagement from './pages/admin/TimetableManagement';
 
 // Teacher Specific
-import Performance from './pages/teacher/Performance';
 import TeacherProfile from './pages/teacher/Profile';
 import HomeroomReportCards from './pages/teacher/HomeroomReportCards';
 import HomeroomSubmissionMatrix from './pages/teacher/HomeroomSubmissionMatrix';
@@ -79,7 +78,6 @@ function App() {
             <Route path="account" element={<RequireRole allowedRoles={['student']}><MyAccount /></RequireRole>} />
 
             {/* Teacher Only */}
-            <Route path="performance" element={<RequireRole allowedRoles={['teacher']}><Performance /></RequireRole>} />
             <Route path="homeroom/submissions" element={<RequireRole allowedRoles={['teacher']}><HomeroomSubmissionMatrix /></RequireRole>} />
             <Route path="homeroom/roster" element={<RequireRole allowedRoles={['teacher']}><HomeroomRosterRedesigned /></RequireRole>} />
             <Route path="homeroom/report-cards" element={<RequireRole allowedRoles={['teacher']}><ReportCardPrintable /></RequireRole>} />

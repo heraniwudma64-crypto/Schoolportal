@@ -23,7 +23,7 @@ interface TeacherDashboardData {
 }
 
 const TeacherOverview = () => {
-  const { data: dashboard } = useQuery<TeacherDashboardData>({
+  const { data: dashboard, isLoading } = useQuery<TeacherDashboardData>({
     queryKey: ['teachers', 'dashboard'],
     queryFn: () => api.get<TeacherDashboardData>('/teachers/dashboard'),
     staleTime: 2 * 60 * 1000,
@@ -35,25 +35,25 @@ const TeacherOverview = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="My Subjects" 
-          value={dashboard?.assignedSubjectsCount ?? 0} 
+          value={isLoading ? '…' : (dashboard?.assignedSubjectsCount ?? 0)} 
           icon={BookOpen} 
           iconClassName="bg-blue-50 text-blue-600"
         />
         <StatCard 
           title="Active Students" 
-          value={dashboard?.activeStudentsCount ?? 0} 
+          value={isLoading ? '…' : (dashboard?.activeStudentsCount ?? 0)} 
           icon={Users} 
           iconClassName="bg-indigo-50 text-indigo-600"
         />
         <StatCard 
           title="Assignments Published" 
-          value={dashboard?.assignmentsPublishedCount ?? 0} 
+          value={isLoading ? '…' : (dashboard?.assignmentsPublishedCount ?? 0)} 
           icon={ClipboardList} 
           iconClassName="bg-amber-50 text-amber-600"
         />
         <StatCard 
           title="Pending Exam Reviews" 
-          value={dashboard?.pendingExamsCount ?? 0} 
+          value={isLoading ? '…' : (dashboard?.pendingExamsCount ?? 0)} 
           icon={FileCheck} 
           iconClassName="bg-purple-50 text-purple-600"
         />

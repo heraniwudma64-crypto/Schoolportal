@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -39,15 +39,17 @@ const TeacherAttendance = () => {
       });
   }, []);
 
+  const targetAcademicYearId = useMemo(
+    () => teachingAssignments.find((item) => item.classSectionId === selectedClassId)?.academicYearId,
+    [teachingAssignments, selectedClassId],
+  );
+
   // 2. Fetch students using the exact classSectionId foreign key endpoint
-  // 2. Fetch students using the exact classSectionId foreign key endpoint with fallback
   useEffect(() => {
-    if (showHistory || !selectedClassId) return;
-    const assignment = teachingAssignments.find((item) => item.classSectionId === selectedClassId);
-    if (!assignment?.academicYearId) return;
+    if (showHistory || !selectedClassId || !targetAcademicYearId) return;
     setLoading(true);
     
-    getEnrolledStudents(assignment.academicYearId, selectedClassId)
+    getEnrolledStudents(targetAcademicYearId, selectedClassId)
       .then((response: any) => {
         const rawStudents = response;
 
@@ -65,7 +67,7 @@ const TeacherAttendance = () => {
         setStudents([]);
       })
       .finally(() => setLoading(false));
-  }, [selectedClassId, showHistory, teachingAssignments]);
+  }, [selectedClassId, showHistory, targetAcademicYearId]);
 
   // Fetch past attendance records when history view is toggled on
   useEffect(() => {
@@ -214,11 +216,15 @@ const TeacherAttendance = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-8 text-center text-sm text-gray-500">
-                      Querying students from database...
-                    </td>
-                  </tr>
+                  <>
+                    {[1, 2, 3, 4].map((i) => (
+                      <tr key={i} className="animate-pulse">
+                        <td className="px-6 py-4"><div className="h-4 bg-gray-100 rounded w-1/3" /></td>
+                        <td className="px-6 py-4"><div className="h-4 bg-gray-100 rounded w-1/4" /></td>
+                        <td className="px-6 py-4"><div className="h-8 bg-gray-100 rounded-xl w-48" /></td>
+                      </tr>
+                    ))}
+                  </>
                 ) : filteredStudents.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-6 py-8 text-center text-sm text-gray-500">

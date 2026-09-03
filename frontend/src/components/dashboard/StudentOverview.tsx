@@ -5,7 +5,6 @@ import {
   ClipboardList, 
   CheckSquare, 
   GraduationCap, 
-  Bell,
   Calendar,
   Clock
 } from 'lucide-react';
@@ -13,6 +12,7 @@ import StatCard from './StatCard';
 import { MOCK_ASSIGNMENTS } from '../../data/mockData';
 import { getUserNotices } from '../../api/notices';
 import { getMyAttendance, getMyCourses, getMyResults } from '../../api/students';
+import StudentVideoLessons from './StudentVideoLessons';
 
 const StudentOverview = () => {
   const { data: notices = [], isLoading: noticesLoading, isError: noticesError } = useQuery({
@@ -32,18 +32,37 @@ const StudentOverview = () => {
     queryFn: getMyResults,
   });
 
-  const presentDays = attendance.filter((record) => record.status === 'PRESENT').length;
-  const attendancePercentage = attendance.length ? (presentDays / attendance.length) * 100 : null;
-  const totalObtained = results.reduce((sum, result) => sum + result.marksObtained, 0);
-  const totalPossible = results.reduce((sum, result) => sum + result.Exam.totalMarks, 0);
-  const average = totalPossible ? (totalObtained / totalPossible) * 100 : null;
+  const attendanceList = Array.isArray(attendance) ? attendance : [];
+  const presentDays = attendanceList.filter((record) => record.status === 'PRESENT').length;
+  const attendancePercentage = attendanceList.length ? (presentDays / attendanceList.length) * 100 : null;
+
+  // Handle both array and object { grades, subjectResults } shapes safely
+  const gradeItems: any[] = Array.isArray(results)
+    ? results
+    : Array.isArray((results as any)?.grades)
+      ? (results as any).grades
+      : [];
+
+  let totalObtained = 0;
+  let totalPossible = 0;
+  if (gradeItems.length > 0) {
+    for (const item of gradeItems) {
+      const score = Number(item.score ?? item.marksObtained ?? 0);
+      const max = Number(item.Exam?.totalMarks ?? item.maxScore ?? 100);
+      if (!isNaN(score) && !isNaN(max) && max > 0) {
+        totalObtained += score;
+        totalPossible += max;
+      }
+    }
+  }
+  const average = totalPossible > 0 ? (totalObtained / totalPossible) * 100 : null;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Total Subjects" 
-          value={coursesLoading ? '…' : coursesError ? '—' : courses.length}
+          value={coursesLoading ? '…' : coursesError ? '—' : (Array.isArray(courses) ? courses.length : 0)}
           icon={BookOpen} 
           iconClassName="bg-blue-50 text-blue-600"
         />
@@ -72,14 +91,20 @@ const StudentOverview = () => {
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
-              <Bell className="w-5 h-5 text-blue-600" />
               Recent Announcements
             </h3>
             <button className="text-sm text-blue-600 font-medium hover:underline">View All</button>
           </div>
           <div className="divide-y divide-gray-100">
             {noticesLoading && (
-              <p className="p-6 text-sm text-gray-500">Loading announcements...</p>
+              <div className="p-6 space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="animate-pulse space-y-2">
+                    <div className="h-4 bg-gray-100 rounded w-1/3" />
+                    <div className="h-3 bg-gray-50 rounded w-3/4" />
+                  </div>
+                ))}
+              </div>
             )}
             {noticesError && (
               <p className="p-6 text-sm text-red-600">Could not load announcements.</p>
@@ -87,7 +112,7 @@ const StudentOverview = () => {
             {!noticesLoading && !noticesError && notices.length === 0 && (
               <p className="p-6 text-sm text-gray-500">No announcements for you yet.</p>
             )}
-            {notices.slice(0, 5).map((ann) => (
+            {!noticesLoading && notices.slice(0, 5).map((ann) => (
               <div key={ann.id} className="p-6 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-semibold text-gray-900">{ann.title}</h4>
@@ -123,6 +148,9 @@ const StudentOverview = () => {
           </div>
         </div>
       </div>
+
+      {/* Educational YouTube Video Lessons */}
+      <StudentVideoLessons />
     </div>
   );
 };

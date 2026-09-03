@@ -20,6 +20,7 @@ import { ParentsModule } from './modules/parents/parents.module';
 import { ResultsModule } from './modules/results/results.module';
 import { TimetableModule } from './modules/timetable/timetable.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { VideosModule } from './modules/videos/videos.module';
 
 @Module({
   controllers: [AppController],
@@ -43,6 +44,7 @@ import { ReportsModule } from './modules/reports/reports.module';
     ResultsModule,
     TimetableModule,
     ReportsModule,
+    VideosModule,
     ScheduleModule.forRoot(),
   ],
 })
