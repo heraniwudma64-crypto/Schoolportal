@@ -42,6 +42,42 @@ export class MaterialsService {
   }
 
   async findAll(userId: string, role?: Role) {
+    if (role === Role.STUDENT) {
+      const student = await this.prisma.student.findUnique({
+        where: { userId },
+        select: {
+          id: true,
+          classSectionId: true,
+          StudentEnrollment: {
+            where: { status: 'ACTIVE' },
+            orderBy: { enrollmentDate: 'desc' },
+            take: 1,
+            select: { classSectionId: true },
+          },
+        },
+      });
+      const sectionId = student?.StudentEnrollment[0]?.classSectionId || student?.classSectionId;
+      return this.prisma.material.findMany({
+        where: {
+          AND: [
+            {
+              OR: [
+                { targetRole: 'all' },
+                { targetRole: 'student' },
+              ],
+            },
+            {
+              OR: [
+                { classSectionId: null },
+                ...(sectionId ? [{ classSectionId: sectionId }] : []),
+              ],
+            },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
     const where: any = {};
     if (role && role !== Role.ADMIN) {
       where.OR = [
@@ -214,30 +250,83 @@ let fileSize = material.fileSize;
   }
 
   async getDownloadUrl(id: string, userId: string, role: Role) {
-    const material = await this.findOne(id);
-    if (role === Role.TEACHER) {
-      const visibleMaterials = await this.findAll(userId, role);
-      if (!visibleMaterials.some((item) => item.id === material.id)) {
-        throw new BadRequestException('You cannot download this material');
-      }
+    const where: any = { id };
+
+    if (role === Role.STUDENT) {
+      const student = await this.prisma.student.findUnique({
+        where: { userId },
+        select: {
+          id: true,
+          classSectionId: true,
+          StudentEnrollment: {
+            where: { status: 'ACTIVE' },
+            orderBy: { enrollmentDate: 'desc' },
+            take: 1,
+            select: { classSectionId: true },
+          },
+        },
+      });
+      const sectionId = student?.StudentEnrollment[0]?.classSectionId || student?.classSectionId;
+      where.AND = [
+        {
+          OR: [
+            { targetRole: 'all' },
+            { targetRole: 'student' },
+          ],
+        },
+        {
+          OR: [
+            { classSectionId: null },
+            ...(sectionId ? [{ classSectionId: sectionId }] : []),
+          ],
+        },
+      ];
+    } else if (role === Role.TEACHER) {
+      const teacher = await this.prisma.teacher.findUnique({
+        where: { userId },
+        select: {
+          id: true,
+          subjectSections: {
+            select: { classSectionId: true },
+          },
+        },
+      });
+      const assignedSections = teacher?.subjectSections || [];
+      where.OR = [
+        { targetRole: 'all' },
+        { targetRole: 'teacher' },
+        { userId },
+        ...(assignedSections.length ? [{ classSectionId: { in: assignedSections.map((item) => item.classSectionId) } }] : []),
+      ];
     }
+
+    const material = await this.prisma.material.findFirst({ where });
+    if (!material) {
+      throw new NotFoundException('Material not found or you do not have permission to download it');
+    }
+
     const oldFilePathMatch = material.fileUrl?.match(/materials\/(.*)$/);
-const pathInBucket = (oldFilePathMatch ? oldFilePathMatch[1] : material.fileUrl) || '';
+    const pathInBucket = (oldFilePathMatch ? oldFilePathMatch[1] : material.fileUrl) || '';
     
-    const { data, error } = await this.supabase.storage.from('materials').createSignedUrl(pathInBucket, 60, {
+    const { data, error } = await this.supabase.storage.from('materials').createSignedUrl(pathInBucket, 300, {
       download: material.fileName || true,
     });
     
     if (error || !data) {
-      // If it's a public bucket, createSignedUrl might fail or not be needed, but the prompt says:
-      // "If the bucket is private, generate an appropriate signed URL from the backend."
-      // Let's fallback to public URL if signed URL fails, just in case.
       const { data: publicData } = this.supabase.storage.from('materials').getPublicUrl(pathInBucket, {
         download: material.fileName || true,
       });
-      return { url: publicData.publicUrl };
+      return { 
+        url: publicData.publicUrl, 
+        downloadUrl: publicData.publicUrl,
+        fileName: material.fileName || 'file',
+      };
     }
-    return { url: data.signedUrl };
+    return { 
+      url: data.signedUrl, 
+      downloadUrl: data.signedUrl,
+      fileName: material.fileName || 'file',
+    };
   }
 
   async getAdminMaterials(userId: string, role: Role) {

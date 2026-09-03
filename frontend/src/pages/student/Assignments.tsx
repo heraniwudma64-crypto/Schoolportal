@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Badge } from '../../components/ui/badge';
 import { FileText, Calendar, Paperclip, ExternalLink, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
-import { api } from '../../lib/api'; // Import your authenticated api client
+import { api } from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
+import { StudentAssignmentItem } from '../../api/students';
 
 import {
   Empty,
@@ -14,35 +15,65 @@ import {
   EmptyTitle,
 } from '../../components/ui/empty';
 
+interface FormattedAssignment {
+  id: string;
+  title: string;
+  subjectName: string;
+  description: string;
+  dueDate: string;
+  rawDueDate: string;
+  status: 'pending' | 'submitted';
+  attachmentUrl: string | null;
+  teacherName: string;
+}
+
 const Assignments = ({ searchQuery }: { searchQuery: string }) => {
   const navigate = useNavigate();
-  const [assignments, setAssignments] = useState<any[]>([]);
-  const [filteredAssignments, setFilteredAssignments] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<FormattedAssignment[]>([]);
+  const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [downloadingResourceId, setDownloadingResourceId] = useState<string | null>(null);
+
+  const handleOpenResource = async (assignmentId: string) => {
+    setDownloadingResourceId(assignmentId);
+    try {
+      const res = await api.get<{ url?: string; downloadUrl?: string; fileName?: string }>(
+        `/students/my-assignments/${assignmentId}/resource`,
+      );
+      const downloadUrl = res?.downloadUrl || res?.url;
+      if (downloadUrl && (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://'))) {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        toast.error('Could not generate download link for this resource.');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not download assignment resource.');
+    } finally {
+      setDownloadingResourceId(null);
+    }
+  };
 
   useEffect(() => {
     async function fetchRealAssignments() {
       try {
-        // Use your custom 'api' client to send the Bearer token correctly
-        const data = await api.get<any>('/students/my-assignments');
-        
-        // Handle potential wrapper structures (array vs nested data properties)
-        const rawList = Array.isArray(data) ? data : (data?.data || data?.records || []);
+        const rawList = await api.get<StudentAssignmentItem[]>('/students/my-assignments');
+        const list = Array.isArray(rawList) ? rawList : [];
 
-        const formattedData = rawList.map((item: any) => ({
+        const formattedData: FormattedAssignment[] = list.map((item) => ({
           id: item.id,
           title: item.title || 'Untitled',
-          subjectName: item.subject?.name || item.subjectName || 'General',
-          description: item.instructions || item.description || '',
+          subjectName: item.ClassSection?.name || item.targetClass || 'General',
+          description: item.instructions || '',
           dueDate: item.dueDate ? new Date(item.dueDate).toLocaleDateString() : 'No date',
-          status: item.submissions?.length ? 'submitted' : 'pending',
-          attachmentUrl: item.attachmentUrl,
+          rawDueDate: item.dueDate,
+          status: item.submissions && item.submissions.length > 0 ? 'submitted' : 'pending',
+          attachmentUrl: item.attachmentUrl || null,
           teacherName: item.Teacher ? `${item.Teacher.firstName || ''} ${item.Teacher.lastName || ''}`.trim() : 'Teacher',
         }));
 
         setAssignments(formattedData);
-        setFilteredAssignments(formattedData);
       } catch (error) {
         console.error('Failed to fetch assignments:', error);
         setLoadError(true);
@@ -54,39 +85,82 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
 
     fetchRealAssignments();
   }, []);
-  
-  useEffect(() => {
-    const lowercasedQuery = searchQuery.toLowerCase();
-    const filtered = assignments.filter(assignment => 
-      assignment.title.toLowerCase().includes(lowercasedQuery) ||
-      assignment.subjectName.toLowerCase().includes(lowercasedQuery) ||
-      assignment.description.toLowerCase().includes(lowercasedQuery)
-    );
-    setFilteredAssignments(filtered);
-  }, [searchQuery, assignments]);
+
+  // Compute available unique subjects from returned assignments
+  const availableSubjects = useMemo(() => {
+    const set = new Set<string>();
+    assignments.forEach((a) => {
+      if (a.subjectName) set.add(a.subjectName);
+    });
+    return Array.from(set).sort();
+  }, [assignments]);
+
+  const filteredAssignments = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return assignments.filter((assignment) => {
+      // 1. Text Search Filter
+      const matchesSearch = !query ||
+        assignment.title.toLowerCase().includes(query) ||
+        assignment.subjectName.toLowerCase().includes(query) ||
+        assignment.description.toLowerCase().includes(query) ||
+        assignment.teacherName.toLowerCase().includes(query);
+
+      // 2. Subject Filter
+      const matchesSubject = selectedSubject === 'ALL' || assignment.subjectName === selectedSubject;
+
+      // 3. Status Filter
+      const matchesStatus = selectedStatus === 'ALL' || assignment.status === selectedStatus;
+
+      return matchesSearch && matchesSubject && matchesStatus;
+    });
+  }, [assignments, searchQuery, selectedSubject, selectedStatus]);
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">Loading your assignments...</div>;
   }
 
   if (loadError) {
-    return <div className="rounded-2xl border border-red-100 bg-red-50 p-8 text-center text-red-700">Assignments could not be loaded. Please refresh the page and try again.</div>;
+    return (
+      <div className="rounded-2xl border border-red-100 bg-red-50 p-8 text-center text-red-700">
+        Assignments could not be loaded. Please refresh the page and try again.
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Assignments & Homework</h2>
-        <div className="flex gap-2">
-          <select className="bg-white border border-gray-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
-            <option>All Subjects</option>
-            <option>Mathematics</option>
-            <option>Physics</option>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Assignments & Homework</h2>
+          <p className="text-sm text-gray-500">View and submit assignments from your teachers.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {/* Subject Filter */}
+          <select 
+            aria-label="Filter by Subject"
+            value={selectedSubject}
+            onChange={(e) => setSelectedSubject(e.target.value)}
+            className="bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+          >
+            <option value="ALL">All Subjects ({assignments.length})</option>
+            {availableSubjects.map((subj) => (
+              <option key={subj} value={subj}>
+                {subj}
+              </option>
+            ))}
           </select>
-          <select className="bg-white border border-gray-200 text-sm rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20">
-            <option>All Status</option>
-            <option>Pending</option>
-            <option>Submitted</option>
+
+          {/* Status Filter */}
+          <select 
+            aria-label="Filter by Status"
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+          >
+            <option value="ALL">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="submitted">Submitted</option>
           </select>
         </div>
       </div>
@@ -97,81 +171,97 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
             <Search className="h-10 w-10" />
           </EmptyMedia>
           <EmptyHeader>
-            <EmptyTitle>{assignments.length === 0 ? 'No assignments have been assigned yet' : 'No assignments found'}</EmptyTitle>
+            <EmptyTitle>{assignments.length === 0 ? 'No assignments have been assigned yet' : 'No assignments match your filters'}</EmptyTitle>
             <EmptyDescription>
-              {assignments.length === 0 ? 'New assignments from your teachers will appear here.' : `Your search for "${searchQuery}" did not return any assignments.`}
+              {assignments.length === 0 
+                ? 'New assignments from your teachers will appear here.' 
+                : 'Try adjusting your search or category filters to find what you are looking for.'}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-        {filteredAssignments.map((assignment) => (
-          <div key={assignment.id} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-blue-200 transition-colors">
-            <div className="flex items-start gap-4">
-              <div className={cn(
-                "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-                assignment.status === 'pending' ? "bg-amber-50 text-amber-600" : "bg-green-50 text-green-600"
-              )}>
-                <FileText className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <h3 className="font-bold text-gray-900">{assignment.title}</h3>
-                  <Badge variant={assignment.status === 'pending' ? 'outline' : 'default'} className={cn(
-                    assignment.status === 'pending' ? "text-amber-600 border-amber-200 bg-amber-50" : "text-green-600 border-green-200 bg-green-50"
-                  )}>
-                    {assignment.status.toUpperCase()}
-                  </Badge>
+          {filteredAssignments.map((assignment) => (
+            <div 
+              key={assignment.id} 
+              className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-blue-200 transition-colors"
+            >
+              <div className="flex items-start gap-4">
+                <div className={cn(
+                  "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
+                  assignment.status === 'pending' ? "bg-amber-50 text-amber-600" : "bg-green-50 text-green-600"
+                )}>
+                  <FileText className="w-6 h-6" />
                 </div>
-                <p className="text-sm text-gray-500 mb-2">{assignment.subjectName} • Prof. {assignment.teacherName}</p>
-                <p className="text-sm text-gray-600 line-clamp-1">{assignment.description}</p>
+                <div>
+                  <div className="flex items-center gap-3 mb-1">
+                    <h3 className="font-bold text-gray-900">{assignment.title}</h3>
+                    <Badge variant={assignment.status === 'pending' ? 'outline' : 'default'} className={cn(
+                      assignment.status === 'pending' ? "text-amber-600 border-amber-200 bg-amber-50" : "text-green-600 border-green-200 bg-green-50"
+                    )}>
+                      {assignment.status.toUpperCase()}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-2">{assignment.subjectName} • Prof. {assignment.teacherName}</p>
+                  <p className="text-sm text-gray-600 line-clamp-1">{assignment.description}</p>
+                </div>
               </div>
-            </div>
 
-            <div className="flex flex-col md:items-end gap-4 shrink-0">
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <p className="text-xs text-gray-400 font-medium">DUE DATE</p>
-                  <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                    {assignment.dueDate}
-                  </p>
+              <div className="flex flex-col md:items-end gap-4 shrink-0">
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400 font-medium">DUE DATE</p>
+                    <p className="text-sm font-semibold text-gray-900 flex items-center gap-1">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                      {assignment.dueDate}
+                    </p>
+                  </div>
+                  <div className="w-px h-8 bg-gray-100"></div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400 font-medium">MATERIAL</p>
+                    {assignment.attachmentUrl ? (
+                      <button 
+                        type="button"
+                        onClick={() => handleOpenResource(assignment.id)}
+                        disabled={downloadingResourceId === assignment.id}
+                        className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50 ml-auto"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                        {downloadingResourceId === assignment.id ? 'Opening...' : 'Resources'}
+                      </button>
+                    ) : (
+                      <span className="text-sm text-gray-400">None</span>
+                    )}
+                  </div>
                 </div>
-                <div className="w-px h-8 bg-gray-100"></div>
-                <div className="text-right">
-                  <p className="text-xs text-gray-400 font-medium">MATERIAL</p>
-                  {assignment.attachmentUrl ? (
-                    <a href={assignment.attachmentUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
-                      <Paperclip className="w-4 h-4" />
-                      Resources
-                    </a>
+                
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button
+                    onClick={() => navigate(`/assignments/${assignment.id}`)}
+                    className="flex-1 md:flex-none px-5 py-2 border border-blue-200 text-blue-800 text-sm font-semibold rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
+                  >
+                    View Assignment
+                  </button>
+                  {assignment.status === 'pending' ? (
+                    <button 
+                      onClick={() => navigate(`/assignments/${assignment.id}?submit=1`)} 
+                      className="flex-1 md:flex-none px-6 py-2 bg-[#1e3a8a] text-white text-sm font-semibold rounded-lg hover:bg-blue-800 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      Submit Work
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
                   ) : (
-                    <span className="text-sm text-gray-400">None</span>
+                    <button 
+                      onClick={() => navigate(`/assignments/${assignment.id}`)} 
+                      className="flex-1 md:flex-none px-6 py-2 bg-gray-100 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors cursor-pointer"
+                    >
+                      View Submission
+                    </button>
                   )}
                 </div>
               </div>
-              
-              <div className="flex gap-2 w-full md:w-auto">
-                <button
-                  onClick={() => navigate(`/assignments/${assignment.id}`)}
-                  className="flex-1 md:flex-none px-5 py-2 border border-blue-200 text-blue-800 text-sm font-semibold rounded-lg hover:bg-blue-50 transition-colors"
-                >
-                  View Assignment
-                </button>
-                {assignment.status === 'pending' ? (
-                  <button onClick={() => navigate(`/assignments/${assignment.id}?submit=1`)} className="flex-1 md:flex-none px-6 py-2 bg-blue-900 text-white text-sm font-semibold rounded-lg hover:bg-blue-800 transition-colors flex items-center justify-center gap-2">
-                    Submit Work
-                    <ExternalLink className="w-4 h-4" />
-                  </button>
-                ) : (
-                  <button onClick={() => navigate(`/assignments/${assignment.id}`)} className="flex-1 md:flex-none px-6 py-2 bg-gray-100 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-200 transition-colors">
-                    View Submission
-                  </button>
-                )}
-              </div>
             </div>
-          </div>
-        ))}
+          ))}
         </div>
       )}
     </div>

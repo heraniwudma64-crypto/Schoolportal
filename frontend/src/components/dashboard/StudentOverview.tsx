@@ -10,9 +10,8 @@ import {
   Clock
 } from 'lucide-react';
 import StatCard from './StatCard';
-import { MOCK_ASSIGNMENTS } from '../../data/mockData';
 import { getUserNotices } from '../../api/notices';
-import { getMyAttendance, getMyCourses, getMyResults } from '../../api/students';
+import { getMyAttendance, getMyCourses, getMyResults, getMyAssignments } from '../../api/students';
 
 const StudentOverview = () => {
   const { data: notices = [], isLoading: noticesLoading, isError: noticesError } = useQuery({
@@ -27,16 +26,31 @@ const StudentOverview = () => {
     queryKey: ['my-attendance'],
     queryFn: getMyAttendance,
   });
-  const { data: results = [], isLoading: resultsLoading, isError: resultsError } = useQuery({
+  const { data: results, isLoading: resultsLoading, isError: resultsError } = useQuery({
     queryKey: ['my-results'],
     queryFn: getMyResults,
+  });
+  const { data: assignments = [], isLoading: assignmentsLoading, isError: assignmentsError } = useQuery({
+    queryKey: ['my-assignments'],
+    queryFn: getMyAssignments,
   });
 
   const presentDays = attendance.filter((record) => record.status === 'PRESENT').length;
   const attendancePercentage = attendance.length ? (presentDays / attendance.length) * 100 : null;
-  const totalObtained = results.reduce((sum, result) => sum + result.marksObtained, 0);
-  const totalPossible = results.reduce((sum, result) => sum + result.Exam.totalMarks, 0);
-  const average = totalPossible ? (totalObtained / totalPossible) * 100 : null;
+
+  // Calculate academic average safely from finalized subjectResults, or fallback to component grades
+  const subjectResults = results?.subjectResults || [];
+  const grades = results?.grades || [];
+  let average: number | null = null;
+  if (subjectResults.length > 0) {
+    const total = subjectResults.reduce((sum, r) => sum + (Number(r.marks) || 0), 0);
+    average = total / subjectResults.length;
+  } else if (grades.length > 0) {
+    const total = grades.reduce((sum, g) => sum + (Number(g.score) || 0), 0);
+    average = total / grades.length;
+  }
+
+  const pendingAssignments = assignments.filter((a) => !a.submissions || a.submissions.length === 0);
 
   return (
     <div className="space-y-6">
@@ -49,7 +63,7 @@ const StudentOverview = () => {
         />
         <StatCard 
           title="Pending Assignments" 
-          value={MOCK_ASSIGNMENTS.filter(a => a.status === 'pending').length} 
+          value={assignmentsLoading ? '…' : assignmentsError ? '—' : pendingAssignments.length} 
           icon={ClipboardList} 
           iconClassName="bg-amber-50 text-amber-600"
         />
@@ -75,7 +89,6 @@ const StudentOverview = () => {
               <Bell className="w-5 h-5 text-blue-600" />
               Recent Announcements
             </h3>
-            <button className="text-sm text-blue-600 font-medium hover:underline">View All</button>
           </div>
           <div className="divide-y divide-gray-100">
             {noticesLoading && (
@@ -111,12 +124,23 @@ const StudentOverview = () => {
             </h3>
           </div>
           <div className="p-6 space-y-4">
-            {MOCK_ASSIGNMENTS.filter(a => a.status === 'pending').map((a) => (
+            {assignmentsLoading && (
+              <p className="text-sm text-gray-500">Loading deadlines...</p>
+            )}
+            {assignmentsError && (
+              <p className="text-sm text-red-600">Could not load deadlines.</p>
+            )}
+            {!assignmentsLoading && !assignmentsError && pendingAssignments.length === 0 && (
+              <p className="text-sm text-gray-500">No pending deadlines.</p>
+            )}
+            {pendingAssignments.slice(0, 5).map((a) => (
               <div key={a.id} className="flex items-start gap-4">
                 <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 shrink-0"></div>
                 <div>
                   <h4 className="text-sm font-semibold text-gray-900">{a.title}</h4>
-                  <p className="text-xs text-gray-500">{a.subjectName} • Due {a.dueDate}</p>
+                  <p className="text-xs text-gray-500">
+                    {a.ClassSection?.name || a.targetClass || 'General'} • Due {a.dueDate ? new Date(a.dueDate).toLocaleDateString() : 'No date'}
+                  </p>
                 </div>
               </div>
             ))}

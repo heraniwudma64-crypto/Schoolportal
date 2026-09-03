@@ -445,7 +445,7 @@ const ParentAssignments: React.FC = () => {
                     )}
                   </div>
 
-                  {assignment.attachmentUrl && (
+                  {assignment.attachmentUrl && assignment.attachmentUrl.startsWith('http') && (
                     <a
                       href={assignment.attachmentUrl}
                       target="_blank"
