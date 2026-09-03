@@ -91,6 +91,17 @@ export interface ChildGradeRecord {
   createdAt: string;
 }
 
+export interface ChildSubjectResultRecord {
+  id: string;
+  subjectId: string;
+  subjectName: string;
+  subjectCode: string;
+  term: string;   // "TERM_1" … "TERM_4"
+  marks: number;
+  status: string;
+  updatedAt: string;
+}
+
 export interface ChildExamAttemptRecord {
   id: string;
   examId: string;
@@ -124,6 +135,7 @@ export interface ChildResultsResponse {
   overallAverage: number;
   totalRecords: number;
   grades: ChildGradeRecord[];
+  subjectResults: ChildSubjectResultRecord[];
   examResults?: ChildExamResultRecord[];
   examAttempts: ChildExamAttemptRecord[];
 }

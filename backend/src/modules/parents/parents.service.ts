@@ -299,49 +299,48 @@ export class ParentsService {
 
   /**
    * 2. Results: GET /parents/me/children/:studentId/results
+   *
+   * Returns both legacy Grade rows (component scores) AND homeroom-finalized
+   * SubjectResult rows (SUBMITTED) so parents see the complete picture.
    */
   async getChildResults(parentUserId: string, studentId: string) {
     const student = await this.validateChildOwnership(parentUserId, studentId);
 
+    // ── Legacy Grade rows ────────────────────────────────────────────────────
     const grades = await this.prisma.grade.findMany({
-      where: {
-        studentId: student.id,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      where: { studentId: student.id },
+      orderBy: { createdAt: 'desc' },
     });
 
+    // ── Homeroom-finalized SubjectResult rows (SUBMITTED) ────────────────────
+    const classSectionId =
+      student.classSectionId ?? student.StudentEnrollment?.[0]?.classSectionId;
+    const academicYearId = student.StudentEnrollment?.[0]?.academicYearId;
+
+    const subjectResults =
+      classSectionId && academicYearId
+        ? await (this.prisma as any).subjectResult.findMany({
+            where: {
+              studentId: student.id,
+              classSectionId,
+              academicYearId,
+              status: 'SUBMITTED',
+            },
+            include: { Subject: { select: { id: true, name: true, code: true } } },
+            orderBy: [{ term: 'asc' }, { Subject: { name: 'asc' } }],
+          })
+        : [];
+
     const examResults = await this.prisma.studentExamResult.findMany({
-      where: {
-        studentId: student.id,
-      },
-      include: {
-        examination: {
-          include: {
-            Subject: true,
-          },
-        },
-      },
-      orderBy: {
-        submittedAt: 'desc',
-      },
+      where: { studentId: student.id },
+      include: { examination: { include: { Subject: true } } },
+      orderBy: { submittedAt: 'desc' },
     });
 
     const examAttempts = await this.prisma.examAttempt.findMany({
-      where: {
-        studentId: student.id,
-      },
-      include: {
-        Examination: {
-          include: {
-            Subject: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      where: { studentId: student.id },
+      include: { Examination: { include: { Subject: true } } },
+      orderBy: { createdAt: 'desc' },
     });
 
     const totalScore = grades.reduce((sum, g) => sum + (Number(g.score) || 0), 0);
@@ -375,6 +374,17 @@ export class ParentsService {
           createdAt: g.createdAt,
         };
       }),
+      // Term-by-term finalized results from the homeroom teacher
+      subjectResults: subjectResults.map((r: any) => ({
+        id: r.id,
+        subjectId: r.subjectId,
+        subjectName: r.Subject?.name ?? '—',
+        subjectCode: r.Subject?.code ?? '—',
+        term: r.term,
+        marks: r.marks,
+        status: r.status,
+        updatedAt: r.updatedAt,
+      })),
       examResults: examResults.map((er) => ({
         id: er.id,
         examId: er.examId,
