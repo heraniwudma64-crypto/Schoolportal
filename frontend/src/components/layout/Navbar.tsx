@@ -32,7 +32,16 @@ const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSe
 
       <div className="flex items-center gap-4">
         {user?.role === 'parent' && <ChildSelector />}
-        <Link to={user?.role === 'admin' ? '/admin/account' : '/teacher/profile'} className="flex items-center gap-3 hover:bg-gray-50 p-1.5 rounded-lg transition-colors cursor-pointer">
+        <Link 
+          to={
+            user?.role === 'admin' 
+              ? '/admin/account' 
+              : user?.role === 'student' || user?.role === 'parent' 
+                ? '/account' 
+                : '/teacher/profile'
+          } 
+          className="flex items-center gap-3 hover:bg-gray-50 p-1.5 rounded-lg transition-colors cursor-pointer"
+        >
           <div className="text-right hidden sm:block">
             <p className="text-sm font-semibold text-gray-900">{user?.name}</p>
             <p className="text-xs text-gray-500 capitalize">{user?.role}</p>

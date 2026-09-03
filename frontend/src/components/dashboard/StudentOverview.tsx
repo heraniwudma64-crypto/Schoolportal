@@ -9,9 +9,8 @@ import {
   Clock
 } from 'lucide-react';
 import StatCard from './StatCard';
-import { MOCK_ASSIGNMENTS } from '../../data/mockData';
 import { getUserNotices } from '../../api/notices';
-import { getMyAttendance, getMyCourses, getMyResults } from '../../api/students';
+import { getMyAttendance, getMyCourses, getMyResults, getMyAssignments } from '../../api/students';
 import StudentVideoLessons from './StudentVideoLessons';
 
 const StudentOverview = () => {
@@ -27,35 +26,33 @@ const StudentOverview = () => {
     queryKey: ['my-attendance'],
     queryFn: getMyAttendance,
   });
-  const { data: results = [], isLoading: resultsLoading, isError: resultsError } = useQuery({
+  const { data: results, isLoading: resultsLoading, isError: resultsError } = useQuery({
     queryKey: ['my-results'],
     queryFn: getMyResults,
   });
+  const { data: assignments = [], isLoading: assignmentsLoading, isError: assignmentsError } = useQuery({
+    queryKey: ['my-assignments'],
+    queryFn: getMyAssignments,
+  });
 
   const attendanceList = Array.isArray(attendance) ? attendance : [];
-  const presentDays = attendanceList.filter((record) => record.status === 'PRESENT').length;
+  const presentDays = attendanceList.filter((record: any) => record.status === 'PRESENT').length;
   const attendancePercentage = attendanceList.length ? (presentDays / attendanceList.length) * 100 : null;
 
-  // Handle both array and object { grades, subjectResults } shapes safely
-  const gradeItems: any[] = Array.isArray(results)
-    ? results
-    : Array.isArray((results as any)?.grades)
-      ? (results as any).grades
-      : [];
-
-  let totalObtained = 0;
-  let totalPossible = 0;
-  if (gradeItems.length > 0) {
-    for (const item of gradeItems) {
-      const score = Number(item.score ?? item.marksObtained ?? 0);
-      const max = Number(item.Exam?.totalMarks ?? item.maxScore ?? 100);
-      if (!isNaN(score) && !isNaN(max) && max > 0) {
-        totalObtained += score;
-        totalPossible += max;
-      }
-    }
+  // Calculate academic average safely from finalized subjectResults, or fallback to component grades
+  const subjectResults = (results as any)?.subjectResults || [];
+  const grades = (results as any)?.grades || (Array.isArray(results) ? results : []);
+  let average: number | null = null;
+  if (subjectResults.length > 0) {
+    const total = subjectResults.reduce((sum: number, r: any) => sum + (Number(r.marks) || 0), 0);
+    average = total / subjectResults.length;
+  } else if (grades.length > 0) {
+    const total = grades.reduce((sum: number, g: any) => sum + (Number(g.score ?? g.marksObtained) || 0), 0);
+    average = total / grades.length;
   }
-  const average = totalPossible > 0 ? (totalObtained / totalPossible) * 100 : null;
+
+  const assignmentList = Array.isArray(assignments) ? assignments : [];
+  const pendingAssignments = assignmentList.filter((a: any) => !a.submissions || a.submissions.length === 0);
 
   return (
     <div className="space-y-6">
@@ -68,7 +65,7 @@ const StudentOverview = () => {
         />
         <StatCard 
           title="Pending Assignments" 
-          value={MOCK_ASSIGNMENTS.filter(a => a.status === 'pending').length} 
+          value={assignmentsLoading ? '…' : assignmentsError ? '—' : pendingAssignments.length} 
           icon={ClipboardList} 
           iconClassName="bg-amber-50 text-amber-600"
         />
@@ -93,7 +90,6 @@ const StudentOverview = () => {
             <h3 className="font-bold text-gray-900 flex items-center gap-2">
               Recent Announcements
             </h3>
-            <button className="text-sm text-blue-600 font-medium hover:underline">View All</button>
           </div>
           <div className="divide-y divide-gray-100">
             {noticesLoading && (
@@ -136,12 +132,23 @@ const StudentOverview = () => {
             </h3>
           </div>
           <div className="p-6 space-y-4">
-            {MOCK_ASSIGNMENTS.filter(a => a.status === 'pending').map((a) => (
+            {assignmentsLoading && (
+              <p className="text-sm text-gray-500">Loading deadlines...</p>
+            )}
+            {assignmentsError && (
+              <p className="text-sm text-red-600">Could not load deadlines.</p>
+            )}
+            {!assignmentsLoading && !assignmentsError && pendingAssignments.length === 0 && (
+              <p className="text-sm text-gray-500">No pending deadlines.</p>
+            )}
+            {pendingAssignments.slice(0, 5).map((a) => (
               <div key={a.id} className="flex items-start gap-4">
                 <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 shrink-0"></div>
                 <div>
                   <h4 className="text-sm font-semibold text-gray-900">{a.title}</h4>
-                  <p className="text-xs text-gray-500">{a.subjectName} • Due {a.dueDate}</p>
+                  <p className="text-xs text-gray-500">
+                    {a.ClassSection?.name || a.targetClass || 'General'} • Due {a.dueDate ? new Date(a.dueDate).toLocaleDateString() : 'No date'}
+                  </p>
                 </div>
               </div>
             ))}
