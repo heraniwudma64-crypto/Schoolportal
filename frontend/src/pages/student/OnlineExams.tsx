@@ -312,9 +312,9 @@ export default function OnlineExams() {
       ) : exams.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
           <BookOpen className="w-10 h-10 mx-auto mb-3 text-gray-200" />
-          <p className="font-semibold text-gray-500">No exams available</p>
+          <p className="font-semibold text-gray-500">No published exams yet</p>
           <p className="text-sm text-gray-400 mt-1">
-            Approved exams assigned to your class will appear here.
+            Exams that your teacher has published and scheduled will appear here with a live countdown timer.
           </p>
         </div>
       ) : (

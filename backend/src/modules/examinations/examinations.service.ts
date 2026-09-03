@@ -261,14 +261,16 @@ export class ExaminationsService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Returns the calling teacher's APPROVED exams with question previews so the
-   * teacher dashboard can display them immediately after admin approval.
+   * Returns the calling teacher's APPROVED exams with question previews and
+   * current window fields so the Publish modal can prepopulate them.
    */
   async findApprovedForTeacher(userId: string) {
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
-    return this.prisma.examination.findMany({
+    // Cast to any: windowStart/windowEnd/delayMinutes are in the DB via raw
+    // migration but not yet in the generated Prisma client types.
+    const exams: any[] = await (this.prisma as any).examination.findMany({
       where: { teacherId: teacher.id, status: ExamStatus.APPROVED },
       include: {
         Subject: { select: { id: true, name: true } },
@@ -278,6 +280,155 @@ export class ExaminationsService {
       },
       orderBy: { updatedAt: 'desc' },
     });
+
+    return exams.map((e: any) => ({
+      id: e.id,
+      title: e.title,
+      duration: e.duration,
+      totalMarks: e.totalMarks,
+      status: e.status,
+      instructions: e.instructions,
+      Subject: e.Subject,
+      Class: e.Class,
+      ClassSection: e.ClassSection,
+      questions: e.questions,
+      windowStart: e.windowStart ?? null,
+      windowEnd: e.windowEnd ?? null,
+      delayMinutes: e.delayMinutes ?? 0,
+      updatedAt: e.updatedAt,
+    }));
+  }
+
+  /**
+   * Returns the calling teacher's PUBLISHED exams (already deployed to students)
+   * enriched with window fields and question count.
+   */
+  async findPublishedForTeacher(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+
+    const exams: any[] = await (this.prisma as any).examination.findMany({
+      where: { teacherId: teacher.id, status: 'PUBLISHED' },
+      include: {
+        Subject: { select: { id: true, name: true } },
+        ClassSection: { select: { id: true, name: true } },
+        questions: { select: { id: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const now = new Date();
+    return exams.map((e: any) => {
+      let windowStatus: 'SCHEDULED' | 'OPEN' | 'CLOSED' | 'NO_WINDOW' = 'NO_WINDOW';
+      if (e.windowStart && e.windowEnd) {
+        if (now < new Date(e.windowStart)) windowStatus = 'SCHEDULED';
+        else if (now > new Date(e.windowEnd)) windowStatus = 'CLOSED';
+        else windowStatus = 'OPEN';
+      }
+      return {
+        id: e.id,
+        title: e.title,
+        duration: e.duration,
+        totalMarks: e.totalMarks,
+        status: e.status,
+        Subject: e.Subject,
+        ClassSection: e.ClassSection,
+        questionCount: e.questions?.length ?? 0,
+        windowStart: e.windowStart ?? null,
+        windowEnd: e.windowEnd ?? null,
+        delayMinutes: e.delayMinutes ?? 0,
+        windowStatus,
+        updatedAt: e.updatedAt,
+      };
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TEACHER: PUBLISH EXAM TO STUDENTS
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Atomically moves an APPROVED exam to PUBLISHED and stamps the delivery
+   * window so students can immediately see it on their dashboards.
+   *
+   * Guards enforced server-side:
+   *  1. Caller must be the owning teacher.
+   *  2. Exam must be APPROVED (not DRAFT / PENDING / REJECTED / already PUBLISHED).
+   *  3. windowEnd must be after windowStart.
+   *  4. windowStart must be in the future (teachers cannot publish an already-closed window).
+   */
+  async publishExam(
+    examId: string,
+    dto: { windowStart: string; windowEnd: string },
+    userId: string,
+  ) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+
+    const exam = await this.prisma.examination.findUnique({ where: { id: examId } });
+    if (!exam) throw new NotFoundException('Examination not found');
+    if (exam.teacherId !== teacher.id) throw new ForbiddenException('You do not own this examination');
+    if (exam.status !== ExamStatus.APPROVED) {
+      throw new BadRequestException(
+        exam.status === 'PUBLISHED' as any
+          ? 'This exam is already published. Use the delay endpoint to adjust timing.'
+          : 'Only APPROVED exams can be published. Submit the exam for admin review first.',
+      );
+    }
+
+    const start = new Date(dto.windowStart);
+    const end   = new Date(dto.windowEnd);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid date format for windowStart or windowEnd');
+    }
+    if (end <= start) {
+      throw new BadRequestException('windowEnd must be after windowStart');
+    }
+    // Allow scheduling up to 30 days in advance; reject obviously wrong past dates.
+    const now = new Date();
+    const maxFutureMs = 30 * 24 * 60 * 60 * 1000;
+    if (start < new Date(now.getTime() - 60_000)) {
+      // 60-second grace for network latency
+      throw new BadRequestException('windowStart cannot be in the past');
+    }
+    if (start.getTime() - now.getTime() > maxFutureMs) {
+      throw new BadRequestException('windowStart cannot be more than 30 days in the future');
+    }
+
+    // Single atomic write: set status + window in one UPDATE.
+    // Uses (any) cast because PUBLISHED and window fields are not yet in the
+    // generated Prisma client (PUBLISHED via raw enum migration, window fields
+    // via raw column migration — neither has been regenerated yet).
+    const updated: any = await (this.prisma as any).examination.update({
+      where: { id: examId },
+      data: {
+        status: 'PUBLISHED',
+        windowStart: start,
+        windowEnd: end,
+        delayMinutes: 0,          // reset any prior delays on fresh publish
+        updatedAt: now,
+      },
+      include: {
+        Subject: { select: { id: true, name: true } },
+        ClassSection: { select: { id: true, name: true } },
+        questions: { select: { id: true } },
+      },
+    });
+
+    return {
+      id: updated.id,
+      title: updated.title,
+      status: updated.status,
+      windowStart: updated.windowStart,
+      windowEnd: updated.windowEnd,
+      delayMinutes: updated.delayMinutes,
+      subject: updated.Subject,
+      classSection: updated.ClassSection,
+      questionCount: updated.questions?.length ?? 0,
+      publishedAt: now.toISOString(),
+      message: `Exam "${updated.title}" has been published and will be available to students from ${start.toLocaleString()}.`,
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -353,7 +504,7 @@ export class ExaminationsService {
     if (!student) throw new NotFoundException('Student profile not found');
 
     const exams: any[] = await (this.prisma as any).examination.findMany({
-      where: { classSectionId: student.classSectionId ?? undefined, status: ExamStatus.APPROVED },
+      where: { classSectionId: student.classSectionId ?? undefined, status: 'PUBLISHED' },
       select: {
         id: true,
         title: true,
@@ -419,7 +570,9 @@ export class ExaminationsService {
       include: { questions: { include: { options: true } } },
     });
     if (!exam) throw new NotFoundException('Examination not found');
-    if (exam.status !== ExamStatus.APPROVED) throw new BadRequestException('This exam is not available');
+    if (exam.status !== ExamStatus.APPROVED && exam.status !== 'PUBLISHED') {
+      throw new BadRequestException('This exam is not available');
+    }
     if (exam.classSectionId !== student.classSectionId) {
       throw new ForbiddenException('This exam is not assigned to your class');
     }

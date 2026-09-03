@@ -37,12 +37,32 @@ export class ExaminationsController {
     return this.examinationsService.getDrafts(req.user.id);
   }
 
-  // ── Teacher: own approved exams ───────────────────────────────────────────
+  // ── Teacher: own approved exams (ready to publish) ───────────────────────
   @Get('approved-for-teacher')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
   getApprovedForTeacher(@Req() req: any) {
     return this.examinationsService.findApprovedForTeacher(req.user.id);
+  }
+
+  // ── Teacher: already-published exams (deployed to students) ──────────────
+  @Get('published-for-teacher')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.TEACHER)
+  getPublishedForTeacher(@Req() req: any) {
+    return this.examinationsService.findPublishedForTeacher(req.user.id);
+  }
+
+  // ── Teacher: publish an APPROVED exam to students ─────────────────────────
+  @Post(':id/publish')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.TEACHER)
+  publishExam(
+    @Param('id') id: string,
+    @Body() body: { windowStart: string; windowEnd: string },
+    @Req() req: any,
+  ) {
+    return this.examinationsService.publishExam(id, body, req.user.id);
   }
 
   // ── Teacher: sessions awaiting resume approval ────────────────────────────

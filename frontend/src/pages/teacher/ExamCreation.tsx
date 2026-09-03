@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Trash2, Clock, CheckCircle2, Save, Send, HelpCircle,
   AlertCircle, FolderOpen, X, BadgeCheck, XCircle, RefreshCw,
-  FileText, AlertTriangle,
+  FileText, AlertTriangle, Rocket, Calendar, Globe, Timer,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
@@ -19,10 +20,7 @@ interface Question {
   marks: number;
 }
 
-interface Subject {
-  id: string;
-  name: string;
-}
+interface Subject { id: string; name: string; }
 
 type TeachingAssignment = {
   subjectId: string;
@@ -31,7 +29,7 @@ type TeachingAssignment = {
   ClassSection: { id: string; name: string };
 };
 
-type ExamStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+type ExamStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'PUBLISHED';
 
 interface TeacherExam {
   id: string;
@@ -39,170 +37,330 @@ interface TeacherExam {
   status: ExamStatus;
   duration: number;
   instructions?: string | null;
-  Subject?: { name: string } | null;
+  Subject?: { id: string; name: string } | null;
   Class?: { name: string } | null;
-  ClassSection?: { name: string } | null;
+  ClassSection?: { id: string; name: string } | null;
   questions?: Array<{ id: string; text: string }>;
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  delayMinutes?: number;
   updatedAt?: string;
+}
+
+interface PublishedExam {
+  id: string;
+  title: string;
+  status: string;
+  duration: number;
+  Subject?: { name: string } | null;
+  ClassSection?: { name: string } | null;
+  questionCount: number;
+  windowStart: string | null;
+  windowEnd: string | null;
+  delayMinutes: number;
+  windowStatus: 'SCHEDULED' | 'OPEN' | 'CLOSED' | 'NO_WINDOW';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Extracts a rejection reason stored in the instructions field.
- * The backend writes: "[REJECTION_REASON]: <reason>"
- */
 function extractRejectionReason(instructions?: string | null): string | null {
   if (!instructions) return null;
-  const match = instructions.match(/^\[REJECTION_REASON\]:\s*(.+)/s);
-  return match ? match[1].trim() : null;
+  const m = instructions.match(/^\[REJECTION_REASON\]:\s*(.+)/s);
+  return m ? m[1].trim() : null;
 }
 
 const STATUS_CONFIG: Record<ExamStatus, { label: string; bg: string; text: string; icon: React.ReactNode }> = {
-  DRAFT:    { label: 'Draft',           bg: 'bg-gray-100',   text: 'text-gray-600',  icon: <FileText  className="w-3.5 h-3.5" /> },
-  PENDING:  { label: 'Pending Review',  bg: 'bg-amber-100',  text: 'text-amber-700', icon: <Clock     className="w-3.5 h-3.5" /> },
-  APPROVED: { label: 'Approved',        bg: 'bg-green-100',  text: 'text-green-700', icon: <BadgeCheck className="w-3.5 h-3.5" /> },
-  REJECTED: { label: 'Rejected',        bg: 'bg-red-100',    text: 'text-red-700',   icon: <XCircle   className="w-3.5 h-3.5" /> },
+  DRAFT:     { label: 'Draft',           bg: 'bg-gray-100',   text: 'text-gray-600',  icon: <FileText   className="w-3.5 h-3.5" /> },
+  PENDING:   { label: 'Pending Review',  bg: 'bg-amber-100',  text: 'text-amber-700', icon: <Clock      className="w-3.5 h-3.5" /> },
+  APPROVED:  { label: 'Approved',        bg: 'bg-green-100',  text: 'text-green-700', icon: <BadgeCheck className="w-3.5 h-3.5" /> },
+  REJECTED:  { label: 'Rejected',        bg: 'bg-red-100',    text: 'text-red-700',   icon: <XCircle    className="w-3.5 h-3.5" /> },
+  PUBLISHED: { label: 'Published',       bg: 'bg-blue-100',   text: 'text-blue-700',  icon: <Globe      className="w-3.5 h-3.5" /> },
 };
 
-// ─── Component ────────────────────────────────────────────────────────────────
+/** Format an ISO string for display. */
+function fmtDT(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** Minutes from now → datetime-local value string (YYYY-MM-DDTHH:mm). */
+function nowPlus(mins: number): string {
+  const d = new Date(Date.now() + mins * 60_000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ─── Publish Modal ─────────────────────────────────────────────────────────────
+
+interface PublishModalProps {
+  exam: TeacherExam;
+  onClose: () => void;
+  onPublished: (examId: string) => void;
+}
+
+function PublishModal({ exam, onClose, onPublished }: PublishModalProps) {
+  const [windowStart, setWindowStart] = useState(() =>
+    exam.windowStart ? new Date(exam.windowStart).toISOString().slice(0, 16) : nowPlus(5),
+  );
+  const [windowEnd, setWindowEnd] = useState(() =>
+    exam.windowEnd
+      ? new Date(exam.windowEnd).toISOString().slice(0, 16)
+      : nowPlus(5 + exam.duration + 10),
+  );
+  const [publishing, setPublishing] = useState(false);
+
+  const startDate = windowStart ? new Date(windowStart) : null;
+  const endDate   = windowEnd   ? new Date(windowEnd)   : null;
+  const windowMins = startDate && endDate ? Math.round((endDate.getTime() - startDate.getTime()) / 60_000) : 0;
+  const isPast   = startDate ? startDate < new Date(Date.now() - 60_000) : false;
+  const badOrder = startDate && endDate ? endDate <= startDate : false;
+  const isValid  = startDate && endDate && !isPast && !badOrder;
+
+  const validationMsg = isPast ? 'Start time cannot be in the past.'
+    : badOrder ? 'End time must be after start time.'
+    : '';
+
+  const handlePublish = async () => {
+    if (!isValid) return;
+    setPublishing(true);
+    try {
+      const res = await api.post<{ message: string }>(`/examinations/${exam.id}/publish`, {
+        windowStart: startDate!.toISOString(),
+        windowEnd:   endDate!.toISOString(),
+      });
+      toast.success(res.message ?? `"${exam.title}" is now live for students!`);
+      onPublished(exam.id);
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Could not publish exam');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-gray-100">
+
+        {/* Header */}
+        <div className="flex items-center justify-between p-8 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-900">
+              <Rocket className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-gray-900">Publish to Students</h3>
+              <p className="text-xs text-gray-400 font-semibold mt-0.5">Set the delivery window for this exam</p>
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-8 space-y-5">
+          {/* Exam info strip */}
+          <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 text-sm">
+            <p className="font-black text-gray-900">{exam.title}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {exam.Subject?.name ?? '—'} &bull; {exam.ClassSection?.name ?? '—'} &bull; {exam.duration} mins &bull; {exam.questions?.length ?? 0} questions
+            </p>
+          </div>
+
+          {/* Start datetime */}
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">
+              Start Time <span className="normal-case font-semibold tracking-normal text-red-400">(when students can begin)</span>
+            </label>
+            <div className="relative">
+              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input type="datetime-local" value={windowStart}
+                onChange={(e) => setWindowStart(e.target.value)}
+                className="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-semibold text-gray-900 transition-all" />
+            </div>
+          </div>
+
+          {/* End datetime */}
+          <div>
+            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">
+              End Time <span className="normal-case font-semibold tracking-normal text-red-400">(window closes — no new sessions after this)</span>
+            </label>
+            <div className="relative">
+              <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input type="datetime-local" value={windowEnd}
+                onChange={(e) => setWindowEnd(e.target.value)}
+                className="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-semibold text-gray-900 transition-all" />
+            </div>
+          </div>
+
+          {/* Live validation / preview */}
+          {startDate && endDate && (
+            <div className={cn('rounded-2xl p-4 border text-sm space-y-1.5',
+              isValid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200')}>
+              {isValid ? (
+                <>
+                  <p className="font-bold text-green-900 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" /> Ready to publish
+                  </p>
+                  <p className="text-green-800 text-xs">
+                    Students in <strong>{exam.ClassSection?.name ?? 'your section'}</strong> can start
+                    from <strong>{fmtDT(windowStart)}</strong> until <strong>{fmtDT(windowEnd)}</strong>.
+                  </p>
+                  <p className="text-green-700 text-xs">
+                    Total window: <strong>{windowMins} minutes</strong>
+                    {windowMins < exam.duration && (
+                      <span className="text-amber-700 ml-2">
+                        ⚠ Shorter than exam duration ({exam.duration} mins) — late starters may run out of time.
+                      </span>
+                    )}
+                  </p>
+                </>
+              ) : (
+                <p className="font-bold text-red-800 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" /> {validationMsg}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-8 pb-8 flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 py-3.5 bg-gray-100 text-gray-700 rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-gray-200 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handlePublish} disabled={!isValid || publishing}
+            className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors disabled:opacity-50 shadow-lg shadow-blue-900/20">
+            {publishing
+              ? <><RefreshCw className="w-4 h-4 animate-spin" /> Publishing…</>
+              : <><Rocket className="w-4 h-4" /> Publish Now</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 
 export default function ExamCreation() {
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [teachingAssignments, setTeachingAssignments] = useState<TeachingAssignment[]>([]);
-  const [teacherExams, setTeacherExams] = useState<TeacherExam[]>([]);
-  const [approvedExams, setApprovedExams] = useState<TeacherExam[]>([]);
+  const [teacherExams,   setTeacherExams]   = useState<TeacherExam[]>([]);
+  const [approvedExams,  setApprovedExams]  = useState<TeacherExam[]>([]);
+  const [publishedExams, setPublishedExams] = useState<PublishedExam[]>([]);
 
   const [examData, setExamData] = useState({
-    title: '',
-    subjectId: '',
-    classId: '',
-    classSectionId: '',
-    duration: 60,
-    instructions: '',
+    title: '', subjectId: '', classId: '', classSectionId: '',
+    duration: 60, instructions: '',
   });
-
   const [questions, setQuestions] = useState<Question[]>([
     { id: '1', text: '', options: ['', '', '', ''], correctAnswer: 0, marks: 10 },
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Draft modal state
+  // Draft modal
   const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
-  const [draftsList, setDraftsList] = useState<any[]>([]);
-  const [isLoadingDrafts, setIsLoadingDrafts] = useState(false);
+  const [draftsList,        setDraftsList]        = useState<any[]>([]);
+  const [isLoadingDrafts,  setIsLoadingDrafts]   = useState(false);
 
-  // Approved exams expanded state (exam id → bool)
-  const [expandedApproved, setExpandedApproved] = useState<Record<string, boolean>>({});
+  // Expand/collapse for approved & published cards
+  const [expandedApproved,  setExpandedApproved]  = useState<Record<string, boolean>>({});
+  const [expandedPublished, setExpandedPublished] = useState<Record<string, boolean>>({});
 
-  // ── Data loaders ────────────────────────────────────────────────────────────
+  // Delay inputs per published exam
+  const [delayInputs, setDelayInputs] = useState<Record<string, string>>({});
+  const [delayingId,  setDelayingId]  = useState<string | null>(null);
+
+  // Publish modal
+  const [publishModalExam, setPublishModalExam] = useState<TeacherExam | null>(null);
+
+  // ── Data loaders ─────────────────────────────────────────────────────────────
 
   const loadTeacherExams = useCallback(async () => {
-    try {
-      const data = await api.get<TeacherExam[]>('/examinations/teacher');
-      setTeacherExams(data);
-    } catch {
-      toast.error('Failed to load your examinations');
-    }
+    try { setTeacherExams(await api.get<TeacherExam[]>('/examinations/teacher')); } catch { /* silent */ }
   }, []);
 
   const loadApprovedExams = useCallback(async () => {
-    try {
-      const data = await api.get<TeacherExam[]>('/examinations/approved-for-teacher');
-      setApprovedExams(data);
-    } catch {
-      // Non-critical — don't spam with toasts
-    }
+    try { setApprovedExams(await api.get<TeacherExam[]>('/examinations/approved-for-teacher')); } catch { /* silent */ }
+  }, []);
+
+  const loadPublishedExams = useCallback(async () => {
+    try { setPublishedExams(await api.get<PublishedExam[]>('/examinations/published-for-teacher')); } catch { /* silent */ }
   }, []);
 
   useEffect(() => {
-    api
-      .get<{ assignments: TeachingAssignment[] }>('/examinations/form-data')
+    api.get<{ assignments: TeachingAssignment[] }>('/examinations/form-data')
       .then((data) => {
         setTeachingAssignments(data.assignments);
         const first = data.assignments[0];
-        if (first) {
-          setExamData((prev) => ({
-            ...prev,
-            subjectId: first.subjectId,
-            classSectionId: first.classSectionId,
-          }));
-        }
+        if (first) setExamData((p) => ({ ...p, subjectId: first.subjectId, classSectionId: first.classSectionId }));
       })
       .catch((err) => toast.error('Failed to load form data: ' + err.message));
 
     loadTeacherExams();
     loadApprovedExams();
-  }, [loadTeacherExams, loadApprovedExams]);
+    loadPublishedExams();
+  }, [loadTeacherExams, loadApprovedExams, loadPublishedExams]);
 
-  // ── Question helpers ────────────────────────────────────────────────────────
+  // ── After a publish succeeds: move exam from approved to published ──────────
+
+  const handlePublished = useCallback((examId: string) => {
+    setApprovedExams((prev) => prev.filter((e) => e.id !== examId));
+    loadPublishedExams();
+    loadTeacherExams();
+  }, [loadPublishedExams, loadTeacherExams]);
+
+  // ── Question helpers ──────────────────────────────────────────────────────────
 
   const addQuestion = () =>
-    setQuestions((prev) => [
-      ...prev,
+    setQuestions((p) => [
+      ...p,
       { id: Math.random().toString(36).substring(2, 9), text: '', options: ['', '', '', ''], correctAnswer: 0, marks: 10 },
     ]);
 
   const removeQuestion = (id: string) => {
-    if (questions.length > 1) setQuestions((prev) => prev.filter((q) => q.id !== id));
+    if (questions.length > 1) setQuestions((p) => p.filter((q) => q.id !== id));
   };
 
-  const updateQuestion = (id: string, text: string) =>
-    setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, text } : q)));
+  const updateQuestion      = (id: string, text: string)           => setQuestions((p) => p.map((q) => q.id === id ? { ...q, text } : q));
+  const updateQuestionMarks = (id: string, marks: number)          => setQuestions((p) => p.map((q) => q.id === id ? { ...q, marks } : q));
+  const updateOption        = (qId: string, oIdx: number, v: string) =>
+    setQuestions((p) => p.map((q) => q.id === qId ? { ...q, options: q.options.map((o, i) => i === oIdx ? v : o) } : q));
+  const setCorrectAnswer    = (qId: string, idx: number)           =>
+    setQuestions((p) => p.map((q) => q.id === qId ? { ...q, correctAnswer: idx } : q));
 
-  const updateQuestionMarks = (id: string, marks: number) =>
-    setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, marks } : q)));
-
-  const updateOption = (qId: string, optIdx: number, text: string) =>
-    setQuestions((prev) =>
-      prev.map((q) =>
-        q.id === qId ? { ...q, options: q.options.map((opt, i) => (i === optIdx ? text : opt)) } : q,
-      ),
-    );
-
-  const setCorrectAnswer = (qId: string, idx: number) =>
-    setQuestions((prev) => prev.map((q) => (q.id === qId ? { ...q, correctAnswer: idx } : q)));
-
-  // ── Draft modal ─────────────────────────────────────────────────────────────
+  // ── Draft modal ───────────────────────────────────────────────────────────────
 
   const handleOpenDraftsModal = async () => {
-    setIsLoadingDrafts(true);
-    setIsDraftModalOpen(true);
-    try {
-      const data = await api.get<any[]>('/examinations/drafts');
-      setDraftsList(data);
-    } catch {
-      toast.error('Could not load saved drafts.');
-    } finally {
-      setIsLoadingDrafts(false);
-    }
+    setIsLoadingDrafts(true); setIsDraftModalOpen(true);
+    try { setDraftsList(await api.get<any[]>('/examinations/drafts')); }
+    catch { toast.error('Could not load saved drafts.'); }
+    finally { setIsLoadingDrafts(false); }
   };
 
   const handleSelectDraft = (draft: any) => {
-    const defaultSubjectId = teachingAssignments[0]?.subjectId || '';
     setEditingExamId(draft.id);
     setExamData({
       title: draft.title || '',
-      subjectId: draft.Subject?.id || draft.subjectId || defaultSubjectId,
+      subjectId: draft.Subject?.id || draft.subjectId || teachingAssignments[0]?.subjectId || '',
       classId: draft.Class?.id || draft.classId || '',
-      classSectionId:
-        draft.ClassSection?.id || draft.classSectionId || teachingAssignments[0]?.classSectionId || '',
+      classSectionId: draft.ClassSection?.id || draft.classSectionId || teachingAssignments[0]?.classSectionId || '',
       duration: draft.duration || 60,
       instructions: draft.instructions || '',
     });
-
     if (draft.questions?.length) {
-      setQuestions(
-        draft.questions.map((q: any) => ({
-          id: q.id || Math.random().toString(36).substring(2, 9),
-          text: q.questionText || q.text || '',
-          options: q.options?.map((opt: any) => opt.optionText || '') || ['', '', '', ''],
-          correctAnswer: q.options?.findIndex((opt: any) => opt.isCorrect === true) ?? 0,
-          marks: q.marks || 10,
-        })),
-      );
+      setQuestions(draft.questions.map((q: any) => ({
+        id: q.id || Math.random().toString(36).substring(2, 9),
+        text: q.questionText || q.text || '',
+        options: q.options?.map((o: any) => o.optionText || '') || ['', '', '', ''],
+        correctAnswer: q.options?.findIndex((o: any) => o.isCorrect === true) ?? 0,
+        marks: q.marks || 10,
+      })));
     }
-
     setIsDraftModalOpen(false);
     toast.success(`Loaded draft: ${draft.title || 'Untitled Exam'}`);
   };
@@ -210,80 +368,71 @@ export default function ExamCreation() {
   const handleDeleteDraft = async (draftId: string) => {
     try {
       await api.delete(`/examinations/${draftId}`);
-      setDraftsList((prev) => prev.filter((d) => d.id !== draftId));
+      setDraftsList((p) => p.filter((d) => d.id !== draftId));
       loadTeacherExams();
       toast.success('Draft deleted');
-    } catch (err: any) {
-      toast.error(err.message || 'Could not delete draft');
-    }
+    } catch (err: any) { toast.error(err.message || 'Could not delete draft'); }
   };
 
-  // ── Submit (Save Draft / Send for Review) ───────────────────────────────────
+  // ── Submit (Save Draft / Send for Review) ────────────────────────────────────
 
   const handleSubmit = async (status: 'DRAFT' | 'PENDING') => {
     if (!examData.title || !examData.subjectId || !examData.classSectionId) {
-      toast.error('Please fill in the title, subject, and assigned section');
-      return;
+      toast.error('Please fill in the title, subject, and assigned section'); return;
     }
-
-    if (status === 'PENDING' && questions.some((q) => !q.text || q.options.some((opt) => !opt))) {
-      toast.error('Please fill in all questions and options before submitting for review');
-      return;
+    if (status === 'PENDING' && questions.some((q) => !q.text || q.options.some((o) => !o))) {
+      toast.error('Please fill in all questions and options before submitting for review'); return;
     }
-
     setIsSubmitting(true);
-
     const payload = {
       title: examData.title || 'Untitled Examination',
-      subjectId: examData.subjectId,
-      classId: examData.classId,
-      classSectionId: examData.classSectionId,
-      duration: Number(examData.duration),
-      status,
+      subjectId: examData.subjectId, classId: examData.classId,
+      classSectionId: examData.classSectionId, duration: Number(examData.duration), status,
       questions: questions.map((q) => ({
-        questionText: q.text,
-        marks: Number(q.marks) || 10,
+        questionText: q.text, marks: Number(q.marks) || 10,
         options: q.options.map((optText, optIdx) => ({
-          optionText: optText,
-          isCorrect: q.correctAnswer === optIdx,
+          optionText: optText, isCorrect: q.correctAnswer === optIdx,
         })),
       })),
     };
-
     try {
       if (editingExamId) {
         await api.patch(`/examinations/${editingExamId}`, payload);
       } else {
-        const response = await api.post<any>('/examinations', payload);
-        if (response?.id) setEditingExamId(response.id);
+        const res = await api.post<any>('/examinations', payload);
+        if (res?.id) setEditingExamId(res.id);
       }
-
       if (status === 'DRAFT') {
         toast.success('Exam saved as draft');
       } else {
         toast.success('Exam submitted for review — the admin will be notified');
-        // Reset form on successful submit for review
-        setExamData((prev) => ({ ...prev, title: '', instructions: '' }));
+        setExamData((p) => ({ ...p, title: '', instructions: '' }));
         setQuestions([{ id: '1', text: '', options: ['', '', '', ''], correctAnswer: 0, marks: 10 }]);
         setEditingExamId(null);
       }
-
-      await loadTeacherExams();
-      await loadApprovedExams();
-    } catch (err: any) {
-      toast.error(`Failed to save examination: ${err.message}`);
-    } finally {
-      setIsSubmitting(false);
-    }
+      await loadTeacherExams(); await loadApprovedExams();
+    } catch (err: any) { toast.error(`Failed to save examination: ${err.message}`); }
+    finally { setIsSubmitting(false); }
   };
 
-  // ── Derived data ────────────────────────────────────────────────────────────
+  // ── Delay a published exam ────────────────────────────────────────────────────
 
-  const draftExams    = teacherExams.filter((e) => e.status === 'DRAFT');
-  const pendingExams  = teacherExams.filter((e) => e.status === 'PENDING');
-  const rejectedExams = teacherExams.filter((e) => e.status === 'REJECTED');
+  const handleDelay = async (examId: string) => {
+    const mins = Number(delayInputs[examId] ?? '');
+    if (!mins || mins < 1 || mins > 120) { toast.error('Enter a delay between 1 and 120 minutes'); return; }
+    setDelayingId(examId);
+    try {
+      await api.post(`/examinations/${examId}/delay`, { minutes: mins });
+      toast.success(`Exam delayed by ${mins} minutes — student dashboards will update automatically`);
+      setDelayInputs((p) => ({ ...p, [examId]: '' }));
+      loadPublishedExams();
+    } catch (err: any) { toast.error(err?.message || 'Delay failed'); }
+    finally { setDelayingId(null); }
+  };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-20">
@@ -295,27 +444,16 @@ export default function ExamCreation() {
           <p className="text-gray-500 mt-1">Design your exam questions. Results are auto-graded.</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={handleOpenDraftsModal}
-            className="flex items-center gap-2 px-5 py-3 bg-gray-100 rounded-2xl text-sm font-black text-gray-700 uppercase tracking-widest hover:bg-gray-200 transition-colors shadow-sm"
-          >
+          <button type="button" onClick={handleOpenDraftsModal}
+            className="flex items-center gap-2 px-5 py-3 bg-gray-100 rounded-2xl text-sm font-black text-gray-700 uppercase tracking-widest hover:bg-gray-200 transition-colors shadow-sm">
             <FolderOpen className="w-4 h-4" /> View Saved Drafts
           </button>
-          <button
-            disabled={isSubmitting}
-            type="button"
-            onClick={() => handleSubmit('DRAFT')}
-            className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-black text-gray-700 uppercase tracking-widest hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
-          >
+          <button disabled={isSubmitting} type="button" onClick={() => handleSubmit('DRAFT')}
+            className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-black text-gray-700 uppercase tracking-widest hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50">
             <Save className="w-4 h-4" /> Save Draft
           </button>
-          <button
-            disabled={isSubmitting}
-            type="button"
-            onClick={() => handleSubmit('PENDING')}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
-          >
+          <button disabled={isSubmitting} type="button" onClick={() => handleSubmit('PENDING')}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50">
             <Send className="w-4 h-4" />
             {isSubmitting ? 'Sending…' : 'Send to Exam Review'}
           </button>
@@ -325,44 +463,25 @@ export default function ExamCreation() {
       {/* ── Exam metadata form ── */}
       <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-4">
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
-            Exam Title
-          </label>
-          <input
-            type="text"
-            placeholder="e.g. Mathematics Mid-Term Exam 2026"
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Exam Title</label>
+          <input type="text" placeholder="e.g. Mathematics Mid-Term Exam 2026"
             className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900 transition-all placeholder:text-gray-300"
-            value={examData.title}
-            onChange={(e) => setExamData({ ...examData, title: e.target.value })}
-          />
+            value={examData.title} onChange={(e) => setExamData({ ...examData, title: e.target.value })} />
         </div>
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
-            Subject
-          </label>
-          <select
-            className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900 appearance-none"
-            value={examData.subjectId}
-            onChange={(e) => setExamData({ ...examData, subjectId: e.target.value })}
-          >
-            {teachingAssignments.length === 0 ? (
-              <option value="">Loading…</option>
-            ) : (
-              [...new Map(teachingAssignments.map((item) => [item.subjectId, item.Subject])).values()].map(
-                (s) => <option key={s.id} value={s.id}>{s.name}</option>,
-              )
-            )}
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Subject</label>
+          <select className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900 appearance-none"
+            value={examData.subjectId} onChange={(e) => setExamData({ ...examData, subjectId: e.target.value })}>
+            {teachingAssignments.length === 0
+              ? <option value="">Loading…</option>
+              : [...new Map(teachingAssignments.map((item) => [item.subjectId, item.Subject])).values()]
+                  .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
-            Section
-          </label>
-          <select
-            className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900 appearance-none"
-            value={examData.classSectionId}
-            onChange={(e) => setExamData({ ...examData, classSectionId: e.target.value })}
-          >
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Section</label>
+          <select className="w-full bg-gray-50 border border-gray-100 rounded-2xl px-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900 appearance-none"
+            value={examData.classSectionId} onChange={(e) => setExamData({ ...examData, classSectionId: e.target.value })}>
             {teachingAssignments
               .filter((item) => item.subjectId === examData.subjectId)
               .map((item) => (
@@ -373,18 +492,12 @@ export default function ExamCreation() {
           </select>
         </div>
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
-            Duration (Mins)
-          </label>
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Duration (Mins)</label>
           <div className="relative">
             <Clock className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
-            <input
-              type="number"
-              min={5}
+            <input type="number" min={5}
               className="w-full bg-gray-50 border border-gray-100 rounded-2xl pl-14 pr-6 py-4 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-gray-900"
-              value={examData.duration}
-              onChange={(e) => setExamData({ ...examData, duration: Number(e.target.value) })}
-            />
+              value={examData.duration} onChange={(e) => setExamData({ ...examData, duration: Number(e.target.value) })} />
           </div>
         </div>
       </div>
@@ -396,11 +509,8 @@ export default function ExamCreation() {
             <HelpCircle className="w-6 h-6 text-blue-600" />
             Exam Questions ({questions.length})
           </h3>
-          <button
-            type="button"
-            onClick={addQuestion}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-50 text-blue-900 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition-colors"
-          >
+          <button type="button" onClick={addQuestion}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-50 text-blue-900 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-blue-100 transition-colors">
             <Plus className="w-4 h-4" /> Add Question
           </button>
         </div>
@@ -413,106 +523,61 @@ export default function ExamCreation() {
                   <div className="w-12 h-12 bg-blue-900 rounded-2xl flex items-center justify-center text-white font-black">
                     {qIdx + 1}
                   </div>
-                  <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest">
-                    Question Details
-                  </h4>
+                  <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest">Question Details</h4>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => removeQuestion(question.id)}
-                  className="p-3 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                >
+                <button type="button" onClick={() => removeQuestion(question.id)}
+                  className="p-3 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all">
                   <Trash2 className="w-5 h-5" />
                 </button>
               </div>
-
               <div className="mb-10">
-                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 px-2">
-                  Question Text
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Enter the question here…"
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 px-2">Question Text</label>
+                <textarea rows={2} placeholder="Enter the question here…"
                   className="w-full bg-gray-50 border border-gray-100 rounded-3xl px-8 py-6 outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-lg text-gray-900 resize-none transition-all placeholder:text-gray-200"
-                  value={question.text}
-                  onChange={(e) => updateQuestion(question.id, e.target.value)}
-                />
+                  value={question.text} onChange={(e) => updateQuestion(question.id, e.target.value)} />
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {question.options.map((option, oIdx) => {
                   const isSelected = question.correctAnswer === oIdx;
                   return (
-                    <div
-                      key={oIdx}
-                      onClick={() => setCorrectAnswer(question.id, oIdx)}
-                      className={cn(
-                        'relative rounded-3xl transition-all border-2 cursor-pointer p-4 pr-14',
-                        isSelected
-                          ? 'bg-green-50 border-green-300 shadow-sm'
-                          : 'bg-gray-50 border-transparent hover:border-blue-100',
-                      )}
-                    >
+                    <div key={oIdx} onClick={() => setCorrectAnswer(question.id, oIdx)}
+                      className={cn('relative rounded-3xl transition-all border-2 cursor-pointer p-4 pr-14',
+                        isSelected ? 'bg-green-50 border-green-300 shadow-sm' : 'bg-gray-50 border-transparent hover:border-blue-100')}>
                       <div className="flex items-center gap-4">
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setCorrectAnswer(question.id, oIdx); }}
-                          className={cn(
-                            'w-10 h-10 rounded-xl flex items-center justify-center font-black transition-colors shrink-0',
-                            isSelected ? 'bg-green-600 text-white' : 'bg-white text-gray-400 hover:bg-gray-100',
-                          )}
-                        >
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setCorrectAnswer(question.id, oIdx); }}
+                          className={cn('w-10 h-10 rounded-xl flex items-center justify-center font-black transition-colors shrink-0',
+                            isSelected ? 'bg-green-600 text-white' : 'bg-white text-gray-400 hover:bg-gray-100')}>
                           {String.fromCharCode(65 + oIdx)}
                         </button>
-                        <input
-                          type="text"
-                          placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
+                        <input type="text" placeholder={`Option ${String.fromCharCode(65 + oIdx)}`}
                           className="bg-transparent border-none outline-none font-bold text-gray-900 w-full placeholder:text-gray-300"
-                          value={option}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => updateOption(question.id, oIdx, e.target.value)}
-                        />
+                          value={option} onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => updateOption(question.id, oIdx, e.target.value)} />
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setCorrectAnswer(question.id, oIdx); }}
-                        className={cn(
-                          'absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all',
-                          isSelected ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-400 hover:bg-gray-300',
-                        )}
-                        title={`Mark Option ${String.fromCharCode(65 + oIdx)} as correct`}
-                      >
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setCorrectAnswer(question.id, oIdx); }}
+                        className={cn('absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all',
+                          isSelected ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-400 hover:bg-gray-300')}>
                         <CheckCircle2 className="w-5 h-5" />
                       </button>
                     </div>
                   );
                 })}
               </div>
-
               <div className="px-8 py-4 mt-6 bg-gray-50/80 border border-gray-100 rounded-2xl flex items-center justify-between">
-                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                  Auto-Grading Active
-                </span>
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Auto-Grading Active</span>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Marks:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={question.marks}
+                  <input type="number" min={1} value={question.marks}
                     onChange={(e) => updateQuestionMarks(question.id, Number(e.target.value))}
-                    className="w-16 bg-white border border-gray-200 rounded-lg py-1 px-2 font-black text-blue-900 text-center outline-none focus:border-blue-500"
-                  />
+                    className="w-16 bg-white border border-gray-200 rounded-lg py-1 px-2 font-black text-blue-900 text-center outline-none focus:border-blue-500" />
                 </div>
               </div>
             </div>
           </div>
         ))}
 
-        <button
-          type="button"
-          onClick={addQuestion}
-          className="w-full py-12 bg-gray-50 border-4 border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all group"
-        >
+        <button type="button" onClick={addQuestion}
+          className="w-full py-12 bg-gray-50 border-4 border-dashed border-gray-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all group">
           <div className="w-16 h-16 bg-white rounded-[2rem] shadow-sm flex items-center justify-center group-hover:scale-110 transition-transform">
             <Plus className="w-8 h-8" />
           </div>
@@ -521,25 +586,119 @@ export default function ExamCreation() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          ── APPROVED EXAMS DASHBOARD ──────────────────────────────────────────
-          Released back to teacher after admin approval.
+          ── PUBLISHED EXAMS ──────────────────────────────────────────────────
+          Live exams visible to students — with delay control.
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-8 rounded-[2rem] border border-blue-200 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-xl font-black text-gray-900 flex items-center gap-3">
+              <Globe className="w-6 h-6 text-blue-700" />
+              Published Exams
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Exams live for students. Use <strong>Push Back</strong> to delay the window if you need more time.
+            </p>
+          </div>
+          <button onClick={loadPublishedExams}
+            className="p-2 text-blue-700 hover:bg-blue-100 rounded-xl transition-colors" title="Refresh">
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+
+        {publishedExams.length === 0 ? (
+          <div className="py-10 text-center text-gray-400">
+            <Globe className="w-10 h-10 mx-auto mb-2 opacity-30" />
+            <p className="font-semibold text-gray-500">No published exams yet</p>
+            <p className="text-sm mt-1">Approve an exam, then publish it from the section below.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {publishedExams.map((exam) => {
+              const ws = exam.windowStatus;
+              const windowBadge =
+                ws === 'OPEN'      ? { label: '● Live — students can start now', cls: 'text-green-700 bg-green-50 border-green-200' }
+                : ws === 'SCHEDULED' ? { label: `Scheduled — opens ${fmtDT(exam.windowStart)}`,   cls: 'text-amber-700 bg-amber-50 border-amber-200' }
+                : ws === 'CLOSED'    ? { label: 'Window closed',                                 cls: 'text-gray-500 bg-gray-100 border-gray-200' }
+                :                     { label: 'No window set',                                  cls: 'text-gray-400 bg-gray-50 border-gray-100' };
+
+              return (
+                <div key={exam.id} className="bg-white rounded-2xl border border-blue-200 overflow-hidden">
+                  <div className="p-5 flex items-center justify-between gap-4 cursor-pointer hover:bg-blue-50/40 transition-colors"
+                    onClick={() => setExpandedPublished((p) => ({ ...p, [exam.id]: !p[exam.id] }))}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-700 shrink-0">
+                        <Globe className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-black text-gray-900 truncate">{exam.title}</h4>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {exam.Subject?.name} &bull; {exam.ClassSection?.name} &bull; {exam.duration} mins &bull; {exam.questionCount} questions
+                          {exam.delayMinutes > 0 && <span className="ml-2 text-amber-600 font-semibold">+{exam.delayMinutes}m delayed</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className={cn('px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border', windowBadge.cls)}>
+                        {windowBadge.label}
+                      </span>
+                      {expandedPublished[exam.id] ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {expandedPublished[exam.id] && (
+                    <div className="px-5 pb-5 border-t border-blue-100 pt-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-gray-50 rounded-xl">
+                          <p className="font-black text-gray-400 uppercase tracking-widest mb-1">Opens</p>
+                          <p className="font-semibold text-gray-700">{fmtDT(exam.windowStart)}</p>
+                        </div>
+                        <div className="p-3 bg-gray-50 rounded-xl">
+                          <p className="font-black text-gray-400 uppercase tracking-widest mb-1">Closes</p>
+                          <p className="font-semibold text-gray-700">{fmtDT(exam.windowEnd)}</p>
+                        </div>
+                      </div>
+
+                      {ws !== 'CLOSED' && (
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex-1">
+                            <Timer className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input type="number" min={1} max={120} placeholder="Delay by N minutes…"
+                              value={delayInputs[exam.id] ?? ''}
+                              onChange={(e) => setDelayInputs((p) => ({ ...p, [exam.id]: e.target.value }))}
+                              className="w-full pl-10 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20" />
+                          </div>
+                          <button onClick={() => handleDelay(exam.id)} disabled={delayingId === exam.id}
+                            className="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-600 disabled:opacity-50 transition-colors whitespace-nowrap">
+                            {delayingId === exam.id ? 'Applying…' : 'Push Back'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          ── APPROVED EXAMS — ready to publish ────────────────────────────────
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-8 rounded-[2rem] border border-green-200 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h3 className="text-xl font-black text-gray-900 flex items-center gap-3">
               <BadgeCheck className="w-6 h-6 text-green-600" />
-              Approved Examinations
+              Approved — Ready to Publish
             </h3>
             <p className="text-sm text-gray-500 mt-1">
-              Exams reviewed and cleared by admin — ready to assign to students.
+              Admin-cleared exams. Set a start &amp; end time to deploy them directly to your students.
             </p>
           </div>
-          <button
-            onClick={loadApprovedExams}
-            className="p-2 text-green-700 hover:bg-green-100 rounded-xl transition-colors"
-            title="Refresh approved exams"
-          >
+          <button onClick={loadApprovedExams}
+            className="p-2 text-green-700 hover:bg-green-100 rounded-xl transition-colors" title="Refresh">
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -548,42 +707,39 @@ export default function ExamCreation() {
           <div className="py-10 text-center text-gray-400">
             <BadgeCheck className="w-10 h-10 mx-auto mb-2 opacity-30" />
             <p className="font-semibold text-gray-500">No approved exams yet</p>
-            <p className="text-sm mt-1">
-              Submit an exam for review — it will appear here once the admin approves it.
-            </p>
+            <p className="text-sm mt-1">Submit an exam for review — it will appear here once admin approves it.</p>
           </div>
         ) : (
           <div className="space-y-3">
             {approvedExams.map((exam) => (
-              <div
-                key={exam.id}
-                className="bg-white rounded-2xl border border-green-200 overflow-hidden"
-              >
-                <div
-                  className="p-5 flex items-center justify-between cursor-pointer hover:bg-green-50/50 transition-colors"
-                  onClick={() =>
-                    setExpandedApproved((prev) => ({ ...prev, [exam.id]: !prev[exam.id] }))
-                  }
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-green-700">
+              <div key={exam.id} className="bg-white rounded-2xl border border-green-200 overflow-hidden">
+                <div className="p-5 flex items-center justify-between gap-4">
+                  {/* Left: info + expand toggle */}
+                  <div className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+                    onClick={() => setExpandedApproved((p) => ({ ...p, [exam.id]: !p[exam.id] }))}>
+                    <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-green-700 shrink-0">
                       <BadgeCheck className="w-5 h-5" />
                     </div>
-                    <div>
-                      <h4 className="font-black text-gray-900">{exam.title}</h4>
+                    <div className="min-w-0">
+                      <h4 className="font-black text-gray-900 truncate">{exam.title}</h4>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {exam.Subject?.name} &bull; {exam.ClassSection?.name} &bull;{' '}
                         {exam.duration} mins &bull; {exam.questions?.length ?? 0} questions
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="px-3 py-1.5 bg-green-100 text-green-700 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                      <BadgeCheck className="w-3.5 h-3.5" /> Approved
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {expandedApproved[exam.id] ? '▲' : '▼'}
-                    </span>
+
+                  {/* Right: Publish button + collapse toggle */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => setPublishModalExam(exam)}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-sm shadow-blue-900/20">
+                      <Rocket className="w-3.5 h-3.5" /> Publish to Students
+                    </button>
+                    <button onClick={() => setExpandedApproved((p) => ({ ...p, [exam.id]: !p[exam.id] }))}>
+                      {expandedApproved[exam.id]
+                        ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                        : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </button>
                   </div>
                 </div>
 
@@ -592,12 +748,11 @@ export default function ExamCreation() {
                     <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
                       Questions Preview ({exam.questions?.length ?? 0})
                     </p>
-                    {exam.questions && exam.questions.length > 0 ? (
+                    {exam.questions?.length ? (
                       <ol className="space-y-2">
                         {exam.questions.map((q, idx) => (
                           <li key={q.id} className="text-sm text-gray-700 bg-gray-50 px-4 py-2 rounded-xl">
-                            <span className="font-bold text-blue-900 mr-2">{idx + 1}.</span>
-                            {q.text}
+                            <span className="font-bold text-blue-900 mr-2">{idx + 1}.</span>{q.text}
                           </li>
                         ))}
                       </ol>
@@ -613,7 +768,7 @@ export default function ExamCreation() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          ── ALL SUBMITTED EXAMINATIONS LOG ────────────────────────────────────
+          ── EXAMINATION HISTORY LOG ───────────────────────────────────────────
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-6">
@@ -621,11 +776,8 @@ export default function ExamCreation() {
             <AlertCircle className="w-6 h-6 text-blue-600" />
             Your Examination History
           </h3>
-          <button
-            onClick={loadTeacherExams}
-            className="p-2 text-gray-400 hover:bg-gray-100 rounded-xl transition-colors"
-            title="Refresh"
-          >
+          <button onClick={loadTeacherExams}
+            className="p-2 text-gray-400 hover:bg-gray-100 rounded-xl transition-colors" title="Refresh">
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
@@ -636,18 +788,10 @@ export default function ExamCreation() {
           <div className="space-y-3">
             {teacherExams.map((exam) => {
               const cfg = STATUS_CONFIG[exam.status] ?? STATUS_CONFIG.DRAFT;
-              const rejectionReason = exam.status === 'REJECTED'
-                ? extractRejectionReason(exam.instructions)
-                : null;
-
+              const rejectionReason = exam.status === 'REJECTED' ? extractRejectionReason(exam.instructions) : null;
               return (
-                <div
-                  key={exam.id}
-                  className={cn(
-                    'rounded-2xl border overflow-hidden',
-                    exam.status === 'REJECTED' ? 'border-red-200' : 'border-gray-100',
-                  )}
-                >
+                <div key={exam.id} className={cn('rounded-2xl border overflow-hidden',
+                  exam.status === 'REJECTED' ? 'border-red-200' : 'border-gray-100')}>
                   <div className="p-4 bg-gray-50 flex items-center justify-between gap-4">
                     <div className="flex items-start gap-3 min-w-0">
                       <div className={cn('p-2 rounded-xl shrink-0', cfg.bg)}>
@@ -656,35 +800,23 @@ export default function ExamCreation() {
                       <div className="min-w-0">
                         <h4 className="font-bold text-gray-900 truncate">{exam.title}</h4>
                         <p className="text-xs text-gray-500 mt-0.5">
-                          {exam.Subject?.name}
-                          {exam.ClassSection?.name ? ` • ${exam.ClassSection.name}` : ''}
+                          {exam.Subject?.name}{exam.ClassSection?.name ? ` • ${exam.ClassSection.name}` : ''}
                           {exam.duration ? ` • ${exam.duration} mins` : ''}
                         </p>
                       </div>
                     </div>
-                    <span
-                      className={cn(
-                        'px-3 py-1.5 rounded-xl text-[10px] font-black tracking-widest uppercase shrink-0 flex items-center gap-1.5',
-                        cfg.bg,
-                        cfg.text,
-                      )}
-                    >
+                    <span className={cn('px-3 py-1.5 rounded-xl text-[10px] font-black tracking-widest uppercase shrink-0 flex items-center gap-1.5',
+                      cfg.bg, cfg.text)}>
                       {cfg.icon} {cfg.label}
                     </span>
                   </div>
-
-                  {/* Rejection feedback banner */}
                   {rejectionReason && (
                     <div className="px-4 py-3 bg-red-50 border-t border-red-100 flex items-start gap-2">
                       <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-xs font-black text-red-700 uppercase tracking-widest mb-0.5">
-                          Admin Feedback
-                        </p>
+                        <p className="text-xs font-black text-red-700 uppercase tracking-widest mb-0.5">Admin Feedback</p>
                         <p className="text-sm text-red-700">{rejectionReason}</p>
-                        <p className="text-xs text-red-500 mt-1">
-                          Please update and re-submit this exam for review.
-                        </p>
+                        <p className="text-xs text-red-500 mt-1">Please update and re-submit this exam for review.</p>
                       </div>
                     </div>
                   )}
@@ -709,15 +841,11 @@ export default function ExamCreation() {
                   <p className="text-xs text-gray-400 font-bold">Select a draft to resume editing</p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsDraftModalOpen(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
-              >
+              <button type="button" onClick={() => setIsDraftModalOpen(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-
             {isLoadingDrafts ? (
               <div className="py-12 text-center text-gray-400 font-bold">Loading drafts…</div>
             ) : draftsList.length === 0 ? (
@@ -725,11 +853,8 @@ export default function ExamCreation() {
             ) : (
               <div className="max-h-80 overflow-y-auto space-y-3 pr-2">
                 {draftsList.map((draft) => (
-                  <div
-                    key={draft.id}
-                    onClick={() => handleSelectDraft(draft)}
-                    className="p-5 bg-gray-50 rounded-2xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 cursor-pointer transition-all flex items-center justify-between group"
-                  >
+                  <div key={draft.id} onClick={() => handleSelectDraft(draft)}
+                    className="p-5 bg-gray-50 rounded-2xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 cursor-pointer transition-all flex items-center justify-between group">
                     <div>
                       <h4 className="font-black text-gray-900 group-hover:text-blue-900 transition-colors">
                         {draft.title || 'Untitled Examination'}
@@ -743,11 +868,9 @@ export default function ExamCreation() {
                       <span className="text-xs font-black bg-white group-hover:bg-blue-900 group-hover:text-white text-gray-700 px-4 py-2 rounded-xl transition-all shadow-sm">
                         Load Draft
                       </span>
-                      <button
-                        type="button"
+                      <button type="button"
                         onClick={(e) => { e.stopPropagation(); handleDeleteDraft(draft.id); }}
-                        className="text-xs font-bold text-red-600 px-2 py-2 hover:bg-red-50 rounded-lg transition-colors"
-                      >
+                        className="text-xs font-bold text-red-600 px-2 py-2 hover:bg-red-50 rounded-lg transition-colors">
                         Delete
                       </button>
                     </div>
@@ -757,6 +880,15 @@ export default function ExamCreation() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Publish Modal ── */}
+      {publishModalExam && (
+        <PublishModal
+          exam={publishModalExam}
+          onClose={() => setPublishModalExam(null)}
+          onPublished={handlePublished}
+        />
       )}
 
       <Toaster position="top-right" />
