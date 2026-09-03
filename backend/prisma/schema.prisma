@@ -471,6 +471,15 @@ model Examination {
   status         ExamStatus @default(DRAFT)
   classId        String
   teacherId      String?
+  instructions   String?
+
+  // ── Scheduled delivery window ──────────────────────────────────────────────
+  // windowStart: when the Start button unlocks for students (server-authoritative)
+  // windowEnd:   when the exam closes — no new sessions allowed after this
+  // delayMinutes: accumulated teacher-applied delays; added to both window times
+  windowStart    DateTime?
+  windowEnd      DateTime?
+  delayMinutes   Int        @default(0)
 
   ClassSection ClassSection        @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
   Subject      Subject             @relation(fields: [subjectId], references: [id])
@@ -481,6 +490,7 @@ model Examination {
   grades       Grade[]
   questions    Question[]
   results      StudentExamResult[]
+  sessions     ExamSession[]
 
   @@index([teacherId, status])
   @@index([classSectionId])
@@ -753,4 +763,44 @@ model Material {
   ClassSection ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
 
   @@map("materials")
+}
+
+// ─── Exam Session (per-student live session tracking) ─────────────────────────
+// Tracks a single student's active exam attempt for:
+//   • Single-device enforcement (only one ACTIVE session per student+exam)
+//   • Timer resume after disconnection / power outage
+//   • Teacher approval gate after abrupt reconnection
+
+enum ExamSessionStatus {
+  ACTIVE
+  INTERRUPTED     // student disconnected unexpectedly; timer paused
+  AWAITING_RESUME // teacher must approve before student can continue
+  COMPLETED
+  TIMED_OUT
+}
+
+model ExamSession {
+  id                   String            @id @default(uuid())
+  examinationId        String
+  studentId            String
+  // Opaque token issued on session start; validated on every answer-save request
+  sessionToken         String            @unique
+  status               ExamSessionStatus @default(ACTIVE)
+  // Seconds remaining at the moment of last save / interruption
+  timeRemainingSeconds Int
+  // Snapshot of answers as JSON: { [questionId]: selectedOptionId }
+  answersJson          String            @default("{}")
+  deviceFingerprint    String?           // browser UA + IP hash for single-device check
+  startedAt            DateTime          @default(now())
+  lastSavedAt          DateTime          @default(now())
+  completedAt          DateTime?
+  // Set when teacher clicks "Resume Exam" for this session
+  resumeApprovedAt     DateTime?
+  resumeApprovedById   String?           // Teacher user id who approved
+
+  Examination Examination @relation(fields: [examinationId], references: [id], onDelete: Cascade)
+
+  @@unique([examinationId, studentId])
+  @@index([status])
+  @@index([examinationId, status])
 }

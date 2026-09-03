@@ -234,10 +234,6 @@ export class StudentsService {
     });
   }
 
-<<<<<<< HEAD
-  // students.service.ts
-=======
->>>>>>> origin/main
   async getMyResults(userId: string) {
     const student = await this.prisma.student.findFirst({
       where: { OR: [{ id: userId }, { userId }] },
