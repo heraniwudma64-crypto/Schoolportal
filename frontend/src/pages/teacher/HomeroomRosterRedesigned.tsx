@@ -1,48 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  Download, Printer, RefreshCw, AlertCircle, Clock,
-  Send, BadgeCheck,
-} from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, Printer, RefreshCw, AlertCircle, Clock, Send, BadgeCheck } from 'lucide-react';
 import { toast } from 'sonner';
-import { getAcademicYears } from '../../api/academicStructure';
-import { api } from '../../lib/api';
+import { useAcademicYears } from '../../hooks/useAcademicStructure';
+import {
+  useHomeroomContext,
+  useConsolidatedRoster,
+  ConsolidatedRosterData,
+} from '../../hooks/useHomeroom';
 import { submitRosterToAdmin, AdminSubmitReceipt } from '../../api/adminReports';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type SubjectScore = {
-  subjectId: string;
-  subject: string;
-  code: string;
-  term1: number | null;
-  term2: number | null;
-  term3: number | null;
-  term4: number | null;
-  sem1Avg: number | null;
-  sem2Avg: number | null;
-  yearlyAverage: number | null;
-};
-
-type RosterStudent = {
-  studentId: string;
-  admissionNo: string;
-  studentName: string;
-  sex: string;
-  subjectScores: SubjectScore[];
-  sum: number;
-  average: number | null;
-  rank: number;
-  absentDays: number;
-  conduct: string | null;
-};
-
-type ConsolidatedRosterData = {
-  section: { id?: string; name: string; grade?: string; homeroomTeacher: string | null };
-  subjects: Array<{ id: string; name: string; code: string }>;
-  students: RosterStudent[];
-};
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(v: number | null | undefined): string {
   return v != null ? v.toFixed(1) : '—';
@@ -51,84 +18,54 @@ function fmt(v: number | null | undefined): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomRosterRedesigned() {
-  const [data, setData] = useState<ConsolidatedRosterData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitReceipt, setSubmitReceipt] = useState<AdminSubmitReceipt | null>(null);
-  const [error, setError] = useState('');
 
-  // Cached context — never re-fetched after initial load.
-  const sectionIdRef = useRef<string | null>(null);
-  const yearIdRef = useRef<string | null>(null);
+  // ── 1. Shared Homeroom Context & Academic Years (from React Query cache) ────
+  const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
+  const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
-  // ── Fetch helper ──────────────────────────────────────────────────────────
+  const currentYear = years.find((y) => y.isCurrent) || years[0];
+  const sectionId = homeroomContext?.assignedSection?.id;
+  const yearId = currentYear?.id;
 
-  const fetchRoster = async (sectionId: string, yearId: string) =>
-    api.get<ConsolidatedRosterData>(
-      `/roster/consolidated?academicYearId=${yearId}&classSectionId=${sectionId}`,
-    );
+  // ── 2. Consolidated Roster Query ────────────────────────────────────────────
+  const {
+    data,
+    isLoading: rosterLoading,
+    isFetching: refreshing,
+    error: rosterError,
+    refetch,
+  } = useConsolidatedRoster(sectionId, yearId);
 
-  // ── Initial load ──────────────────────────────────────────────────────────
+  const loading = contextLoading || yearsLoading || (rosterLoading && !data);
+  const error =
+    (contextError as any)?.response?.data?.message ||
+    (contextError as any)?.message ||
+    (!contextLoading && !homeroomContext?.assignedSection
+      ? 'No homeroom section assigned to your account'
+      : '') ||
+    (rosterError as any)?.response?.data?.message ||
+    (rosterError as any)?.message ||
+    '';
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const [context, years] = await Promise.all([
-          api.get<{ assignedSection: { id: string } | null }>('/teachers/me/homeroom-context'),
-          getAcademicYears(),
-        ]);
-        const year = years.find((y) => y.isCurrent) || years[0];
-        if (!context.assignedSection || !year) {
-          throw new Error('No homeroom section or academic year assigned to your account');
-        }
-        sectionIdRef.current = context.assignedSection.id;
-        yearIdRef.current = year.id;
-
-        const rosterData = await fetchRoster(context.assignedSection.id, year.id);
-        setData(rosterData);
-      } catch (err: any) {
-        setError(
-          err?.response?.data?.message ?? err?.message ?? 'Could not load the consolidated roster',
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
-
-  // ── Refresh ───────────────────────────────────────────────────────────────
-
+  // ── Refresh ──────────────────────────────────────────────────────────────────
   const handleRefresh = async () => {
-    const sectionId = sectionIdRef.current;
-    const yearId = yearIdRef.current;
-    if (!sectionId || !yearId) return;
-
-    setRefreshing(true);
     try {
-      const rosterData = await fetchRoster(sectionId, yearId);
-      setData(rosterData);
-      setError('');
+      await refetch();
+      toast.success('Roster refreshed');
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Refresh failed');
-    } finally {
-      setRefreshing(false);
+      toast.error(err?.response?.data?.message ?? 'Refresh failed');
     }
   };
 
-  // ── Submit to Admin ───────────────────────────────────────────────────────
-
+  // ── Submit to Admin ──────────────────────────────────────────────────────────
   const handleSubmitToAdmin = async () => {
-    const sectionId = sectionIdRef.current;
-    const yearId = yearIdRef.current;
     if (!sectionId || !yearId) return;
 
     const confirmed = window.confirm(
       'Send the finalized class roster to the admin portal for review?\n\n' +
-      'The admin will be able to view and approve the submitted roster.',
+        'The admin will be able to view and approve the submitted roster.',
     );
     if (!confirmed) return;
 
@@ -146,8 +83,7 @@ export default function HomeroomRosterRedesigned() {
     }
   };
 
-  // ── Export ────────────────────────────────────────────────────────────────
-
+  // ── Export ───────────────────────────────────────────────────────────────────
   const handleExportCsv = () => {
     if (!data) return;
 
@@ -155,10 +91,7 @@ export default function HomeroomRosterRedesigned() {
       `${s.code} 1st`, `${s.code} 2nd`, `${s.code} 3rd`, `${s.code} 4th`,
       `${s.code} Ave1`, `${s.code} Ave2`, `${s.code} Year`,
     ]);
-    const headers = [
-      'No', 'Admission No', 'Name', 'Sex', ...subjectCols,
-      'Sum', 'Avg', 'Rank', 'Abs D', 'Conduct',
-    ];
+    const headers = ['No', 'Admission No', 'Name', 'Sex', ...subjectCols, 'Sum', 'Avg', 'Rank', 'Abs D', 'Conduct'];
 
     const rows = data.students.map((student, idx) => {
       const scoreCols = student.subjectScores.flatMap((sc) => [
@@ -187,7 +120,7 @@ export default function HomeroomRosterRedesigned() {
     URL.revokeObjectURL(a.href);
   };
 
-  // ── Render states ─────────────────────────────────────────────────────────
+  // ── Render states ────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -207,10 +140,7 @@ export default function HomeroomRosterRedesigned() {
         <div>
           <p className="font-semibold text-red-900">Could Not Load Roster</p>
           <p className="text-red-700 text-sm mt-1">{error}</p>
-          <button
-            onClick={handleRefresh}
-            className="mt-3 text-sm font-semibold text-red-800 underline"
-          >
+          <button onClick={handleRefresh} className="mt-3 text-sm font-semibold text-red-800 underline">
             Try again
           </button>
         </div>
@@ -220,8 +150,6 @@ export default function HomeroomRosterRedesigned() {
 
   if (!data) return <div className="text-gray-500 p-6">No roster data available</div>;
 
-  // The Submit to Admin button is enabled when there are any submitted results
-  // to send — the backend enforces the stricter "all subjects complete" check.
   const hasSubmittedResults = data.students.some((s) =>
     s.subjectScores.some(
       (sc) => sc.term1 != null || sc.term2 != null || sc.term3 != null || sc.term4 != null,
@@ -245,7 +173,7 @@ export default function HomeroomRosterRedesigned() {
         <div className="flex gap-2 no-print shrink-0 flex-wrap justify-end">
           <button
             onClick={handleRefresh}
-            disabled={refreshing}
+            disabled={!!refreshing}
             className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
             title="Reload submitted results"
           >
@@ -305,8 +233,7 @@ export default function HomeroomRosterRedesigned() {
             <p className="text-xs text-green-600 mt-1">
               Submitted by <strong>{submitReceipt.submittedBy}</strong> on{' '}
               {new Date(submitReceipt.submittedAt).toLocaleString()} &bull;{' '}
-              {submitReceipt.enrolledStudents} students &bull;{' '}
-              {submitReceipt.submittedSubjects} subjects
+              {submitReceipt.enrolledStudents} students &bull; {submitReceipt.submittedSubjects} subjects
             </p>
           </div>
         </div>
@@ -319,8 +246,8 @@ export default function HomeroomRosterRedesigned() {
           <div>
             <p className="font-semibold text-amber-800">No submitted results yet</p>
             <p className="text-sm text-amber-700 mt-0.5">
-              Subject teachers haven't sent any results to this homeroom yet. Marks columns will
-              populate once they submit. Press <strong>Refresh</strong> to check for updates.
+              Subject teachers haven't sent any results to this homeroom yet. Marks will populate
+              once they submit. Press <strong>Refresh</strong> to check for updates.
             </p>
           </div>
         </div>
@@ -330,15 +257,12 @@ export default function HomeroomRosterRedesigned() {
       {data.students.length === 0 ? (
         <div className="bg-white border rounded-xl p-10 text-center text-gray-400">
           <p className="font-semibold text-gray-500">No students enrolled in this section.</p>
-          <p className="text-sm mt-1">
-            Enroll students from the Admin panel, then refresh this page.
-          </p>
+          <p className="text-sm mt-1">Enroll students from the Admin panel, then refresh this page.</p>
         </div>
       ) : (
         <div className="bg-white border rounded-xl overflow-auto shadow-sm">
           <table className="min-w-full border-collapse text-xs">
             <thead>
-              {/* Row 1 — subject names */}
               <tr className="bg-gray-900 text-white">
                 <th className="border border-gray-700 p-2 text-left" rowSpan={3}>No</th>
                 <th className="border border-gray-700 p-2 text-left" rowSpan={3} style={{ minWidth: 160 }}>
@@ -346,12 +270,7 @@ export default function HomeroomRosterRedesigned() {
                 </th>
                 <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Sex</th>
                 {data.subjects.map((s) => (
-                  <th
-                    key={s.id}
-                    className="border border-gray-700 p-2 text-center bg-gray-800"
-                    colSpan={7}
-                    style={{ minWidth: 140 }}
-                  >
+                  <th key={s.id} className="border border-gray-700 p-2 text-center bg-gray-800" colSpan={7} style={{ minWidth: 140 }}>
                     {s.name}
                   </th>
                 ))}
@@ -361,8 +280,6 @@ export default function HomeroomRosterRedesigned() {
                 <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Abs D</th>
                 <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Conduct</th>
               </tr>
-
-              {/* Row 2 — quarter/semester sub-headers */}
               <tr className="bg-gray-700 text-white">
                 {data.subjects.map((s) => (
                   <React.Fragment key={`${s.id}-r2`}>
@@ -376,8 +293,6 @@ export default function HomeroomRosterRedesigned() {
                   </React.Fragment>
                 ))}
               </tr>
-
-              {/* Row 3 — subject codes */}
               <tr className="bg-gray-600 text-white">
                 {data.subjects.map((s) =>
                   Array.from({ length: 7 }, (_, i) => (
@@ -388,53 +303,31 @@ export default function HomeroomRosterRedesigned() {
                 )}
               </tr>
             </thead>
-
             <tbody>
               {data.students.map((student, rowIdx) => (
-                <tr
-                  key={student.studentId}
-                  className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
-                >
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {rowIdx + 1}
-                  </td>
+                <tr key={student.studentId} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="border border-gray-200 p-2 text-center font-semibold">{rowIdx + 1}</td>
                   <td className="border border-gray-200 p-2 text-left font-semibold whitespace-nowrap">
                     <span className="text-gray-400 mr-1">{student.admissionNo}</span>
                     {student.studentName}
                   </td>
                   <td className="border border-gray-200 p-2 text-center">{student.sex || '—'}</td>
-
                   {student.subjectScores.map((sc) => (
                     <React.Fragment key={sc.subjectId}>
                       <td className="border border-gray-200 p-2 text-center">{sc.term1 ?? '—'}</td>
                       <td className="border border-gray-200 p-2 text-center">{sc.term2 ?? '—'}</td>
                       <td className="border border-gray-200 p-2 text-center">{sc.term3 ?? '—'}</td>
                       <td className="border border-gray-200 p-2 text-center">{sc.term4 ?? '—'}</td>
-                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">
-                        {fmt(sc.sem1Avg)}
-                      </td>
-                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">
-                        {fmt(sc.sem2Avg)}
-                      </td>
-                      <td className="border border-gray-200 p-2 text-center bg-green-50 font-bold">
-                        {fmt(sc.yearlyAverage)}
-                      </td>
+                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">{fmt(sc.sem1Avg)}</td>
+                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">{fmt(sc.sem2Avg)}</td>
+                      <td className="border border-gray-200 p-2 text-center bg-green-50 font-bold">{fmt(sc.yearlyAverage)}</td>
                     </React.Fragment>
                   ))}
-
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {student.sum}
-                  </td>
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {fmt(student.average)}
-                  </td>
-                  <td className="border border-gray-200 p-2 text-center font-bold">
-                    {student.rank || '—'}
-                  </td>
+                  <td className="border border-gray-200 p-2 text-center font-semibold">{student.sum}</td>
+                  <td className="border border-gray-200 p-2 text-center font-semibold">{fmt(student.average)}</td>
+                  <td className="border border-gray-200 p-2 text-center font-bold">{student.rank || '—'}</td>
                   <td className="border border-gray-200 p-2 text-center">{student.absentDays}</td>
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {student.conduct || '—'}
-                  </td>
+                  <td className="border border-gray-200 p-2 text-center font-semibold">{student.conduct || '—'}</td>
                 </tr>
               ))}
             </tbody>

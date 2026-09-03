@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { 
   LayoutDashboard, 
@@ -21,7 +22,7 @@ import {
   Settings
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { api } from '../../lib/api';
+import { useHomeroomContext } from '../../hooks/useHomeroom';
 import { APP_NAME, APP_DESCRIPTION } from '../../config/branding';
 
 interface SidebarProps {
@@ -34,15 +35,9 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
   const { user, logout } = useAuth();
   const location = useLocation();
 
-  // Check if the current user is assigned as a Homeroom Teacher
-  const [isHomeroomTeacher, setIsHomeroomTeacher] = React.useState(false);
-
-  React.useEffect(() => {
-    if (user?.role !== 'teacher') { setIsHomeroomTeacher(false); return; }
-    api.get<{ isHomeroomTeacher: boolean }>('/teachers/me/homeroom-context')
-      .then((context) => setIsHomeroomTeacher(context.isHomeroomTeacher))
-      .catch(() => setIsHomeroomTeacher(false));
-  }, [user?.role, user?.id]);
+  // Check if the current user is assigned as a Homeroom Teacher (shared React Query hook)
+  const { data: homeroomContext } = useHomeroomContext();
+  const isHomeroomTeacher = !!homeroomContext?.isHomeroomTeacher;
 
   const getLinks = () => {
     const role = user?.role;

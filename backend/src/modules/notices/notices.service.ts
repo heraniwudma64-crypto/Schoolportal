@@ -94,7 +94,15 @@ export class NoticesService {
     if (userRole === Role.STUDENT) {
       const student = await this.prisma.student.findUnique({
         where: { userId },
-        include: { StudentEnrollment: true, ClassSection: true }
+        select: {
+          id: true,
+          classSectionId: true,
+          StudentEnrollment: {
+            where: { status: 'ACTIVE' },
+            select: { gradeLevelId: true },
+            take: 1,
+          },
+        },
       });
       if (student) {
         conditions.push({ targetType: NoticeTargetType.STUDENT, studentId: student.id });
@@ -108,14 +116,27 @@ export class NoticesService {
     } else if (userRole === Role.PARENT) {
       const parent = await this.prisma.parent.findUnique({
         where: { userId },
-        include: { Student: { include: { ClassSection: true, StudentEnrollment: true } } }
+        select: {
+          id: true,
+          Student: {
+            select: {
+              id: true,
+              classSectionId: true,
+              StudentEnrollment: {
+                where: { status: 'ACTIVE' },
+                select: { gradeLevelId: true },
+                take: 1,
+              },
+            },
+          },
+        },
       });
       if (parent) {
         conditions.push({ targetType: NoticeTargetType.PARENT, parentId: parent.id });
-        const studentIds = parent.Student.map(s => s.id);
-        const sectionIds = parent.Student.map(s => s.classSectionId).filter(Boolean);
-        const gradeIds = parent.Student.flatMap(s => s.StudentEnrollment.map(e => e.gradeLevelId));
-        
+        const studentIds = parent.Student.map((s) => s.id);
+        const sectionIds = parent.Student.map((s) => s.classSectionId).filter(Boolean);
+        const gradeIds = parent.Student.flatMap((s) => s.StudentEnrollment.map((e) => e.gradeLevelId)).filter(Boolean);
+
         if (studentIds.length) conditions.push({ targetType: NoticeTargetType.STUDENT, studentId: { in: studentIds } });
         if (sectionIds.length) conditions.push({ targetType: NoticeTargetType.SECTION, sectionId: { in: sectionIds } });
         if (gradeIds.length) conditions.push({ targetType: NoticeTargetType.GRADE, gradeId: { in: gradeIds } });
@@ -123,11 +144,15 @@ export class NoticesService {
     } else if (userRole === Role.TEACHER) {
       const teacher = await this.prisma.teacher.findUnique({
         where: { userId },
-        include: { ClassSection: true }
+        select: {
+          ClassSection: {
+            select: { id: true, gradeLevelId: true },
+          },
+        },
       });
       if (teacher && teacher.ClassSection.length > 0) {
-        const sectionIds = teacher.ClassSection.map(s => s.id);
-        const gradeIds = teacher.ClassSection.map(s => s.gradeLevelId).filter(Boolean);
+        const sectionIds = teacher.ClassSection.map((s) => s.id);
+        const gradeIds = teacher.ClassSection.map((s) => s.gradeLevelId).filter(Boolean);
         conditions.push({ targetType: NoticeTargetType.SECTION, sectionId: { in: sectionIds } });
         conditions.push({ targetType: NoticeTargetType.GRADE, gradeId: { in: gradeIds } });
       }

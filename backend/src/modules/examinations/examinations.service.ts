@@ -1,9 +1,9 @@
-import { 
-  Injectable, 
-  NotFoundException, 
-  InternalServerErrorException, 
-  UnauthorizedException, 
-  BadRequestException 
+import {
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+  UnauthorizedException,
+  BadRequestException
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateExaminationDto } from './dto/create-examination.dto';
@@ -104,10 +104,10 @@ export class ExaminationsService {
             classSectionId: dto.classSectionId,
             ...(teacherId ? { teacherId } : {}),
             duration: Number(dto.duration) || 60,
-            status: dto.status === 'DRAFT' 
-              ? ExamStatus.DRAFT 
-              : dto.status === 'APPROVED' 
-              ? ExamStatus.APPROVED 
+            status: dto.status === 'DRAFT'
+              ? ExamStatus.DRAFT
+              : dto.status === 'APPROVED'
+              ? ExamStatus.APPROVED
               : ExamStatus.PENDING,
             totalMarks: calculatedTotalMarks,
             examDate: dto.examDate ? new Date(dto.examDate) : now,
@@ -116,7 +116,6 @@ export class ExaminationsService {
               create: (dto.questions || []).map((q: any) => ({
                 id: crypto.randomUUID(),
                 text: q.questionText || q.text || '',
-                marks: Number(q.marks) || 10,
                 options: {
                   create: (q.options || []).map((opt: any) => ({
                     id: crypto.randomUUID(),
@@ -166,11 +165,12 @@ export class ExaminationsService {
         where: { examId: id },
       });
 
+      updateData.totalMarks = dto.questions.reduce((sum: number, q: any) => sum + (Number(q.marks) || 10), 0);
+
       updateData.questions = {
         create: dto.questions.map((q: any) => ({
           id: crypto.randomUUID(),
           text: q.questionText || q.text || '',
-          marks: Number(q.marks) || 10,
           options: {
             create: (q.options || []).map((opt: any) => ({
               id: crypto.randomUUID(),
@@ -180,6 +180,8 @@ export class ExaminationsService {
           },
         })),
       };
+    } else if (dto.totalMarks) {
+      updateData.totalMarks = Number(dto.totalMarks);
     }
 
     return this.prisma.examination.update({
@@ -274,9 +276,12 @@ export class ExaminationsService {
     let earnedScore = 0;
     let totalPossibleMarks = 0;
     const gradedAnswers: any[] = [];
+    const defaultPerQuestionMarks = questions.length > 0 && exam.totalMarks > 0
+      ? exam.totalMarks / questions.length
+      : 10;
 
     for (const question of questions) {
-      const questionMarks = (question as any).marks || 10;
+      const questionMarks = (question as any).marks || defaultPerQuestionMarks;
       totalPossibleMarks += questionMarks;
 
       const correctOption = question.options.find((o: any) => o.isCorrect);

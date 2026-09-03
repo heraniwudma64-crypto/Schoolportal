@@ -234,67 +234,86 @@ export class ResultsService {
 
   // Homeroom Teacher checks submission status across all subjects
   async getHomeroomSubmissionMatrix(classSectionId: string, academicYearId: string, term: string, userId: string) {
-    const homeroom = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
-    if (!homeroom) throw new ForbiddenException('Only the homeroom teacher can view this submission matrix');
-
-    // Accept the request when the teacher is set as homeroom via either the
-    // direct teacherId FK or the named HomeroomTeacher relation (both point at
-    // the same DB column — this guard is a belt-and-suspenders safety check).
     const section = await this.prisma.classSection.findFirst({
       where: {
         id: classSectionId,
-        teacherId: homeroom.id,
+        homeroomTeacher: { userId },
       },
-      include: { AcademicYear: true, GradeLevel: true },
+      select: {
+        id: true,
+        name: true,
+        GradeLevel: { select: { name: true } },
+        AcademicYear: { select: { year: true } },
+      },
     });
     if (!section) throw new ForbiddenException('Only the homeroom teacher can view this submission matrix');
-    const enrolledCount = await this.prisma.studentEnrollment.count({
-      where: { classSectionId, academicYearId, status: 'ACTIVE' },
+
+    const [enrolledCount, assignedSubjects, allSubmittedResults] = await Promise.all([
+      this.prisma.studentEnrollment.count({
+        where: { classSectionId, academicYearId, status: 'ACTIVE' },
+      }),
+      (this.prisma as any).sectionSubjectTeacher.findMany({
+        where: { classSectionId, academicYearId },
+        select: {
+          subjectId: true,
+          teacherId: true,
+          Subject: { select: { name: true, code: true } },
+          Teacher: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { Subject: { name: 'asc' } },
+      }),
+      (this.prisma as any).subjectResult.findMany({
+        where: {
+          classSectionId,
+          academicYearId,
+          term,
+          status: 'SUBMITTED',
+        },
+        select: { subjectId: true, studentId: true, updatedAt: true },
+      }),
+    ]);
+
+    // Group submitted results by subjectId in memory
+    const resultsBySubject = new Map<string, Array<{ studentId: string; updatedAt: Date }>>();
+    for (const result of allSubmittedResults) {
+      let list = resultsBySubject.get(result.subjectId);
+      if (!list) {
+        list = [];
+        resultsBySubject.set(result.subjectId, list);
+      }
+      list.push(result);
+    }
+
+    const matrix = assignedSubjects.map((assignment: any) => {
+      const submittedResults = resultsBySubject.get(assignment.subjectId) || [];
+      const submittedCount = new Set(submittedResults.map((result: any) => result.studentId)).size;
+      const submittedAt = submittedResults.length
+        ? submittedResults.reduce(
+            (latest: Date, result: any) => (result.updatedAt > latest ? result.updatedAt : latest),
+            submittedResults[0].updatedAt,
+          )
+        : null;
+
+      return {
+        subjectId: assignment.subjectId,
+        subjectName: assignment.Subject.name,
+        subjectCode: assignment.Subject.code,
+        teacherId: assignment.teacherId,
+        teacherName: `${assignment.Teacher.firstName} ${assignment.Teacher.lastName}`,
+        submittedCount,
+        enrolledCount,
+        isSubmitted: enrolledCount > 0 && submittedCount === enrolledCount,
+        completionPercentage: enrolledCount ? Math.round((submittedCount / enrolledCount) * 100) : 0,
+        submittedAt,
+      };
     });
-    const assignedSubjects = await (this.prisma as any).sectionSubjectTeacher.findMany({
-      where: { classSectionId, academicYearId },
-      include: { Subject: true, Teacher: true },
-      orderBy: { Subject: { name: 'asc' } },
-    });
 
-    const matrix = await Promise.all(
-      assignedSubjects.map(async (assignment: any) => {
-        const submittedResults = await (this.prisma as any).subjectResult.findMany({
-          where: {
-            classSectionId,
-            subjectId: assignment.subjectId,
-            academicYearId,
-            term,
-            status: 'SUBMITTED',
-          },
-          select: { studentId: true, updatedAt: true },
-        });
-        const submittedCount = new Set(submittedResults.map((result: any) => result.studentId)).size;
-        const submittedAt = submittedResults.length
-          ? submittedResults.reduce((latest: Date, result: any) => result.updatedAt > latest ? result.updatedAt : latest, submittedResults[0].updatedAt)
-          : null;
-
-        return {
-          subjectId: assignment.subjectId,
-          subjectName: assignment.Subject.name,
-          subjectCode: assignment.Subject.code,
-          teacherId: assignment.teacherId,
-          teacherName: `${assignment.Teacher.firstName} ${assignment.Teacher.lastName}`,
-          submittedCount,
-          enrolledCount,
-          isSubmitted: enrolledCount > 0 && submittedCount === enrolledCount,
-          completionPercentage: enrolledCount ? Math.round((submittedCount / enrolledCount) * 100) : 0,
-          submittedAt,
-        };
-      })
-    );
-
-    const allSubmitted = matrix.length > 0 && matrix.every((item) => item.isSubmitted);
+    const allSubmitted = matrix.length > 0 && matrix.every((item: any) => item.isSubmitted);
     return {
       allSubmitted,
       subjects: matrix,
       matrix,
-      totalSubmitted: matrix.filter((item) => item.isSubmitted).length,
+      totalSubmitted: matrix.filter((item: any) => item.isSubmitted).length,
       totalSubjects: matrix.length,
       classSectionName: [section.GradeLevel?.name, section.name].filter(Boolean).join(' '),
       academicYear: section.AcademicYear?.year ?? academicYearId,
@@ -339,10 +358,10 @@ export class ResultsService {
 
   // Get all student results for a given class, term
   async getStudentResults(classSectionId: string, academicYearId: string, term: string, userId: string) {
-    // Verify user is homeroom teacher for this section
-    const teacher = await this.getTeacher(userId);
+    // Verify user is homeroom teacher for this section directly
     const section = await this.prisma.classSection.findFirst({
-      where: { id: classSectionId, teacherId: teacher.id }
+      where: { id: classSectionId, homeroomTeacher: { userId } },
+      select: { id: true },
     });
     if (!section) throw new ForbiddenException('Only the homeroom teacher can view student results');
 

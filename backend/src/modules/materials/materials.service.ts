@@ -52,14 +52,14 @@ export class MaterialsService {
     if (role === Role.TEACHER) {
       const teacher = await this.prisma.teacher.findUnique({
         where: { userId },
-        select: { id: true },
-      });
-      const assignedSections = teacher
-        ? await this.prisma.sectionSubjectTeacher.findMany({
-            where: { teacherId: teacher.id },
+        select: {
+          id: true,
+          subjectSections: {
             select: { classSectionId: true },
-          })
-        : [];
+          },
+        },
+      });
+      const assignedSections = teacher?.subjectSections || [];
       where.OR = [
         ...(where.OR || []),
         { userId },

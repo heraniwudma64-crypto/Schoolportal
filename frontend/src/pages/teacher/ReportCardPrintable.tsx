@@ -1,86 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChevronRight, ChevronLeft, Download, Printer } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '../../lib/api';
-import { getAcademicYears } from '../../api/academicStructure';
-
-type ReportCardData = {
-  studentId: string;
-  admissionNo: string;
-  firstName: string;
-  lastName: string;
-  age: number;
-  gender: string;
-  academicYear: string;
-  gradeLevel: string;
-  promotedToGrade?: string;
-  classSectionName: string;
-  homeroomTeacher?: string;
-  subjectResults: Array<{
-    subjectName: string;
-    term1: number | null;
-    term2: number | null;
-    sem1Avg: number | null;
-    term3: number | null;
-    term4: number | null;
-    sem2Avg: number | null;
-    yearlyAvg: number | null;
-  }>;
-  overallTotal: number;
-  overallAverage: number;
-  overallRank: number;
-  absentDays: number;
-  conduct: string;
-  behaviourAssessment: {
-    academicPotential: string;
-    uniform: string;
-    timeManagement: string;
-    harmfulActions: string;
-    responsibilities: string;
-    clubActivities: string;
-    classworkHomework: string;
-    flexibility: string;
-    hardWork: string;
-    positiveThinking: string;
-    obeyingRules: string;
-    interpersonalCommunication: string;
-  };
-  homeroomRemarksSem1?: string;
-  homeroomRemarksSem2?: string;
-};
+import { useAcademicYears } from '../../hooks/useAcademicStructure';
+import {
+  useHomeroomContext,
+  useCompiledReportCards,
+  ReportCardData,
+} from '../../hooks/useHomeroom';
 
 export default function ReportCardPrintable() {
-  const [students, setStudents] = useState<ReportCardData[]>([]);
   const [currentPage, setCurrentPage] = useState(0);
   const [currentCardSide, setCurrentCardSide] = useState<'front' | 'back'>('front');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [context, years] = await Promise.all([
-          api.get<{ assignedSection: { id: string; name: string } | null }>('/teachers/me/homeroom-context'),
-          getAcademicYears(),
-        ]);
-        const year = years.find((item) => item.isCurrent) || years[0];
-        if (!context.assignedSection || !year) throw new Error('No homeroom section assigned');
+  // 1. Shared Context & Academic Years
+  const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
+  const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
-        // Fetch comprehensive report card data
-        const cardsData = await api.get<ReportCardData[]>(
-          `/report-cards/compiled?classSectionId=${context.assignedSection.id}&academicYearId=${year.id}`
-        );
-        setStudents(Array.isArray(cardsData) ? cardsData : []);
-        setSelectedStudentIds(cardsData.map((s: any) => s.studentId));
-      } catch (err: any) {
-        setError(err.message || 'Could not load report cards');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
+  const currentYear = years.find((item) => item.isCurrent) || years[0];
+  const sectionId = homeroomContext?.assignedSection?.id;
+  const yearId = currentYear?.id;
+
+  // 2. Compiled Report Cards Query
+  const {
+    data: rawStudents = [],
+    isLoading: cardsLoading,
+    error: cardsError,
+  } = useCompiledReportCards(sectionId, yearId);
+
+  const students = Array.isArray(rawStudents) ? rawStudents : [];
+  const loading = contextLoading || yearsLoading || (cardsLoading && students.length === 0);
+  const error =
+    (contextError as any)?.response?.data?.message ||
+    (contextError as any)?.message ||
+    (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
+    (cardsError as any)?.response?.data?.message ||
+    (cardsError as any)?.message ||
+    '';
 
   const displayedStudent = students[currentPage];
   const isBackSide = currentCardSide === 'back';

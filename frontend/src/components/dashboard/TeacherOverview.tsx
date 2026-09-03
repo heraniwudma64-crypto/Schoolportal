@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { 
   Users, 
   BookOpen, 
@@ -12,12 +13,21 @@ import { MOCK_SUBJECTS, MOCK_ASSIGNMENTS } from '../../data/mockData';
 import { cn } from '../../lib/utils';
 import { api } from '../../lib/api';
 
-const TeacherOverview = () => {
-  const [dashboard, setDashboard] = useState<{ assignedSubjectsCount: number; activeStudentsCount: number; assignmentsPublishedCount: number; pendingExamsCount: number; attendance: { recordsReviewed: number; presentCount: number; absentCount: number }; recentActions: Array<{ id: string; type: string; text: string; at: string }> } | null>(null);
+interface TeacherDashboardData {
+  assignedSubjectsCount: number;
+  activeStudentsCount: number;
+  assignmentsPublishedCount: number;
+  pendingExamsCount: number;
+  attendance: { recordsReviewed: number; presentCount: number; absentCount: number };
+  recentActions: Array<{ id: string; type: string; text: string; at: string }>;
+}
 
-  useEffect(() => {
-    api.get<typeof dashboard>('/teachers/dashboard').then(setDashboard).catch(() => setDashboard(null));
-  }, []);
+const TeacherOverview = () => {
+  const { data: dashboard } = useQuery<TeacherDashboardData>({
+    queryKey: ['teachers', 'dashboard'],
+    queryFn: () => api.get<TeacherDashboardData>('/teachers/dashboard'),
+    staleTime: 2 * 60 * 1000,
+  });
 
   return (
     <div className="space-y-6">

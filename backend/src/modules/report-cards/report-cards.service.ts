@@ -21,7 +21,7 @@ export class ReportCardsService {
     if (!classSectionId) {
       throw new BadRequestException('Class Section is required');
     }
-    
+
     const whereClause: any = {
       classSectionId,
       status: 'ACTIVE'
@@ -87,14 +87,14 @@ export class ReportCardsService {
     sectionId: section.id,
     sectionName: section.name,
     gradeLevel: section.GradeLevel?.name,
-    homeroomTeacher: section.Teacher 
-      ? `${section.Teacher.firstName} ${section.Teacher.lastName}` 
+    homeroomTeacher: section.Teacher
+      ? `${section.Teacher.firstName} ${section.Teacher.lastName}`
       : 'Unassigned',
     studentCount: section.students.length,
     students: section.students,
   };
 }  async getReportCard(studentId: string, classSectionId: string, termId: string) {
-  
+
     if (!studentId || !classSectionId || !termId) {
       throw new BadRequestException('Student ID, Class Section ID, and Term ID are required');
     }
@@ -114,7 +114,7 @@ export class ReportCardsService {
     });
 
     if (!student) throw new NotFoundException('Student not found');
-    
+
     const term = await this.prisma.term.findUnique({
       where: { id: termId }
     });
@@ -186,7 +186,7 @@ export class ReportCardsService {
       overallTotalScore += sub.score;
       overallTotalMaxScore += sub.maxScore;
     }
-    
+
     let overallPercentage = 0;
     if (overallTotalMaxScore > 0) {
       overallPercentage = (overallTotalScore / overallTotalMaxScore) * 100;
@@ -207,7 +207,7 @@ export class ReportCardsService {
 
     let present = 0;
     let absent = 0;
-    
+
     for (const record of attendanceRecords) {
       if (['PRESENT', 'LATE', 'EXCUSED'].includes(record.status)) {
         present++;
@@ -257,44 +257,65 @@ export class ReportCardsService {
   }
 
   async getCompiledReportCards(classSectionId: string, academicYearId: string) {
-    // Fetch all students in the class section
-    const students = await this.prisma.student.findMany({
-      where: { 
-        ClassSection: { id: classSectionId },
-        StudentEnrollment: {
-          some: {
-            classSectionId,
-            academicYearId,
-            status: 'ACTIVE'
+    // Fetch students, section, terms, results, and attendance concurrently
+    const [students, section, terms, subjectResults, attendance] = await Promise.all([
+      this.prisma.student.findMany({
+        where: {
+          ClassSection: { id: classSectionId },
+          StudentEnrollment: {
+            some: {
+              classSectionId,
+              academicYearId,
+              status: 'ACTIVE'
+            }
           }
-        }
-      },
-      include: { StudentEnrollment: true }
-    });
-
-    // Fetch class section details
-    const section = await this.prisma.classSection.findUnique({
-      where: { id: classSectionId },
-      include: { GradeLevel: true, Teacher: true, AcademicYear: true }
-    });
+        },
+        select: {
+          id: true,
+          admissionNo: true,
+          firstName: true,
+          lastName: true,
+          dob: true,
+          gender: true,
+        },
+        orderBy: { lastName: 'asc' },
+      }),
+      this.prisma.classSection.findUnique({
+        where: { id: classSectionId },
+        select: {
+          id: true,
+          name: true,
+          GradeLevel: { select: { name: true } },
+          Teacher: { select: { firstName: true, lastName: true } },
+          AcademicYear: { select: { year: true } },
+        },
+      }),
+      this.prisma.term.findMany({
+        where: { academicYearId },
+        select: { id: true, name: true },
+        orderBy: { startDate: 'asc' },
+      }),
+      (this.prisma as any).subjectResult.findMany({
+        where: {
+          classSectionId,
+          academicYearId,
+          status: 'SUBMITTED',
+        },
+        select: {
+          studentId: true,
+          subjectId: true,
+          marks: true,
+          term: true,
+          Subject: { select: { name: true } },
+        },
+      }),
+      this.prisma.studentAttendance.findMany({
+        where: { classSectionId, status: 'ABSENT' },
+        select: { studentId: true },
+      }),
+    ]);
 
     if (!section) throw new NotFoundException('Class section not found');
-
-    // Get latest terms
-    const terms = await this.prisma.term.findMany({
-      where: { academicYearId },
-      orderBy: { startDate: 'asc' }
-    });
-
-    // Fetch all subject results (SUBMITTED only)
-    const subjectResults = await (this.prisma as any).subjectResult.findMany({
-      where: {
-        classSectionId,
-        academicYearId,
-        status: 'SUBMITTED'
-      },
-      include: { Subject: true }
-    });
 
     const reportSubjectOrder = [
       'Afaan Oromoo', 'Amharic', 'English', 'Maths', 'Math', 'Biology',
@@ -316,10 +337,6 @@ export class ReportCardsService {
       }
     }
 
-    const attendance = await this.prisma.studentAttendance.findMany({
-      where: { classSectionId, studentId: { in: students.map((student) => student.id) }, status: 'ABSENT' },
-      select: { studentId: true },
-    });
     const absentDaysByStudent = attendance.reduce((counts, record) => {
       counts.set(record.studentId, (counts.get(record.studentId) || 0) + 1);
       return counts;
@@ -359,8 +376,8 @@ export class ReportCardsService {
       // Calculate overall average and rank placeholder
       const scoredSubjects = subjectResults_.filter((subject) => subject.yearlyAvg !== null);
       const overallTotal = scoredSubjects.reduce((sum, s) => sum + (s.yearlyAvg || 0), 0);
-      const overallAverage = scoredSubjects.length > 0 
-        ? Math.round((overallTotal / scoredSubjects.length) * 10) / 10 
+      const overallAverage = scoredSubjects.length > 0
+        ? Math.round((overallTotal / scoredSubjects.length) * 10) / 10
         : 0;
 
       return {
@@ -368,7 +385,7 @@ export class ReportCardsService {
         admissionNo: student.admissionNo,
         firstName: student.firstName,
         lastName: student.lastName,
-        age: student.dob 
+        age: student.dob
           ? Math.floor((new Date().getTime() - new Date(student.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
           : 0,
         gender: student.gender || 'N/A',
@@ -376,8 +393,8 @@ export class ReportCardsService {
         gradeLevel: section.GradeLevel?.name || '',
         classSectionName: section.name,
         promotedToGrade: '', // To be set by homeroom teacher
-        homeroomTeacher: section.Teacher 
-          ? `${section.Teacher.firstName} ${section.Teacher.lastName}` 
+        homeroomTeacher: section.Teacher
+          ? `${section.Teacher.firstName} ${section.Teacher.lastName}`
           : 'Unassigned',
         subjectResults: subjectResults_,
         overallTotal,

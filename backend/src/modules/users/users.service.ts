@@ -222,22 +222,32 @@ export class UsersService {
   // ─── STATS ───────────────────────────────────────────────────────────────────
 
   async getStats() {
-    const [total, active, inactive] = await this.prisma.$transaction([
-      this.prisma.user.count({ where: { isDeleted: false } }),
-      this.prisma.user.count({ where: { isDeleted: false, isActive: true } }),
-      this.prisma.user.count({ where: { isDeleted: false, isActive: false } }),
-    ]);
-
-    // groupBy outside of $transaction to avoid the strict overload requirement
-    const byRole = await this.prisma.user.groupBy({
-      by: ['role'],
+    const grouped = await this.prisma.user.groupBy({
+      by: ['role', 'isActive'],
       where: { isDeleted: false },
-      orderBy: { role: 'asc' },
-      _count: { role: true },
+      _count: { id: true },
     });
 
-    const roleMap: Record<string, number> = {};
-    byRole.forEach((r) => { roleMap[r.role] = r._count.role; });
+    let total = 0;
+    let active = 0;
+    let inactive = 0;
+    const roleMap: Record<string, number> = {
+      STUDENT: 0,
+      TEACHER: 0,
+      PARENT: 0,
+      ADMIN: 0,
+    };
+
+    for (const item of grouped) {
+      const count = item._count.id;
+      total += count;
+      if (item.isActive) {
+        active += count;
+      } else {
+        inactive += count;
+      }
+      roleMap[item.role] = (roleMap[item.role] || 0) + count;
+    }
 
     return {
       total,
