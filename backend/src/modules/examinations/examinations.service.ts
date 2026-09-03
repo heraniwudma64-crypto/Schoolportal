@@ -234,10 +234,17 @@ export class ExaminationsService {
     return this.prisma.examination.findMany({
       where: { status: ExamStatus.PENDING },
       include: {
-        Subject: true,
-        Teacher: { include: { User: true } },
-        Class: true,
-        ClassSection: true,
+        Subject: { select: { id: true, name: true, code: true } },
+        Teacher: {
+          select: {
+            firstName: true,
+            lastName: true,
+            staffId: true,
+            User: { select: { email: true, avatarUrl: true } },
+          },
+        },
+        Class: { select: { id: true, name: true } },
+        ClassSection: { select: { id: true, name: true } },
         questions: { include: { options: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -252,6 +259,69 @@ export class ExaminationsService {
     return this.prisma.examination.update({
       where: { id },
       data: { status: status as ExamStatus },
+    });
+  }
+
+  /**
+   * Admin-only review action.  Moves an exam from PENDING to APPROVED or
+   * REJECTED and, when rejected, persists the reviewer's feedback so the
+   * teacher can see exactly what needs to be corrected.
+   */
+  async reviewExam(
+    id: string,
+    status: 'APPROVED' | 'REJECTED',
+    rejectionReason?: string,
+  ) {
+    const exam = await this.prisma.examination.findUnique({ where: { id } });
+    if (!exam) throw new NotFoundException('Examination not found');
+    if (exam.status !== ExamStatus.PENDING) {
+      throw new BadRequestException('Only PENDING exams can be reviewed');
+    }
+
+    // Store rejection feedback in the `instructions` field (no schema change needed).
+    // We prefix it clearly so the teacher UI can detect and display it distinctly.
+    const instructionsUpdate =
+      status === 'REJECTED' && rejectionReason?.trim()
+        ? `[REJECTION_REASON]: ${rejectionReason.trim()}`
+        : undefined;
+
+    return this.prisma.examination.update({
+      where: { id },
+      data: {
+        status: status as ExamStatus,
+        ...(instructionsUpdate !== undefined && { instructions: instructionsUpdate }),
+      },
+      include: {
+        Subject: { select: { id: true, name: true } },
+        Teacher: { select: { firstName: true, lastName: true } },
+        Class: { select: { id: true, name: true } },
+        ClassSection: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  /**
+   * Returns the authenticated teacher's APPROVED exams so the teacher
+   * dashboard can show which exams have been reviewed and cleared to run.
+   */
+  async findApprovedForTeacher(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+
+    return this.prisma.examination.findMany({
+      where: { teacherId: teacher.id, status: ExamStatus.APPROVED },
+      include: {
+        Subject: { select: { id: true, name: true } },
+        Class: { select: { id: true, name: true } },
+        ClassSection: { select: { id: true, name: true } },
+        questions: {
+          select: { id: true, text: true },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
     });
   }
 
