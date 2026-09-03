@@ -7,7 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExamStatus } from '@prisma/client';
+import { ExamStatus, ExamSessionStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -86,7 +86,7 @@ export class ExaminationsService {
             ...(teacherId ? { teacherId } : {}),
             duration: Number(dto.duration) || 60,
             status:
-              dto.status === 'DRAFT' ? ExamStatus.DRAFT :
+              dto.status === 'DRAFT'    ? ExamStatus.DRAFT    :
               dto.status === 'APPROVED' ? ExamStatus.APPROVED :
               ExamStatus.PENDING,
             totalMarks: calculatedTotalMarks,
@@ -136,8 +136,8 @@ export class ExaminationsService {
       status: dto.status ? (dto.status as ExamStatus) : undefined,
       updatedAt: new Date(),
     };
-    if (dto.subjectId) updateData.subjectId = dto.subjectId;
-    if (dto.classId) updateData.classId = dto.classId;
+    if (dto.subjectId)      updateData.subjectId      = dto.subjectId;
+    if (dto.classId)        updateData.classId        = dto.classId;
     if (dto.classSectionId) updateData.classSectionId = dto.classSectionId;
 
     if (dto.questions) {
@@ -195,9 +195,9 @@ export class ExaminationsService {
     return this.prisma.examination.findMany({
       where: { status: ExamStatus.APPROVED },
       include: {
-        Subject: { select: { id: true, name: true } },
-        Teacher: { select: { firstName: true, lastName: true } },
-        Class: { select: { id: true, name: true } },
+        Subject:      { select: { id: true, name: true } },
+        Teacher:      { select: { firstName: true, lastName: true } },
+        Class:        { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
       },
     });
@@ -216,19 +216,14 @@ export class ExaminationsService {
             User: { select: { email: true, avatarUrl: true } },
           },
         },
-        Class: { select: { id: true, name: true } },
+        Class:        { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
-        questions: { include: { options: true } },
+        questions:    { include: { options: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  /**
-   * Admin reviews an exam: APPROVED releases it to the teacher;
-   * REJECTED stores feedback in the instructions field so the teacher
-   * can see exactly what needs correcting.
-   */
   async reviewExam(id: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string) {
     const exam = await this.prisma.examination.findUnique({ where: { id } });
     if (!exam) throw new NotFoundException('Examination not found');
@@ -248,97 +243,70 @@ export class ExaminationsService {
         ...(instructionsUpdate !== undefined ? { instructions: instructionsUpdate } : {}),
       },
       include: {
-        Subject: { select: { id: true, name: true } },
-        Teacher: { select: { firstName: true, lastName: true } },
-        Class: { select: { id: true, name: true } },
+        Subject:      { select: { id: true, name: true } },
+        Teacher:      { select: { firstName: true, lastName: true } },
+        Class:        { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
       },
     });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // TEACHER: APPROVED EXAMS DASHBOARD
+  // TEACHER: APPROVED / PUBLISHED EXAM DASHBOARDS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Returns the calling teacher's APPROVED exams with question previews and
-   * current window fields so the Publish modal can prepopulate them.
-   */
   async findApprovedForTeacher(userId: string) {
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
-    // Cast to any: windowStart/windowEnd/delayMinutes are in the DB via raw
-    // migration but not yet in the generated Prisma client types.
-    const exams: any[] = await (this.prisma as any).examination.findMany({
+    return this.prisma.examination.findMany({
       where: { teacherId: teacher.id, status: ExamStatus.APPROVED },
       include: {
-        Subject: { select: { id: true, name: true } },
-        Class: { select: { id: true, name: true } },
+        Subject:      { select: { id: true, name: true } },
+        Class:        { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
-        questions: { select: { id: true, text: true } },
+        questions:    { select: { id: true, text: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
-
-    return exams.map((e: any) => ({
-      id: e.id,
-      title: e.title,
-      duration: e.duration,
-      totalMarks: e.totalMarks,
-      status: e.status,
-      instructions: e.instructions,
-      Subject: e.Subject,
-      Class: e.Class,
-      ClassSection: e.ClassSection,
-      questions: e.questions,
-      windowStart: e.windowStart ?? null,
-      windowEnd: e.windowEnd ?? null,
-      delayMinutes: e.delayMinutes ?? 0,
-      updatedAt: e.updatedAt,
-    }));
   }
 
-  /**
-   * Returns the calling teacher's PUBLISHED exams (already deployed to students)
-   * enriched with window fields and question count.
-   */
   async findPublishedForTeacher(userId: string) {
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
-    const exams: any[] = await (this.prisma as any).examination.findMany({
-      where: { teacherId: teacher.id, status: 'PUBLISHED' },
+    const exams = await this.prisma.examination.findMany({
+      where: { teacherId: teacher.id, status: ExamStatus.PUBLISHED },
       include: {
-        Subject: { select: { id: true, name: true } },
+        Subject:      { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
-        questions: { select: { id: true } },
+        questions:    { select: { id: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
     const now = new Date();
-    return exams.map((e: any) => {
+    return exams.map((e) => {
       let windowStatus: 'SCHEDULED' | 'OPEN' | 'CLOSED' | 'NO_WINDOW' = 'NO_WINDOW';
       if (e.windowStart && e.windowEnd) {
-        if (now < new Date(e.windowStart)) windowStatus = 'SCHEDULED';
-        else if (now > new Date(e.windowEnd)) windowStatus = 'CLOSED';
+        if (now < e.windowStart) windowStatus = 'SCHEDULED';
+        else if (now > e.windowEnd) windowStatus = 'CLOSED';
         else windowStatus = 'OPEN';
       }
       return {
-        id: e.id,
-        title: e.title,
-        duration: e.duration,
-        totalMarks: e.totalMarks,
-        status: e.status,
-        Subject: e.Subject,
-        ClassSection: e.ClassSection,
+        id:            e.id,
+        title:         e.title,
+        duration:      e.duration,
+        totalMarks:    e.totalMarks,
+        status:        e.status,
+        Subject:       e.Subject,
+        ClassSection:  e.ClassSection,
         questionCount: e.questions?.length ?? 0,
-        windowStart: e.windowStart ?? null,
-        windowEnd: e.windowEnd ?? null,
-        delayMinutes: e.delayMinutes ?? 0,
+        windowStart:   e.windowStart?.toISOString() ?? null,
+        windowEnd:     e.windowEnd?.toISOString()   ?? null,
+        delayMinutes:  e.delayMinutes ?? 0,
         windowStatus,
-        updatedAt: e.updatedAt,
+        updatedAt:     e.updatedAt,
       };
     });
   }
@@ -351,91 +319,131 @@ export class ExaminationsService {
    * Atomically moves an APPROVED exam to PUBLISHED and stamps the delivery
    * window so students can immediately see it on their dashboards.
    *
-   * Guards enforced server-side:
+   * Guards:
    *  1. Caller must be the owning teacher.
    *  2. Exam must be APPROVED (not DRAFT / PENDING / REJECTED / already PUBLISHED).
    *  3. windowEnd must be after windowStart.
-   *  4. windowStart must be in the future (teachers cannot publish an already-closed window).
+   *  4. Window cannot be more than 30 days in the future.
+   *
+   * Note: we do NOT reject start times close to or slightly before "now" because
+   * the client sends a local-time value that may differ from the server clock by
+   * several minutes depending on the teacher's timezone.  A 10-minute grace
+   * window prevents false "in the past" rejections while still blocking clearly
+   * stale dates.
    */
   async publishExam(
     examId: string,
     dto: { windowStart: string; windowEnd: string },
     userId: string,
   ) {
+    // ── 1. Resolve teacher ───────────────────────────────────────────────────
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
+    // ── 2. Resolve exam ──────────────────────────────────────────────────────
     const exam = await this.prisma.examination.findUnique({ where: { id: examId } });
-    if (!exam) throw new NotFoundException('Examination not found');
-    if (exam.teacherId !== teacher.id) throw new ForbiddenException('You do not own this examination');
+    if (!exam) throw new NotFoundException(`Examination with id "${examId}" not found`);
+    if (exam.teacherId !== teacher.id) {
+      throw new ForbiddenException('You do not own this examination');
+    }
+
+    if (exam.status === ExamStatus.PUBLISHED) {
+      throw new BadRequestException(
+        'This exam is already published. Use the delay endpoint to push the window back, or contact admin to retract.',
+      );
+    }
     if (exam.status !== ExamStatus.APPROVED) {
       throw new BadRequestException(
-        exam.status === 'PUBLISHED' as any
-          ? 'This exam is already published. Use the delay endpoint to adjust timing.'
-          : 'Only APPROVED exams can be published. Submit the exam for admin review first.',
+        `Cannot publish an exam with status "${exam.status}". Only APPROVED exams can be published. ` +
+        'Submit the exam for admin review first.',
       );
+    }
+
+    // ── 3. Parse and validate dates ──────────────────────────────────────────
+    if (!dto.windowStart || !dto.windowEnd) {
+      throw new BadRequestException('Both windowStart and windowEnd are required');
     }
 
     const start = new Date(dto.windowStart);
     const end   = new Date(dto.windowEnd);
 
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new BadRequestException('Invalid date format for windowStart or windowEnd');
+    if (isNaN(start.getTime())) {
+      throw new BadRequestException(
+        `Invalid windowStart value: "${dto.windowStart}". Expected an ISO 8601 date string.`,
+      );
+    }
+    if (isNaN(end.getTime())) {
+      throw new BadRequestException(
+        `Invalid windowEnd value: "${dto.windowEnd}". Expected an ISO 8601 date string.`,
+      );
     }
     if (end <= start) {
-      throw new BadRequestException('windowEnd must be after windowStart');
+      throw new BadRequestException(
+        `windowEnd (${end.toISOString()}) must be after windowStart (${start.toISOString()})`,
+      );
     }
-    // Allow scheduling up to 30 days in advance; reject obviously wrong past dates.
-    const now = new Date();
-    const maxFutureMs = 30 * 24 * 60 * 60 * 1000;
-    if (start < new Date(now.getTime() - 60_000)) {
-      // 60-second grace for network latency
-      throw new BadRequestException('windowStart cannot be in the past');
+
+    const now           = new Date();
+    const maxFutureMs   = 30 * 24 * 60 * 60 * 1000;
+    // 10-minute grace covers teacher timezone offset + network latency
+    const gracePastMs   = 10 * 60 * 1000;
+
+    if (start < new Date(now.getTime() - gracePastMs)) {
+      throw new BadRequestException(
+        'windowStart is too far in the past. Please choose a start time within the next 30 days.',
+      );
     }
     if (start.getTime() - now.getTime() > maxFutureMs) {
       throw new BadRequestException('windowStart cannot be more than 30 days in the future');
     }
 
-    // Single atomic write: set status + window in one UPDATE.
-    // Uses (any) cast because PUBLISHED and window fields are not yet in the
-    // generated Prisma client (PUBLISHED via raw enum migration, window fields
-    // via raw column migration — neither has been regenerated yet).
-    const updated: any = await (this.prisma as any).examination.update({
-      where: { id: examId },
-      data: {
-        status: 'PUBLISHED',
-        windowStart: start,
-        windowEnd: end,
-        delayMinutes: 0,          // reset any prior delays on fresh publish
-        updatedAt: now,
-      },
-      include: {
-        Subject: { select: { id: true, name: true } },
-        ClassSection: { select: { id: true, name: true } },
-        questions: { select: { id: true } },
-      },
-    });
+    // ── 4. Persist atomically ────────────────────────────────────────────────
+    try {
+      const updated = await this.prisma.examination.update({
+        where: { id: examId },
+        data: {
+          status:       ExamStatus.PUBLISHED,
+          windowStart:  start,
+          windowEnd:    end,
+          delayMinutes: 0,
+          updatedAt:    now,
+        },
+        include: {
+          Subject:      { select: { id: true, name: true } },
+          ClassSection: { select: { id: true, name: true } },
+          questions:    { select: { id: true } },
+        },
+      });
 
-    return {
-      id: updated.id,
-      title: updated.title,
-      status: updated.status,
-      windowStart: updated.windowStart,
-      windowEnd: updated.windowEnd,
-      delayMinutes: updated.delayMinutes,
-      subject: updated.Subject,
-      classSection: updated.ClassSection,
-      questionCount: updated.questions?.length ?? 0,
-      publishedAt: now.toISOString(),
-      message: `Exam "${updated.title}" has been published and will be available to students from ${start.toLocaleString()}.`,
-    };
+      return {
+        id:            updated.id,
+        title:         updated.title,
+        status:        updated.status,
+        windowStart:   updated.windowStart?.toISOString() ?? null,
+        windowEnd:     updated.windowEnd?.toISOString()   ?? null,
+        delayMinutes:  updated.delayMinutes,
+        subject:       updated.Subject,
+        classSection:  updated.ClassSection,
+        questionCount: updated.questions?.length ?? 0,
+        publishedAt:   now.toISOString(),
+        message:
+          `Exam "${updated.title}" has been published. ` +
+          `Students can start from ${start.toLocaleString()} until ${end.toLocaleString()}.`,
+      };
+    } catch (error: any) {
+      // Prisma errors (unique violations, DB unavailable, etc.) surface here
+      // with a descriptive message instead of a raw 500.
+      if (error.code === 'P2025') {
+        throw new NotFoundException(`Examination "${examId}" was not found or was deleted`);
+      }
+      throw new InternalServerErrorException(
+        `Failed to publish examination: ${error.message ?? 'Unknown database error'}`,
+      );
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // SCHEDULED DELIVERY WINDOW
-  // windowStart / windowEnd / delayMinutes are stored in the DB via raw SQL
-  // migration but are NOT yet in the generated Prisma client.  Every call in
-  // this section uses (this.prisma as any) to bypass the missing type defs.
   // ─────────────────────────────────────────────────────────────────────────────
 
   async scheduleWindow(examId: string, dto: { windowStart: string; windowEnd: string }, userId: string) {
@@ -450,12 +458,15 @@ export class ExaminationsService {
     }
 
     const start = new Date(dto.windowStart);
-    const end = new Date(dto.windowEnd);
+    const end   = new Date(dto.windowEnd);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new BadRequestException('Invalid date format for windowStart or windowEnd');
+    }
     if (end <= start) throw new BadRequestException('windowEnd must be after windowStart');
 
-    return (this.prisma as any).examination.update({
+    return this.prisma.examination.update({
       where: { id: examId },
-      data: { windowStart: start, windowEnd: end, updatedAt: new Date() },
+      data:  { windowStart: start, windowEnd: end, updatedAt: new Date() },
       select: { id: true, title: true, windowStart: true, windowEnd: true, delayMinutes: true },
     });
   }
@@ -464,11 +475,15 @@ export class ExaminationsService {
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
-    const exam: any = await (this.prisma as any).examination.findUnique({ where: { id: examId } });
+    const exam = await this.prisma.examination.findUnique({ where: { id: examId } });
     if (!exam) throw new NotFoundException('Examination not found');
     if (exam.teacherId !== teacher.id) throw new ForbiddenException('You do not own this examination');
-    if (exam.status !== ExamStatus.APPROVED) {
-      throw new BadRequestException('Only APPROVED exams can be delayed');
+
+    // ── FIX: allow delaying both APPROVED and PUBLISHED exams ───────────────
+    if (exam.status !== ExamStatus.APPROVED && exam.status !== ExamStatus.PUBLISHED) {
+      throw new BadRequestException(
+        `Cannot delay an exam with status "${exam.status}". Only APPROVED or PUBLISHED exams can be delayed.`,
+      );
     }
 
     const mins = Number(dto.minutes);
@@ -476,11 +491,11 @@ export class ExaminationsService {
       throw new BadRequestException('Delay must be between 1 and 120 minutes');
     }
 
-    const shiftMs = mins * 60 * 1000;
-    const newStart = exam.windowStart ? new Date(new Date(exam.windowStart).getTime() + shiftMs) : null;
-    const newEnd   = exam.windowEnd   ? new Date(new Date(exam.windowEnd).getTime()   + shiftMs) : null;
+    const shiftMs  = mins * 60 * 1000;
+    const newStart = exam.windowStart ? new Date(exam.windowStart.getTime() + shiftMs) : null;
+    const newEnd   = exam.windowEnd   ? new Date(exam.windowEnd.getTime()   + shiftMs) : null;
 
-    return (this.prisma as any).examination.update({
+    return this.prisma.examination.update({
       where: { id: examId },
       data: {
         ...(newStart ? { windowStart: newStart } : {}),
@@ -503,21 +518,18 @@ export class ExaminationsService {
     });
     if (!student) throw new NotFoundException('Student profile not found');
 
-    const exams: any[] = await (this.prisma as any).examination.findMany({
-      where: { classSectionId: student.classSectionId ?? undefined, status: 'PUBLISHED' },
+    const exams = await this.prisma.examination.findMany({
+      where: {
+        classSectionId: student.classSectionId ?? undefined,
+        status:         ExamStatus.PUBLISHED,
+      },
       select: {
-        id: true,
-        title: true,
-        duration: true,
-        totalMarks: true,
-        examDate: true,
-        windowStart: true,
-        windowEnd: true,
-        delayMinutes: true,
-        Subject: { select: { id: true, name: true } },
+        id: true, title: true, duration: true, totalMarks: true, examDate: true,
+        windowStart: true, windowEnd: true, delayMinutes: true,
+        Subject:   { select: { id: true, name: true } },
         questions: { select: { id: true } },
         sessions: {
-          where: { studentId: student.id },
+          where:  { studentId: student.id },
           select: { id: true, status: true, timeRemainingSeconds: true, startedAt: true },
         },
       },
@@ -525,28 +537,33 @@ export class ExaminationsService {
     });
 
     const now = new Date();
-    return exams.map((exam: any) => {
-      const session = exam.sessions?.[0] ?? null;
+    return exams.map((exam) => {
+      const session = (exam.sessions as any[])?.[0] ?? null;
       let windowStatus: 'SCHEDULED' | 'OPEN' | 'CLOSED' | 'NO_WINDOW' = 'NO_WINDOW';
       if (exam.windowStart && exam.windowEnd) {
-        if (now < new Date(exam.windowStart)) windowStatus = 'SCHEDULED';
-        else if (now > new Date(exam.windowEnd)) windowStatus = 'CLOSED';
+        if (now < exam.windowStart) windowStatus = 'SCHEDULED';
+        else if (now > exam.windowEnd) windowStatus = 'CLOSED';
         else windowStatus = 'OPEN';
       }
       return {
-        id: exam.id,
-        title: exam.title,
-        duration: exam.duration,
-        totalMarks: exam.totalMarks,
-        examDate: exam.examDate,
-        windowStart: exam.windowStart,
-        windowEnd: exam.windowEnd,
-        delayMinutes: exam.delayMinutes ?? 0,
+        id:            exam.id,
+        title:         exam.title,
+        duration:      exam.duration,
+        totalMarks:    exam.totalMarks,
+        examDate:      exam.examDate,
+        windowStart:   exam.windowStart?.toISOString() ?? null,
+        windowEnd:     exam.windowEnd?.toISOString()   ?? null,
+        delayMinutes:  exam.delayMinutes ?? 0,
         windowStatus,
-        subject: exam.Subject,
+        subject:       exam.Subject,
         questionCount: exam.questions?.length ?? 0,
         session: session
-          ? { id: session.id, status: session.status, timeRemainingSeconds: session.timeRemainingSeconds, startedAt: session.startedAt }
+          ? {
+              id:                   session.id,
+              status:               session.status,
+              timeRemainingSeconds: session.timeRemainingSeconds,
+              startedAt:            session.startedAt,
+            }
           : null,
         serverNow: now.toISOString(),
       };
@@ -555,7 +572,6 @@ export class ExaminationsService {
 
   // ─────────────────────────────────────────────────────────────────────────────
   // SESSION MANAGEMENT
-  // ExamSession rows live in the DB via raw SQL migration; all access via (any).
   // ─────────────────────────────────────────────────────────────────────────────
 
   async startSession(examId: string, userId: string, deviceFingerprint?: string) {
@@ -565,12 +581,13 @@ export class ExaminationsService {
     });
     if (!student) throw new NotFoundException('Student profile not found');
 
-    const exam: any = await (this.prisma as any).examination.findUnique({
+    const exam = await this.prisma.examination.findUnique({
       where: { id: examId },
       include: { questions: { include: { options: true } } },
     });
     if (!exam) throw new NotFoundException('Examination not found');
-    if (exam.status !== ExamStatus.APPROVED && exam.status !== 'PUBLISHED') {
+
+    if (exam.status !== ExamStatus.APPROVED && exam.status !== ExamStatus.PUBLISHED) {
       throw new BadRequestException('This exam is not available');
     }
     if (exam.classSectionId !== student.classSectionId) {
@@ -578,67 +595,68 @@ export class ExaminationsService {
     }
 
     const now = new Date();
-    if (exam.windowStart && now < new Date(exam.windowStart)) {
+    if (exam.windowStart && now < exam.windowStart) {
       throw new BadRequestException(
-        `Exam has not started yet. It opens at ${new Date(exam.windowStart).toISOString()}.`,
+        `Exam has not started yet. It opens at ${exam.windowStart.toISOString()}.`,
       );
     }
-    if (exam.windowEnd && now > new Date(exam.windowEnd)) {
+    if (exam.windowEnd && now > exam.windowEnd) {
       throw new BadRequestException('The exam window has closed. Contact your teacher.');
     }
 
-    const existing: any = await (this.prisma as any).examSession.findUnique({
+    const existing = await this.prisma.examSession.findUnique({
       where: { examinationId_studentId: { examinationId: examId, studentId: student.id } },
     });
 
     if (existing) {
-      if (existing.status === 'COMPLETED' || existing.status === 'TIMED_OUT') {
+      if (existing.status === ExamSessionStatus.COMPLETED || existing.status === ExamSessionStatus.TIMED_OUT) {
         throw new BadRequestException('You have already completed this exam.');
       }
-      if (existing.status === 'AWAITING_RESUME') {
+      if (existing.status === ExamSessionStatus.AWAITING_RESUME) {
         throw new BadRequestException('Your session is paused. Wait for your teacher to approve resumption.');
       }
+      // ACTIVE or INTERRUPTED — re-issue token, restore state
       const newToken = crypto.randomBytes(32).toString('hex');
-      const updated: any = await (this.prisma as any).examSession.update({
+      const updated = await this.prisma.examSession.update({
         where: { id: existing.id },
         data: {
-          sessionToken: newToken,
-          status: 'ACTIVE',
+          sessionToken:      newToken,
+          status:            ExamSessionStatus.ACTIVE,
           deviceFingerprint: deviceFingerprint ?? existing.deviceFingerprint,
-          lastSavedAt: now,
-          resumeApprovedAt: null,
+          lastSavedAt:       now,
+          resumeApprovedAt:  null,
         },
       });
       return {
-        sessionToken: newToken,
+        sessionToken:         newToken,
         timeRemainingSeconds: updated.timeRemainingSeconds,
-        resumedAt: now.toISOString(),
-        answers: JSON.parse(updated.answersJson || '{}'),
-        questions: this.scrubCorrectAnswers(exam.questions),
-        serverNow: now.toISOString(),
+        resumedAt:            now.toISOString(),
+        answers:              JSON.parse(updated.answersJson || '{}'),
+        questions:            this.scrubCorrectAnswers(exam.questions),
+        serverNow:            now.toISOString(),
       };
     }
 
     const sessionToken = crypto.randomBytes(32).toString('hex');
-    const session: any = await (this.prisma as any).examSession.create({
+    const session = await this.prisma.examSession.create({
       data: {
-        examinationId: examId,
-        studentId: student.id,
+        examinationId:        examId,
+        studentId:            student.id,
         sessionToken,
-        status: 'ACTIVE',
+        status:               ExamSessionStatus.ACTIVE,
         timeRemainingSeconds: exam.duration * 60,
-        answersJson: '{}',
-        deviceFingerprint: deviceFingerprint ?? null,
+        answersJson:          '{}',
+        deviceFingerprint:    deviceFingerprint ?? null,
       },
     });
 
     return {
       sessionToken,
       timeRemainingSeconds: session.timeRemainingSeconds,
-      resumedAt: null,
-      answers: {},
-      questions: this.scrubCorrectAnswers(exam.questions),
-      serverNow: now.toISOString(),
+      resumedAt:            null,
+      answers:              {},
+      questions:            this.scrubCorrectAnswers(exam.questions),
+      serverNow:            now.toISOString(),
     };
   }
 
@@ -650,24 +668,24 @@ export class ExaminationsService {
     const student = await this.prisma.student.findUnique({ where: { userId }, select: { id: true } });
     if (!student) throw new NotFoundException('Student profile not found');
 
-    const session: any = await (this.prisma as any).examSession.findUnique({
+    const session = await this.prisma.examSession.findUnique({
       where: { examinationId_studentId: { examinationId: examId, studentId: student.id } },
     });
     if (!session) throw new NotFoundException('No active session found');
     if (session.sessionToken !== dto.sessionToken) {
       throw new ForbiddenException('Invalid session token');
     }
-    if (session.status === 'COMPLETED' || session.status === 'TIMED_OUT') {
+    if (session.status === ExamSessionStatus.COMPLETED || session.status === ExamSessionStatus.TIMED_OUT) {
       throw new BadRequestException('Session already ended');
     }
 
-    await (this.prisma as any).examSession.update({
+    await this.prisma.examSession.update({
       where: { id: session.id },
       data: {
-        answersJson: JSON.stringify(dto.answers),
+        answersJson:          JSON.stringify(dto.answers),
         timeRemainingSeconds: Math.max(0, dto.timeRemainingSeconds),
-        lastSavedAt: new Date(),
-        status: 'ACTIVE',
+        lastSavedAt:          new Date(),
+        status:               ExamSessionStatus.ACTIVE,
       },
     });
     return { saved: true };
@@ -681,12 +699,12 @@ export class ExaminationsService {
     const student = await this.prisma.student.findUnique({ where: { userId }, select: { id: true } });
     if (!student) throw new NotFoundException('Student profile not found');
 
-    const session: any = await (this.prisma as any).examSession.findUnique({
+    const session = await this.prisma.examSession.findUnique({
       where: { examinationId_studentId: { examinationId: examId, studentId: student.id } },
     });
     if (!session) throw new NotFoundException('No active session found');
     if (session.sessionToken !== dto.sessionToken) throw new ForbiddenException('Invalid session token');
-    if (session.status === 'COMPLETED' || session.status === 'TIMED_OUT') {
+    if (session.status === ExamSessionStatus.COMPLETED || session.status === ExamSessionStatus.TIMED_OUT) {
       throw new BadRequestException('Session already ended');
     }
 
@@ -698,14 +716,14 @@ export class ExaminationsService {
       })),
     });
 
-    await (this.prisma as any).examSession.update({
+    await this.prisma.examSession.update({
       where: { id: session.id },
       data: {
-        answersJson: JSON.stringify(dto.answers),
+        answersJson:          JSON.stringify(dto.answers),
         timeRemainingSeconds: 0,
-        status: 'COMPLETED',
-        completedAt: new Date(),
-        lastSavedAt: new Date(),
+        status:               ExamSessionStatus.COMPLETED,
+        completedAt:          new Date(),
+        lastSavedAt:          new Date(),
       },
     });
 
@@ -716,19 +734,19 @@ export class ExaminationsService {
     const student = await this.prisma.student.findUnique({ where: { userId }, select: { id: true } });
     if (!student) throw new NotFoundException('Student profile not found');
 
-    const session: any = await (this.prisma as any).examSession.findUnique({
+    const session = await this.prisma.examSession.findUnique({
       where: { examinationId_studentId: { examinationId: examId, studentId: student.id } },
     });
     if (!session || session.sessionToken !== dto.sessionToken) {
       throw new ForbiddenException('Invalid session');
     }
-    if (session.status !== 'ACTIVE' && session.status !== 'INTERRUPTED') {
+    if (session.status !== ExamSessionStatus.ACTIVE && session.status !== ExamSessionStatus.INTERRUPTED) {
       return { status: session.status };
     }
 
-    await (this.prisma as any).examSession.update({
+    await this.prisma.examSession.update({
       where: { id: session.id },
-      data: { status: 'AWAITING_RESUME' },
+      data: { status: ExamSessionStatus.AWAITING_RESUME },
     });
     return { status: 'AWAITING_RESUME' };
   }
@@ -741,30 +759,33 @@ export class ExaminationsService {
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
-    const sessions: any[] = await (this.prisma as any).examSession.findMany({
-      where: { status: 'AWAITING_RESUME', Examination: { teacherId: teacher.id } },
+    const sessions = await this.prisma.examSession.findMany({
+      where: {
+        status:      ExamSessionStatus.AWAITING_RESUME,
+        Examination: { teacherId: teacher.id },
+      },
       include: { Examination: { select: { id: true, title: true, duration: true } } },
       orderBy: { lastSavedAt: 'asc' },
     });
 
     return Promise.all(
-      sessions.map(async (s: any) => {
+      sessions.map(async (s) => {
         const student = await this.prisma.student.findUnique({
-          where: { id: s.studentId },
+          where:  { id: s.studentId },
           select: { id: true, firstName: true, lastName: true, admissionNo: true },
         });
         const questionCount = await this.prisma.question.count({ where: { examId: s.examinationId } });
         return {
-          sessionId: s.id,
-          examId: s.examinationId,
-          examTitle: s.Examination.title,
-          studentId: s.studentId,
-          studentName: student ? `${student.firstName} ${student.lastName}` : 'Unknown',
-          admissionNo: student?.admissionNo ?? '—',
+          sessionId:            s.id,
+          examId:               s.examinationId,
+          examTitle:            s.Examination.title,
+          studentId:            s.studentId,
+          studentName:          student ? `${student.firstName} ${student.lastName}` : 'Unknown',
+          admissionNo:          student?.admissionNo ?? '—',
           timeRemainingSeconds: s.timeRemainingSeconds,
-          interruptedAt: s.lastSavedAt,
-          answeredCount: Object.keys(JSON.parse(s.answersJson || '{}')).length,
-          totalQuestions: questionCount,
+          interruptedAt:        s.lastSavedAt,
+          answeredCount:        Object.keys(JSON.parse(s.answersJson || '{}')).length,
+          totalQuestions:       questionCount,
         };
       }),
     );
@@ -774,33 +795,33 @@ export class ExaminationsService {
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
 
-    const session: any = await (this.prisma as any).examSession.findUnique({
-      where: { id: sessionId },
+    const session = await this.prisma.examSession.findUnique({
+      where:   { id: sessionId },
       include: { Examination: { select: { teacherId: true } } },
     });
     if (!session) throw new NotFoundException('Session not found');
     if (session.Examination.teacherId !== teacher.id) {
       throw new ForbiddenException('You do not own the examination for this session');
     }
-    if (session.status !== 'AWAITING_RESUME') {
+    if (session.status !== ExamSessionStatus.AWAITING_RESUME) {
       throw new BadRequestException(`Session is already ${session.status}`);
     }
 
     const newToken = crypto.randomBytes(32).toString('hex');
-    const updated: any = await (this.prisma as any).examSession.update({
+    const updated = await this.prisma.examSession.update({
       where: { id: sessionId },
       data: {
-        status: 'ACTIVE',
-        sessionToken: newToken,
-        resumeApprovedAt: new Date(),
-        resumeApprovedById: userId,
+        status:              ExamSessionStatus.ACTIVE,
+        sessionToken:        newToken,
+        resumeApprovedAt:    new Date(),
+        resumeApprovedById:  userId,
       },
     });
 
     return {
-      approved: true,
-      sessionId: updated.id,
-      newSessionToken: newToken,
+      approved:             true,
+      sessionId:            updated.id,
+      newSessionToken:      newToken,
       timeRemainingSeconds: updated.timeRemainingSeconds,
     };
   }
@@ -809,17 +830,17 @@ export class ExaminationsService {
     const student = await this.prisma.student.findUnique({ where: { userId }, select: { id: true } });
     if (!student) throw new NotFoundException('Student profile not found');
 
-    const session: any = await (this.prisma as any).examSession.findUnique({
+    const session = await this.prisma.examSession.findUnique({
       where: { examinationId_studentId: { examinationId: examId, studentId: student.id } },
     });
     if (!session) throw new NotFoundException('No session found for this exam');
 
-    if (session.status === 'ACTIVE' && session.resumeApprovedAt) {
+    if (session.status === ExamSessionStatus.ACTIVE && session.resumeApprovedAt) {
       return {
-        status: 'APPROVED',
-        sessionToken: session.sessionToken,
+        status:               'APPROVED',
+        sessionToken:         session.sessionToken,
         timeRemainingSeconds: session.timeRemainingSeconds,
-        answers: JSON.parse(session.answersJson || '{}'),
+        answers:              JSON.parse(session.answersJson || '{}'),
       };
     }
     return { status: session.status };
@@ -842,7 +863,7 @@ export class ExaminationsService {
       include: { options: true },
     });
 
-    let earnedScore = 0;
+    let earnedScore       = 0;
     let totalPossibleMarks = 0;
     const gradedAnswers: any[] = [];
     const perQ = questions.length > 0 && exam.totalMarks > 0 ? exam.totalMarks / questions.length : 10;
@@ -851,30 +872,30 @@ export class ExaminationsService {
       const qMarks = (question as any).marks || perQ;
       totalPossibleMarks += qMarks;
 
-      const correctOption = question.options.find((o: any) => o.isCorrect);
-      const studentAnswer = (dto.answers || []).find((a) => a.questionId === question.id);
+      const correctOption  = question.options.find((o: any) => o.isCorrect);
+      const studentAnswer  = (dto.answers || []).find((a) => a.questionId === question.id);
       const selectedOptionId = studentAnswer?.selectedOptionId ?? '';
-      const isCorrect = correctOption ? correctOption.id === selectedOptionId : false;
+      const isCorrect      = correctOption ? correctOption.id === selectedOptionId : false;
 
       if (isCorrect) earnedScore += qMarks;
 
       gradedAnswers.push({
-        questionId: question.id,
-        questionText: question.text,
+        questionId:      question.id,
+        questionText:    question.text,
         selectedOptionId,
         correctOptionId: correctOption?.id || '',
         isCorrect,
-        marksAwarded: isCorrect ? qMarks : 0,
-        options: question.options,
+        marksAwarded:    isCorrect ? qMarks : 0,
+        options:         question.options,
       });
     }
 
     return {
-      success: true,
-      score: earnedScore,
+      success:    true,
+      score:      earnedScore,
       totalMarks: totalPossibleMarks,
       percentage: totalPossibleMarks > 0 ? Math.round((earnedScore / totalPossibleMarks) * 100) : 0,
-      breakdown: gradedAnswers,
+      breakdown:  gradedAnswers,
     };
   }
 
@@ -882,11 +903,10 @@ export class ExaminationsService {
   // INTERNAL HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /** Strip isCorrect flags before sending questions to students. */
   private scrubCorrectAnswers(questions: any[]) {
     return questions.map((q) => ({
-      id: q.id,
-      text: q.text,
+      id:      q.id,
+      text:    q.text,
       options: q.options.map((o: any) => ({ id: o.id, optionText: o.optionText })),
     }));
   }
