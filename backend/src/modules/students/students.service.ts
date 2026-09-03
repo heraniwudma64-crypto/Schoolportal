@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import { TimetableService } from '../timetable/timetable.service';
 
 @Injectable()
 export class StudentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
+    private readonly timetableService: TimetableService,
   ) {}
 
   // --- Attendance Method ---
@@ -203,35 +205,14 @@ export class StudentsService {
     }));
   }
 
-  async getMySchedule(userId: string) {
+  async getMySchedule(userId: string, academicYearId?: string) {
     const student = await this.prisma.student.findUnique({
       where: { userId },
-      select: {
-        classSectionId: true,
-        StudentEnrollment: {
-          where: { status: 'ACTIVE' },
-          orderBy: { enrollmentDate: 'desc' },
-          take: 1,
-          select: { classSectionId: true },
-        },
-      },
+      select: { id: true },
     });
-    const classSectionId = student?.classSectionId ?? student?.StudentEnrollment[0]?.classSectionId;
-    if (!classSectionId) return [];
+    if (!student) return [];
 
-    return this.prisma.timetable.findMany({
-      where: { classSectionId },
-      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
-      select: {
-        id: true,
-        dayOfWeek: true,
-        startTime: true,
-        endTime: true,
-        ClassSection: { select: { name: true, roomNumber: true } },
-        Subject: { select: { name: true } },
-        Teacher: { select: { firstName: true, lastName: true } },
-      },
-    });
+    return this.timetableService.getLegacyStudentSchedule(student.id, academicYearId);
   }
 
   async getMyResults(userId: string) {

@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParent } from '../../context/ParentContext';
-import { getChildSchedule, ChildScheduleSlot } from '../../api/parents';
+import { getChildSchedule } from '../../api/parents';
+import { useAcademicYears } from '../../hooks/useAcademicStructure';
 import { 
   Calendar, 
   Clock, 
@@ -13,10 +14,12 @@ import {
   RefreshCw, 
   Layers,
   LayoutGrid,
-  ListFilter
+  ListFilter,
+  Printer
 } from 'lucide-react';
 import { ChildSelector } from '../../components/parent/ChildSelector';
 import StatCard from '../../components/dashboard/StatCard';
+import { Button } from '../../components/ui/button';
 import { Link } from 'react-router-dom';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -38,7 +41,7 @@ function normalizeDay(day: number | string): string {
   return String(day);
 }
 
-const ParentClassSchedule: React.FC = () => {
+export const ParentClassSchedule: React.FC = () => {
   const { 
     childrenList, 
     selectedChild, 
@@ -51,7 +54,27 @@ const ParentClassSchedule: React.FC = () => {
   const [activeDayTab, setActiveDayTab] = useState<string>('Monday');
   const [viewMode, setViewMode] = useState<'grid' | 'cards'>('grid');
 
-  // Query child schedule
+  // Academic Year selection
+  const {
+    data: academicYears = [],
+    isLoading: loadingYears,
+  } = useAcademicYears();
+
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
+
+  // Default to current academic year once loaded
+  useEffect(() => {
+    if (!selectedAcademicYearId && academicYears.length > 0) {
+      const current = academicYears.find((y) => y.isCurrent) || academicYears[0];
+      setSelectedAcademicYearId(current.id);
+    }
+  }, [academicYears, selectedAcademicYearId]);
+
+  const selectedYear = useMemo(() => {
+    return academicYears.find((y) => y.id === selectedAcademicYearId);
+  }, [academicYears, selectedAcademicYearId]);
+
+  // Query child schedule with cache isolation by child ID and academic year
   const {
     data: scheduleResponse,
     isLoading: scheduleLoading,
@@ -59,12 +82,13 @@ const ParentClassSchedule: React.FC = () => {
     error: fetchError,
     refetch: refetchSchedule,
   } = useQuery({
-    queryKey: ['parent-child-schedule-page', selectedChildId],
-    queryFn: () => (selectedChildId ? getChildSchedule(selectedChildId) : null),
+    queryKey: ['parent-child-schedule-page', selectedChildId, selectedAcademicYearId],
+    queryFn: () => (selectedChildId ? getChildSchedule(selectedChildId, selectedAcademicYearId || undefined) : null),
     enabled: !!selectedChildId,
+    staleTime: 5 * 60 * 1000,
   });
 
-  const rawSchedule = scheduleResponse?.schedule || [];
+  const rawSchedule = useMemo(() => scheduleResponse?.schedule || [], [scheduleResponse?.schedule]);
 
   // Group and sort schedule slots
   const { timeSlots, normalizedSlots, uniqueSubjectsCount } = useMemo(() => {
@@ -97,7 +121,11 @@ const ParentClassSchedule: React.FC = () => {
       .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
   }, [normalizedSlots, activeDayTab]);
 
-  if (parentLoading) {
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (parentLoading || loadingYears) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
@@ -158,12 +186,49 @@ const ParentClassSchedule: React.FC = () => {
   const gradeLevel = selectedChild?.classSection?.gradeLevel || selectedChild?.currentEnrollment?.gradeLevel;
   const sectionName = selectedChild?.classSection?.name || selectedChild?.currentEnrollment?.classSection || 'Class Section';
   const roomNo = selectedChild?.classSection?.roomNumber || 'Assigned Room';
-  const academicYear = selectedChild?.currentEnrollment?.academicYear || 'Current Year';
+  const academicYear = selectedYear?.year || selectedChild?.currentEnrollment?.academicYear || 'Current Year';
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      {/* ─── Print Specific Styles ─── */}
+      <style>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 8mm;
+          }
+          body {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            background: white !important;
+          }
+          nav, aside, header, .fixed, .print\\:hidden {
+            display: none !important;
+          }
+          main {
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+        }
+      `}</style>
+
+      {/* ─── Printable Header (Visible only when printing) ─── */}
+      <div className="hidden print:block mb-6 border-b border-gray-300 pb-4">
+        <h1 className="text-xl font-black text-gray-900">
+          School Portal — Student Class Timetable
+        </h1>
+        <p className="text-xs text-gray-700 mt-1 font-medium">
+          Student: {childName}
+          {selectedChild?.admissionNo && ` • Admission ID: ${selectedChild.admissionNo}`}
+          {sectionName && ` • Section: ${sectionName}`}
+          {gradeLevel && ` (${gradeLevel})`}
+          {` • Academic Year: ${academicYear}`}
+          {` • Total Weekly Lessons: ${rawSchedule.length}`}
+        </p>
+      </div>
+
       {/* Top Banner / Student Information Header */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-6 print:hidden">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-900 to-blue-800 text-white flex items-center justify-center font-bold text-2xl shadow-sm flex-shrink-0">
             {selectedChild?.avatarUrl ? (
@@ -185,22 +250,57 @@ const ParentClassSchedule: React.FC = () => {
           </div>
         </div>
 
-        {/* Child Selector if parent has multiple children */}
-        {childrenList.length > 1 && (
-          <div className="flex items-center gap-3 self-start md:self-auto bg-gray-50 p-2 rounded-2xl border border-gray-200/70">
-            <span className="text-xs font-semibold text-gray-500 pl-2">Switch Student:</span>
-            <ChildSelector />
+        {/* Controls: Child Selector + Academic Year Selector + Print Button */}
+        <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+          {/* Child Selector if parent has multiple children */}
+          {childrenList.length > 1 && (
+            <div className="flex items-center gap-2 bg-gray-50 p-1.5 px-3 rounded-2xl border border-gray-200/70">
+              <span className="text-xs font-bold text-gray-500">Student:</span>
+              <ChildSelector />
+            </div>
+          )}
+
+          {/* Academic Year Selector */}
+          <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-2xl px-3 py-1.5 shadow-xs">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+              Year:
+            </span>
+            <select
+              aria-label="Select Academic Year"
+              value={selectedAcademicYearId}
+              onChange={(e) => setSelectedAcademicYearId(e.target.value)}
+              className="bg-transparent text-xs font-bold text-gray-900 focus:outline-none cursor-pointer pr-1"
+            >
+              {academicYears.map((year) => (
+                <option key={year.id} value={year.id}>
+                  {year.year} {year.isCurrent ? '(Current)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+
+          {/* Print Action */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handlePrint}
+            className="rounded-2xl text-xs font-bold border-gray-200 text-gray-700 hover:bg-gray-50 shadow-xs"
+            aria-label="Print timetable"
+          >
+            <Printer className="w-3.5 h-3.5 mr-1.5" />
+            Print
+          </Button>
+        </div>
       </div>
 
       {/* API Error State */}
       {scheduleError && (
-        <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-start gap-4">
+        <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-start gap-4 print:hidden">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
             <h4 className="font-bold text-red-900">Unable to load class schedule</h4>
-            <p className="text-xs text-red-700">{(fetchError as any)?.message || 'Network error occurred.'}</p>
+            <p className="text-xs text-red-700">{(fetchError as Error)?.message || 'Network error occurred.'}</p>
             <button
               onClick={() => void refetchSchedule()}
               className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
@@ -212,7 +312,7 @@ const ParentClassSchedule: React.FC = () => {
       )}
 
       {/* Quick Summary StatCards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
         <StatCard
           title="Weekly Periods"
           value={scheduleLoading ? '…' : rawSchedule.length}
@@ -242,7 +342,7 @@ const ParentClassSchedule: React.FC = () => {
       {/* Main Timetable Card */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         {/* Header with View Mode Switcher */}
-        <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               <Calendar className="w-5 h-5 text-blue-600" />
@@ -302,7 +402,7 @@ const ParentClassSchedule: React.FC = () => {
             </div>
             <h4 className="text-base font-bold text-gray-800">No Timetable Assigned</h4>
             <p className="text-xs text-gray-400 leading-relaxed">
-              No class schedule is currently available or assigned to {childName}'s section.
+              No published class schedule is currently available or assigned to {childName}&apos;s section for {academicYear}.
             </p>
           </div>
         )}

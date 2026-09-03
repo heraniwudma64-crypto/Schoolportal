@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
-import {
-  RefreshCw, Printer, Download, CheckCircle2, AlertCircle,
-  Clock, Send, BadgeCheck,
-} from 'lucide-react';
+import { RefreshCw, Printer, Download, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
 import {
@@ -10,7 +7,6 @@ import {
   useHomeroomSubmissionMatrix,
   useConsolidatedRoster,
 } from '../../hooks/useHomeroom';
-import { submitReportCardsToAdmin, AdminSubmitReceipt } from '../../api/adminReports';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +19,7 @@ type SubjectSubmission = {
 
 type SubmissionMatrix = {
   allSubmitted: boolean;
+  // Backend returns both keys; we accept either.
   matrix?: SubjectSubmission[];
   subjects?: SubjectSubmission[];
   totalSubmitted?: number;
@@ -43,10 +40,8 @@ export default function HomeroomReportCards() {
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [isPrinting, setIsPrinting] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitReceipt, setSubmitReceipt] = useState<AdminSubmitReceipt | null>(null);
 
-  // ── 1. Shared Homeroom Context & Academic Years (from React Query cache) ────
+  // 1. Shared Homeroom Context & Academic Years (from Cache)
   const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
   const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
@@ -54,7 +49,7 @@ export default function HomeroomReportCards() {
   const sectionId = homeroomContext?.assignedSection?.id;
   const yearId = currentYear?.id;
 
-  // ── 2. Data Queries ─────────────────────────────────────────────────────────
+  // 2. Data Queries
   const {
     data: matrix,
     isLoading: matrixLoading,
@@ -71,29 +66,27 @@ export default function HomeroomReportCards() {
     refetch: refetchRoster,
   } = useConsolidatedRoster(sectionId, yearId);
 
-  const loading =
-    contextLoading || yearsLoading || ((matrixLoading || rosterLoading) && !preparedRoster);
+  const loading = contextLoading || yearsLoading || ((matrixLoading || rosterLoading) && !preparedRoster);
   const refreshing = (matrixFetching || rosterFetching) && !loading;
 
   const error =
     (contextError as any)?.response?.data?.message ||
     (contextError as any)?.message ||
-    (!contextLoading && !homeroomContext?.assignedSection
-      ? 'No homeroom section assigned to your account'
-      : '') ||
+    (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
     (matrixError as any)?.response?.data?.message ||
     (matrixError as any)?.message ||
     (rosterError as any)?.response?.data?.message ||
     (rosterError as any)?.message ||
     '';
 
-  // ── Term change ─────────────────────────────────────────────────────────────
+  // ── Term change ───────────────────────────────────────────────────────────
+
   const handleTermChange = (term: string) => {
     setSelectedTerm(term);
-    // useHomeroomSubmissionMatrix re-fetches automatically when selectedTerm changes
   };
 
-  // ── Manual refresh ──────────────────────────────────────────────────────────
+  // ── Manual refresh ────────────────────────────────────────────────────────
+
   const handleRefresh = async () => {
     try {
       await Promise.all([refetchMatrix(), refetchRoster()]);
@@ -103,43 +96,8 @@ export default function HomeroomReportCards() {
     }
   };
 
-  // ── Submit to Admin ─────────────────────────────────────────────────────────
-  const handleSubmitToAdmin = async () => {
-    if (!sectionId || !yearId) return;
+  // ── Print / Export ────────────────────────────────────────────────────────
 
-    // Surface pending subjects so the teacher knows what to fix
-    const pendingSubjects = (matrix?.matrix ?? matrix?.subjects ?? [])
-      .filter((s: SubjectSubmission) => !s.isSubmitted)
-      .map((s: SubjectSubmission) => s.subjectName);
-
-    if (pendingSubjects.length > 0) {
-      toast.error(
-        `Cannot submit — the following subject${pendingSubjects.length > 1 ? 's are' : ' is'} still pending: ${pendingSubjects.join(', ')}`,
-      );
-      return;
-    }
-
-    const confirmed = window.confirm(
-      'Send finalized report cards to the admin portal for review?\n\n' +
-        "Once submitted, the admin will be able to see and approve your section's report cards.",
-    );
-    if (!confirmed) return;
-
-    setSubmitting(true);
-    try {
-      const receipt = await submitReportCardsToAdmin(sectionId, yearId);
-      setSubmitReceipt(receipt);
-      toast.success(receipt.message);
-    } catch (err: any) {
-      const msg: string =
-        err?.response?.data?.message ?? err?.message ?? 'Failed to submit to admin';
-      toast.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ── Print / Export ──────────────────────────────────────────────────────────
   const students = preparedRoster?.students ?? [];
   const selected = students.filter((s) => selectedStudents.includes(s.studentId));
 
@@ -154,7 +112,12 @@ export default function HomeroomReportCards() {
 
   const exportCsv = () => {
     if (selected.length === 0) return window.alert('Select at least one student to export');
-    const rows = selected.map((s) => [s.admissionNo, s.studentName, s.average ?? '', s.rank || '']);
+    const rows = selected.map((s) => [
+      s.admissionNo,
+      s.studentName,
+      s.average ?? '',
+      s.rank || '',
+    ]);
     const csv = [['Admission No', 'Student', 'Yearly Average', 'Rank'], ...rows]
       .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
       .join('\n');
@@ -165,7 +128,7 @@ export default function HomeroomReportCards() {
     URL.revokeObjectURL(a.href);
   };
 
-  // ── Render states ───────────────────────────────────────────────────────────
+  // ── Render states ─────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -185,7 +148,10 @@ export default function HomeroomReportCards() {
         <div>
           <p className="font-semibold text-red-900">Error</p>
           <p className="text-red-700 text-sm mt-1">{error}</p>
-          <button onClick={handleRefresh} className="mt-3 text-sm font-semibold text-red-800 underline">
+          <button
+            onClick={handleRefresh}
+            className="mt-3 text-sm font-semibold text-red-800 underline"
+          >
             Try again
           </button>
         </div>
@@ -193,20 +159,20 @@ export default function HomeroomReportCards() {
     );
   }
 
-  const subjectRows: SubjectSubmission[] = (matrix as any)?.matrix ?? (matrix as any)?.subjects ?? [];
+  const subjectRows: SubjectSubmission[] = matrix?.matrix ?? matrix?.subjects ?? [];
   const visibleStudents = isPrinting ? selected : students;
-  const canSubmit = (matrix as any)?.allSubmitted === true && !submitReceipt;
 
   return (
     <div className="max-w-4xl space-y-6">
-
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Report Card Preparation</h1>
-          <p className="text-sm text-gray-500">Compile cards from results submitted by subject teachers.</p>
+          <p className="text-sm text-gray-500">
+            Compile cards from results submitted by subject teachers.
+          </p>
         </div>
-        <div className="flex gap-2 print:hidden shrink-0 flex-wrap justify-end">
+        <div className="flex gap-2 print:hidden shrink-0">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -227,52 +193,8 @@ export default function HomeroomReportCards() {
           >
             <Download className="w-4 h-4" /> Export CSV
           </button>
-
-          {/* ── Submit to Admin ── */}
-          <button
-            onClick={handleSubmitToAdmin}
-            disabled={!canSubmit || submitting}
-            title={
-              submitReceipt
-                ? 'Already submitted to admin'
-                : !(matrix as any)?.allSubmitted
-                ? 'All subjects must be submitted before sending to admin'
-                : 'Send finalized report cards to the admin portal'
-            }
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm ${
-              submitReceipt
-                ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
-                : canSubmit
-                ? 'bg-green-700 text-white hover:bg-green-800 shadow-green-700/20'
-                : 'bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed'
-            }`}
-          >
-            {submitReceipt ? (
-              <><BadgeCheck className="w-4 h-4" /> Submitted to Admin</>
-            ) : submitting ? (
-              <><RefreshCw className="w-4 h-4 animate-spin" /> Submitting…</>
-            ) : (
-              <><Send className="w-4 h-4" /> Submit to Admin</>
-            )}
-          </button>
         </div>
       </div>
-
-      {/* ── Submission receipt banner ── */}
-      {submitReceipt && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-start gap-3 print:hidden">
-          <BadgeCheck className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-bold text-green-900">Successfully submitted to admin portal</p>
-            <p className="text-sm text-green-800 mt-0.5">{submitReceipt.message}</p>
-            <p className="text-xs text-green-600 mt-1">
-              Submitted by <strong>{submitReceipt.submittedBy}</strong> on{' '}
-              {new Date(submitReceipt.submittedAt).toLocaleString()} &bull;{' '}
-              {submitReceipt.enrolledStudents} students &bull; {submitReceipt.submittedSubjects} subjects
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* ── Term selector ── */}
       <div className="bg-white border rounded-xl p-4 print:hidden">
@@ -296,13 +218,13 @@ export default function HomeroomReportCards() {
 
       {/* ── Submission status panel ── */}
       <div className="bg-white border rounded-xl p-6 print:hidden">
-        {(matrix as any)?.allSubmitted ? (
+        {matrix?.allSubmitted ? (
           <div className="flex items-center gap-3 text-green-700">
             <CheckCircle2 className="w-5 h-5 shrink-0" />
             <p className="font-semibold">
               All subjects submitted for{' '}
               {STATIC_TERMS.find((t) => t.code === selectedTerm)?.label ?? selectedTerm}.
-              {!submitReceipt && ' Report cards are ready to submit to admin.'}
+              Report cards are ready to compile.
             </p>
           </div>
         ) : (
@@ -314,8 +236,7 @@ export default function HomeroomReportCards() {
                 {STATIC_TERMS.find((t) => t.code === selectedTerm)?.label ?? selectedTerm}.
               </p>
               <p className="text-sm mt-0.5 text-amber-600">
-                Press <strong>Refresh</strong> after teachers submit to update this view. The{' '}
-                <strong>Submit to Admin</strong> button will unlock once all subjects are complete.
+                Press <strong>Refresh</strong> after teachers submit to update this view.
               </p>
             </div>
           </div>
@@ -324,7 +245,10 @@ export default function HomeroomReportCards() {
         {subjectRows.length > 0 && (
           <div className="mt-4 divide-y border rounded-lg overflow-hidden">
             {subjectRows.map((item) => (
-              <div key={item.subjectName} className="flex items-center justify-between px-4 py-2.5 text-sm">
+              <div
+                key={item.subjectName}
+                className="flex items-center justify-between px-4 py-2.5 text-sm"
+              >
                 <span className="text-gray-800">
                   {item.subjectName}{' '}
                   <span className="text-gray-400 font-normal">({item.teacherName})</span>
@@ -348,7 +272,9 @@ export default function HomeroomReportCards() {
       <div className="bg-white border rounded-xl overflow-hidden">
         <div className="p-5 border-b print:hidden">
           <h2 className="font-bold text-gray-900">Prepared Student Cards</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Select cards for batch printing or CSV export.</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Select cards for batch printing or CSV export.
+          </p>
           {students.length > 0 && (
             <label className="mt-3 flex items-center gap-2 text-sm cursor-pointer select-none">
               <input

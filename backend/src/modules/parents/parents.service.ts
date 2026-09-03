@@ -5,12 +5,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ReportCardsService } from '../report-cards/report-cards.service';
+import { TimetableService } from '../timetable/timetable.service';
 
 @Injectable()
 export class ParentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reportCardsService: ReportCardsService,
+    private readonly timetableService: TimetableService,
   ) {}
 
   /**
@@ -550,38 +552,13 @@ export class ParentsService {
   /**
    * 5. Schedule: GET /parents/me/children/:studentId/schedule
    */
-  async getChildSchedule(parentUserId: string, studentId: string) {
+  async getChildSchedule(parentUserId: string, studentId: string, academicYearId?: string) {
     const student = await this.validateChildOwnership(parentUserId, studentId);
 
-    const classSectionId =
-      student.classSectionId ?? student.StudentEnrollment?.[0]?.classSectionId;
-
-    if (!classSectionId) {
-      return {
-        student: {
-          id: student.id,
-          admissionNo: student.admissionNo,
-          fullName: `${student.firstName} ${student.lastName}`.trim(),
-          avatarUrl: student.User?.avatarUrl || null,
-          classSection: null,
-        },
-        schedule: [],
-      };
-    }
-
-    const timetable = await this.prisma.timetable.findMany({
-      where: { classSectionId },
-      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
-      select: {
-        id: true,
-        dayOfWeek: true,
-        startTime: true,
-        endTime: true,
-        ClassSection: { select: { name: true, roomNumber: true } },
-        Subject: { select: { name: true, code: true } },
-        Teacher: { select: { firstName: true, lastName: true } },
-      },
-    });
+    const legacySlots = await this.timetableService.getLegacyStudentSchedule(
+      student.id,
+      academicYearId,
+    );
 
     return {
       student: {
@@ -591,7 +568,7 @@ export class ParentsService {
         avatarUrl: student.User?.avatarUrl || null,
         classSection: student.ClassSection?.name || null,
       },
-      schedule: timetable.map((slot) => ({
+      schedule: legacySlots.map((slot) => ({
         id: slot.id,
         dayOfWeek: slot.dayOfWeek,
         startTime: slot.startTime,
