@@ -4,18 +4,20 @@ import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAcademicYears, getGradeLevels, getEligibleStudents, promoteStudents } from '../../api/academicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useGradeLevels } from '../../hooks/useAcademicStructure';
+import { getEligibleStudents, promoteStudents } from '../../api/academicStructure';
 import { toast } from 'sonner';
 
 export const PromotionDialog = () => {
   const queryClient = useQueryClient();
+  const { academicYears, activeAcademicYearId } = useAcademicYear();
   const [open, setOpen] = useState(false);
-  
-  const { data: academicYears = [] } = useQuery({ queryKey: ['academicYears'], queryFn: getAcademicYears });
-  const { data: gradeLevels = [] } = useQuery({ queryKey: ['gradeLevels'], queryFn: getGradeLevels });
   
   const [sourceYearId, setSourceYearId] = useState('');
   const [targetYearId, setTargetYearId] = useState('');
+
+  const { data: gradeLevels = [] } = useGradeLevels(targetYearId || activeAcademicYearId);
   
   const { data: eligibleStudents = [], isLoading: loadingStudents } = useQuery({
     queryKey: ['eligibleStudents', sourceYearId],
@@ -31,6 +33,8 @@ export const PromotionDialog = () => {
     mutationFn: promoteStudents,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['gradeLevels'] });
+      queryClient.invalidateQueries({ queryKey: ['roster'] });
+      queryClient.invalidateQueries({ queryKey: ['rosterSummary'] });
       toast.success(`Successfully promoted ${data.promotedCount} students`);
       setOpen(false);
       resetState();
@@ -163,7 +167,7 @@ export const PromotionDialog = () => {
                   }}
                 >
                   <option value="">Select Grade...</option>
-                  {gradeLevels.map(g => (
+                  {gradeLevels.filter(g => g.ClassSection && g.ClassSection.length > 0).map(g => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
                 </select>

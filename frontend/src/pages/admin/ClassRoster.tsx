@@ -2,14 +2,15 @@ import React, { useState } from 'react';
 import { Search, RefreshCw, ClipboardList, CheckCircle, Clock, Eye, AlertCircle, Award, UserCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
-import { getAcademicYears } from '../../api/academicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { getAdminSections, getAdminSectionRoster, AdminSectionSummary, AdminRosterEntry } from '../../api/adminReports';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const ClassRoster = () => {
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
   const [localSearch, setLocalSearch] = useState('');
-  const [academicYearId, setAcademicYearId] = useState<string>('');
+  const { academicYears, activeAcademicYearId, isLoading: isLoadingYears } = useAcademicYear();
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   
   const [selectedSection, setSelectedSection] = useState<AdminSectionSummary | null>(null);
@@ -17,17 +18,7 @@ const ClassRoster = () => {
 
   const queryClient = useQueryClient();
 
-  const { data: academicYears = [], isLoading: isLoadingYears } = useQuery({
-    queryKey: ['academicYears'],
-    queryFn: getAcademicYears,
-  });
-
-  React.useEffect(() => {
-    if (!academicYearId && academicYears.length > 0) {
-      const current = academicYears.find((y: any) => y.isCurrent) || academicYears[0];
-      setAcademicYearId(current.id);
-    }
-  }, [academicYears, academicYearId]);
+  const academicYearId = selectedAcademicYearId || activeAcademicYearId;
 
   const {
     data: sections = [],
@@ -96,7 +87,7 @@ const ClassRoster = () => {
           <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Academic Year</label>
           <select
             value={academicYearId}
-            onChange={(e) => setAcademicYearId(e.target.value)}
+            onChange={(e) => setSelectedAcademicYearId(e.target.value)}
             disabled={isLoadingYears}
             className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all"
           >

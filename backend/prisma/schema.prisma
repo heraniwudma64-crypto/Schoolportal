@@ -935,7 +935,7 @@ model ExamSession {
   @@index([examinationId, status])
 }
 
-// ─── Educational YouTube Videos ───────────────────────────────────────────────
+// ─── Educational Videos (YouTube & File Uploads) ───────────────────────────
 
 enum VideoStatus {
   DRAFT
@@ -944,23 +944,32 @@ enum VideoStatus {
   REJECTED
 }
 
+enum VideoSourceType {
+  YOUTUBE
+  UPLOAD
+}
+
 model EducationalVideo {
-  id              String      @id @default(uuid())
+  id              String          @id @default(uuid())
   title           String
   description     String?
-  youtubeUrl      String
-  youtubeVideoId  String
+  sourceType      VideoSourceType @default(YOUTUBE)
+  youtubeUrl      String?
+  youtubeVideoId  String?
+  videoUrl        String?
+  fileSize        BigInt?
+  mimeType        String?
   thumbnailUrl    String?
   subjectId       String
   classSectionId  String?
   teacherId       String
-  status          VideoStatus @default(DRAFT)
+  status          VideoStatus     @default(DRAFT)
   rejectionReason String?
   submittedAt     DateTime?
   reviewedAt      DateTime?
   reviewedById    String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @default(now()) @updatedAt
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @default(now()) @updatedAt
 
   Subject      Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   ClassSection ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)

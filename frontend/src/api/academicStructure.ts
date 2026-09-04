@@ -21,9 +21,14 @@ export interface GradeLevel {
   id: string;
   name: string;
   gradeNumber: number | null;
+  rank?: number;
   status: string;
   ClassSection: ClassSection[];
   StudentEnrollment?: any[];
+  _count?: {
+    StudentEnrollment?: number;
+    ClassSection?: number;
+  };
 }
 
 export interface Subject {
@@ -47,7 +52,10 @@ export const getAcademicYears = () => api.get<AcademicYear[]>('/academic-structu
 export const createAcademicYear = (data: { label: string; startDate: string; endDate: string }) => api.post<AcademicYear>('/academic-structure/years', data);
 export const activateAcademicYear = (id: string) => api.post<AcademicYear>(`/academic-structure/years/${id}/activate`);
 
-export const getGradeLevels = () => api.get<GradeLevel[]>('/academic-structure/grades');
+export const getGradeLevels = (academicYearId?: string) =>
+  api.get<GradeLevel[]>(
+    `/academic-structure/grades${academicYearId ? `?academicYearId=${encodeURIComponent(academicYearId)}` : ''}`,
+  );
 export const createGradeLevel = (data: { name: string; gradeNumber?: number; description?: string }) => api.post<GradeLevel>('/academic-structure/grades', data);
 
 export const createSection = (data: { gradeLevelId: string; name: string }) => api.post<ClassSection>('/academic-structure/sections', data);

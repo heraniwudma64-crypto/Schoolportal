@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AcademicStructureService } from './academic-structure.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -35,8 +35,8 @@ export class AcademicStructureController {
   }
 
   @Get('grades')
-  getGradeLevels() {
-    return this.academicStructureService.getGradeLevels();
+  getGradeLevels(@Query('academicYearId') academicYearId?: string) {
+    return this.academicStructureService.getGradeLevels(academicYearId);
   }
 
   @Post('grades')

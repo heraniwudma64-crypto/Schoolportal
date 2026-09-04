@@ -9,10 +9,11 @@ import {
   Put,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -39,8 +40,8 @@ export class UsersController {
 
   /** GET /users/class-sections — for dropdowns */
   @Get('class-sections')
-  getClassSections() {
-    return this.usersService.getClassSections();
+  getClassSections(@Query('academicYearId') academicYearId?: string) {
+    return this.usersService.getClassSections(academicYearId);
   }
 
   /** GET /users/parents-list — for parent lookup dropdown */
@@ -68,6 +69,18 @@ export class UsersController {
     @Body() dto: LinkChildrenDto,
   ) {
     return this.usersService.linkParentChildren(parentId, dto);
+  }
+
+  /** GET /users/export — export users as CSV */
+  @Get('export')
+  async exportUsers(
+    @Query() query: QueryUsersDto,
+    @Res() res: Response,
+  ) {
+    const { csv, filename } = await this.usersService.exportUsers(query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
   }
 
   /** GET /users — paginated list with search/filter/sort */

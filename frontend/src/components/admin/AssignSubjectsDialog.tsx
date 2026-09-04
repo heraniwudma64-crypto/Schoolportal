@@ -4,19 +4,23 @@ import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Layers } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAcademicYears, getGradeLevels, getSubjects, assignSubjectToGrade } from '../../api/academicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useGradeLevels } from '../../hooks/useAcademicStructure';
+import { getSubjects, assignSubjectToGrade } from '../../api/academicStructure';
 import { toast } from 'sonner';
 
 export const AssignSubjectsDialog = () => {
   const queryClient = useQueryClient();
+  const { academicYears, activeAcademicYearId } = useAcademicYear();
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { data: academicYears = [] } = useQuery({ queryKey: ['academicYears'], queryFn: getAcademicYears });
-  const { data: gradeLevels = [] } = useQuery({ queryKey: ['gradeLevels'], queryFn: getGradeLevels });
+  const [academicYearId, setAcademicYearId] = useState('');
+  const effectiveYearId = academicYearId || activeAcademicYearId;
+
+  const { data: gradeLevels = [] } = useGradeLevels(effectiveYearId);
   const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: getSubjects });
 
-  const [academicYearId, setAcademicYearId] = useState('');
   const [gradeLevelId, setGradeLevelId] = useState('');
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
 
@@ -118,11 +122,13 @@ export const AssignSubjectsDialog = () => {
               onChange={(e) => setGradeLevelId(e.target.value)}
             >
               <option value="">Select Grade...</option>
-              {gradeLevels.map((g: any) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
+              {gradeLevels
+                .filter((g: any) => !academicYearId || (g.ClassSection && g.ClassSection.length > 0))
+                .map((g: any) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
             </select>
           </div>
 

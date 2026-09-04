@@ -3,7 +3,8 @@ import { Users, UserPlus, ClipboardList, Building2, Loader2 } from 'lucide-react
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAcademicYears, useGradeLevels, useGradeSubjects } from '../../hooks/useAcademicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useGradeLevels, useGradeSubjects } from '../../hooks/useAcademicStructure';
 import { useTeachers } from '../../hooks/useTeachers';
 import { teacherAssignmentsApi, TeacherAssignment, SubjectTeacherAssignment } from '../../api/teacherAssignments';
 import { toast } from 'sonner';
@@ -12,16 +13,16 @@ export const TeacherAssignments = () => {
   const queryClient = useQueryClient();
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
 
-  // Centralized cached queries running in parallel
-  const { data: academicYears = [], isLoading: loadingYears } = useAcademicYears();
-  const { data: gradeLevels = [], isLoading: loadingGrades } = useGradeLevels();
-  const { data: gradeSubjects = [], isLoading: loadingSubjects } = useGradeSubjects();
-  const { data: teachers = [], isLoading: loadingTeachers } = useTeachers();
-
+  // Centralized active academic year from context
+  const { academicYears, activeAcademicYearId, isLoading: loadingYears } = useAcademicYear();
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
 
-  const currentYear = academicYears.find((y) => y.isCurrent) || academicYears[0];
-  const academicYearId = selectedAcademicYearId || currentYear?.id || '';
+  const academicYearId = selectedAcademicYearId || activeAcademicYearId;
+
+  // Grade levels and subjects scoped to chosen academic year
+  const { data: gradeLevels = [], isLoading: loadingGrades } = useGradeLevels(academicYearId);
+  const { data: gradeSubjects = [], isLoading: loadingSubjects } = useGradeSubjects();
+  const { data: teachers = [], isLoading: loadingTeachers } = useTeachers();
 
   const { data: homeRoomAssignments = [], isLoading: loadingHR } = useQuery<TeacherAssignment[]>({
     queryKey: ['teacher-assignments', 'homeroom', academicYearId],
@@ -29,6 +30,7 @@ export const TeacherAssignments = () => {
       const res = await teacherAssignmentsApi.getHomeRoomAssignments(academicYearId || undefined);
       return Array.isArray(res) ? res : (res as any)?.data || [];
     },
+    enabled: !!academicYearId,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -38,6 +40,7 @@ export const TeacherAssignments = () => {
       const res = await teacherAssignmentsApi.getSubjectAssignments(academicYearId || undefined);
       return Array.isArray(res) ? res : (res as any)?.data || [];
     },
+    enabled: !!academicYearId,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -421,7 +424,7 @@ export const TeacherAssignments = () => {
                     className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all text-sm font-medium"
                   >
                     <option value="">Select Grade</option>
-                    {gradeLevels.map((g) => (
+                    {gradeLevels.filter((g) => g.ClassSection && g.ClassSection.length > 0).map((g) => (
                       <option key={g.id} value={g.id}>
                         {g.name}
                       </option>

@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ParentProvider } from './context/ParentContext';
+import { AcademicYearProvider } from './context/AcademicYearContext';
 import DashboardLayout from './components/layout/DashboardLayout';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -52,10 +53,11 @@ function App() {
   return (
     <AuthProvider>
       <ParentProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+        <AcademicYearProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
 
           {/* Protected Dashboard Routes */}
           <Route path="/" element={<DashboardLayout />}>
@@ -152,6 +154,7 @@ function App() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Router>
+      </AcademicYearProvider>
       </ParentProvider>
     </AuthProvider>
   );

@@ -1,13 +1,18 @@
 import { api } from '../lib/api';
 
 export type VideoStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+export type VideoSourceType = 'YOUTUBE' | 'UPLOAD';
 
 export interface EducationalVideo {
   id: string;
   title: string;
   description?: string | null;
-  youtubeUrl: string;
-  youtubeVideoId: string;
+  sourceType: VideoSourceType;
+  youtubeUrl?: string | null;
+  youtubeVideoId?: string | null;
+  videoUrl?: string | null;
+  fileSize?: number | null;
+  mimeType?: string | null;
   thumbnailUrl?: string | null;
   subjectId: string;
   classSectionId?: string | null;
@@ -33,7 +38,7 @@ export interface VideoFilterOptions {
   classSections: Array<{ id: string; name: string }>;
 }
 
-export function extractYouTubeVideoId(url: string): string | null {
+export function extractYouTubeVideoId(url?: string | null): string | null {
   if (!url) return null;
   const match = url.trim().match(
     /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/,
@@ -46,26 +51,36 @@ export function extractYouTubeVideoId(url: string): string | null {
 export const getTeacherVideos = () =>
   api.get<EducationalVideo[]>('/videos/teacher');
 
-export const createVideo = (data: {
-  title: string;
-  description?: string;
-  youtubeUrl: string;
-  subjectId: string;
-  classSectionId?: string;
-  isDraft?: boolean;
-}) => api.post<EducationalVideo>('/videos', data);
+export const createVideo = (
+  data:
+    | FormData
+    | {
+        title: string;
+        description?: string;
+        sourceType?: VideoSourceType;
+        youtubeUrl?: string;
+        subjectId: string;
+        classSectionId?: string;
+        isDraft?: boolean;
+      },
+) => api.post<EducationalVideo>('/videos', data);
 
 export const updateVideo = (
   id: string,
-  data: {
-    title?: string;
-    description?: string;
-    youtubeUrl?: string;
-    subjectId?: string;
-    classSectionId?: string;
-    status?: 'DRAFT' | 'PENDING_APPROVAL';
-  },
+  data:
+    | FormData
+    | {
+        title?: string;
+        description?: string;
+        sourceType?: VideoSourceType;
+        youtubeUrl?: string;
+        subjectId?: string;
+        classSectionId?: string;
+        status?: 'DRAFT' | 'PENDING_APPROVAL';
+        isDraft?: boolean;
+      },
 ) => api.patch<EducationalVideo>(`/videos/${id}`, data);
+
 
 export const submitVideoForReview = (id: string) =>
   api.post<EducationalVideo>(`/videos/${id}/submit`);

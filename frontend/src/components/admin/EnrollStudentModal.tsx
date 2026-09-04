@@ -5,7 +5,8 @@ import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
-import { getAcademicYears, getGradeLevels } from '../../api/academicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useGradeLevels } from '../../hooks/useAcademicStructure';
 import { api } from '../../lib/api';
 import { enrollStudent } from '../../api/roster';
 import { formatClassSection } from '../../lib/classSection';
@@ -21,25 +22,18 @@ interface EnrollStudentModalProps {
 
 export const EnrollStudentModal = ({ isOpen, onClose, defaultAcademicYearId, defaultGradeLevelId, defaultClassSectionId }: EnrollStudentModalProps) => {
   const queryClient = useQueryClient();
+  const { academicYears, activeAcademicYearId } = useAcademicYear();
 
   const [academicYearId, setAcademicYearId] = useState<string>(defaultAcademicYearId || '');
+  const effectiveYearId = academicYearId || defaultAcademicYearId || activeAcademicYearId;
   const [gradeLevelId, setGradeLevelId] = useState<string>(defaultGradeLevelId || '');
   const [classSectionId, setClassSectionId] = useState<string>(defaultClassSectionId || '');
   const [studentId, setStudentId] = useState<string>('');
   const [enrollmentDate, setEnrollmentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [status, setStatus] = useState<string>('ACTIVE');
 
-  // Fetch Academic Years
-  const { data: academicYears = [] } = useQuery({
-    queryKey: ['academicYears'],
-    queryFn: getAcademicYears
-  });
-
-  // Fetch Grade Levels
-  const { data: gradeLevels = [] } = useQuery({
-    queryKey: ['gradeLevels'],
-    queryFn: getGradeLevels
-  });
+  // Fetch Grade Levels scoped to the effective academic year
+  const { data: gradeLevels = [] } = useGradeLevels(effectiveYearId);
 
   // Fetch Students (role=STUDENT)
   const { data: studentsResponse } = useQuery({
@@ -113,7 +107,7 @@ export const EnrollStudentModal = ({ isOpen, onClose, defaultAcademicYearId, def
                 <SelectValue placeholder="Select Grade Level" />
               </SelectTrigger>
               <SelectContent>
-                {gradeLevels.map(grade => (
+                {gradeLevels.filter(g => g.ClassSection && g.ClassSection.length > 0).map(grade => (
                   <SelectItem key={grade.id} value={grade.id}>{grade.name}</SelectItem>
                 ))}
               </SelectContent>

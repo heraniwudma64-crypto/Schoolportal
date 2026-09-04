@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Layers, Plus, Edit2, Trash2, GraduationCap, Users, Calendar, CheckCircle } from 'lucide-react';
+import { Layers, Plus, Edit2, Trash2, GraduationCap, Users, Calendar, CheckCircle, Loader2 } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getAcademicYears, createAcademicYear, activateAcademicYear, getGradeLevels, createGradeLevel, createSection, getSubjects, createSubject } from '../../api/academicStructure';
+import { createAcademicYear, createGradeLevel, createSection, getSubjects, createSubject } from '../../api/academicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useGradeLevels, useSubjects } from '../../hooks/useAcademicStructure';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -12,24 +14,20 @@ import { AssignSubjectsDialog } from '../../components/admin/AssignSubjectsDialo
 
 const AcademicStructure = () => {
   const queryClient = useQueryClient();
+  const {
+    academicYears,
+    activeAcademicYear,
+    activeAcademicYearId,
+    activateYear,
+    isActivating,
+    isLoading: loadingYears,
+  } = useAcademicYear();
 
-  const { data: academicYears = [], isLoading: loadingYears, isError: errorYears } = useQuery({
-    queryKey: ['academicYears'],
-    queryFn: getAcademicYears
-  });
-
-  const { data: gradeLevels = [], isLoading: loadingGrades, isError: errorGrades } = useQuery({
-    queryKey: ['gradeLevels'],
-    queryFn: getGradeLevels
-  });
-
-  const { data: subjects = [], isLoading: loadingSubjects, isError: errorSubjects } = useQuery({
-    queryKey: ['subjects'],
-    queryFn: getSubjects
-  });
+  const { data: gradeLevels = [], isLoading: loadingGrades, isError: errorGrades } = useGradeLevels(activeAcademicYearId);
+  const { data: subjects = [], isLoading: loadingSubjects, isError: errorSubjects } = useSubjects();
 
   const isLoading = loadingYears || loadingGrades || loadingSubjects;
-  const isError = errorYears || errorGrades || errorSubjects;
+  const isError = errorGrades || errorSubjects;
 
   // State for dialogs
   const [isYearOpen, setIsYearOpen] = useState(false);
@@ -38,6 +36,7 @@ const AcademicStructure = () => {
   const [isSubjectOpen, setIsSubjectOpen] = useState(false);
 
   const [selectedGradeId, setSelectedGradeId] = useState<string | null>(null);
+  const [sectionFormGradeId, setSectionFormGradeId] = useState<string>('');
 
   // Forms state
   const [yearForm, setYearForm] = useState({ label: '', startDate: '', endDate: '' });
@@ -53,15 +52,7 @@ const AcademicStructure = () => {
       setIsYearOpen(false);
       setYearForm({ label: '', startDate: '', endDate: '' });
     },
-    onError: (e: any) => toast.error(e.message || 'Failed to create academic year')
-  });
-
-  const activateYearMutation = useMutation({
-    mutationFn: activateAcademicYear,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['academicYears'] });
-      toast.success('Academic Year activated');
-    }
+    onError: (e: any) => toast.error(e.message || 'Failed to create academic year'),
   });
 
   const createClassMutation = useMutation({
@@ -72,7 +63,7 @@ const AcademicStructure = () => {
       setIsClassOpen(false);
       setClassForm({ name: '', gradeNumber: '' });
     },
-    onError: (e: any) => toast.error(e.message || 'Failed to create class')
+    onError: (e: any) => toast.error(e.message || 'Failed to create class'),
   });
 
   const createSectionMutation = useMutation({
@@ -83,7 +74,7 @@ const AcademicStructure = () => {
       setIsSectionOpen(false);
       setSectionForm({ name: '' });
     },
-    onError: (e: any) => toast.error(e.message || 'Failed to create section')
+    onError: (e: any) => toast.error(e.message || 'Failed to create section'),
   });
 
   const createSubjectMutation = useMutation({
@@ -98,7 +89,8 @@ const AcademicStructure = () => {
   });
 
   const currentYear = academicYears.find(y => y.isCurrent);
-  const totalStudents = gradeLevels.reduce((acc, grade) => acc + (grade.StudentEnrollment?.length || 0), 0);
+  const activeGradeLevels = gradeLevels.filter((g) => g.ClassSection && g.ClassSection.length > 0);
+  const totalStudents = activeGradeLevels.reduce((acc, grade) => acc + (grade.StudentEnrollment?.length || 0), 0);
 
   return (
     <div className="space-y-8 pb-20">
@@ -124,6 +116,58 @@ const AcademicStructure = () => {
           <p className="text-gray-500 mt-1">Configure classes, sections, and subject assignments.</p>
         </div>
         <div className="flex gap-3">
+          <Dialog open={isSectionOpen && selectedGradeId === null} onOpenChange={(open) => {
+            setIsSectionOpen(open);
+            if (!open) {
+              setSelectedGradeId(null);
+              setSectionForm({ name: '' });
+            }
+          }}>
+            <DialogTrigger asChild>
+              <button className="flex items-center gap-2 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-sm">
+                <Plus className="w-4 h-4" />
+                New Section
+              </button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Section to Academic Year</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-4">
+                <div>
+                  <Label>Grade Level</Label>
+                  <select
+                    className="w-full h-11 px-3 mt-1 rounded-xl border border-gray-200 bg-gray-50 font-medium text-sm"
+                    value={sectionFormGradeId || ''}
+                    onChange={(e) => setSectionFormGradeId(e.target.value)}
+                  >
+                    <option value="">Select Grade Level</option>
+                    {gradeLevels.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label>Section Code (e.g., A, B, North)</Label>
+                  <Input value={sectionForm.name} onChange={e => setSectionForm({ name: e.target.value })} placeholder="A" />
+                </div>
+                <Button
+                  onClick={() => {
+                    const targetGradeId = sectionFormGradeId || selectedGradeId;
+                    if (!targetGradeId) {
+                      toast.error('Please select a grade level');
+                      return;
+                    }
+                    createSectionMutation.mutate({ gradeLevelId: targetGradeId, name: sectionForm.name });
+                  }}
+                  disabled={createSectionMutation.isPending}
+                >
+                  Add Section
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={isClassOpen} onOpenChange={setIsClassOpen}>
             <DialogTrigger asChild>
               <button className="flex items-center gap-2 px-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-black text-gray-700 uppercase tracking-widest hover:bg-gray-50 transition-colors shadow-sm">
@@ -160,11 +204,11 @@ const AcademicStructure = () => {
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
           <p className="text-sm font-bold text-gray-500 mb-1">Total Grades</p>
-          <p className="text-xl font-black text-blue-900">{gradeLevels.length}</p>
+          <p className="text-xl font-black text-blue-900">{activeGradeLevels.length}</p>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
           <p className="text-sm font-bold text-gray-500 mb-1">Total Sections</p>
-          <p className="text-xl font-black text-blue-900">{gradeLevels.reduce((acc, g) => acc + g.ClassSection.length, 0)}</p>
+          <p className="text-xl font-black text-blue-900">{activeGradeLevels.reduce((acc, g) => acc + g.ClassSection.length, 0)}</p>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
           <p className="text-sm font-bold text-gray-500 mb-1">Enrolled Students</p>
@@ -177,7 +221,7 @@ const AcademicStructure = () => {
         <div className="lg:col-span-2 space-y-6">
           <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] px-2">Active Grade Levels</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {gradeLevels.map((c) => (
+            {activeGradeLevels.map((c) => (
               <div key={c.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 group hover:border-blue-900/20 transition-all">
                 <div className="flex items-start justify-between mb-8">
                   <div className="w-16 h-16 bg-blue-900 rounded-[1.5rem] flex items-center justify-center text-white">
@@ -204,7 +248,13 @@ const AcademicStructure = () => {
                   
                   <Dialog open={isSectionOpen && selectedGradeId === c.id} onOpenChange={(open) => {
                     setIsSectionOpen(open);
-                    if (open) setSelectedGradeId(c.id);
+                    if (open) {
+                      setSelectedGradeId(c.id);
+                      setSectionFormGradeId(c.id);
+                    } else {
+                      setSelectedGradeId(null);
+                      setSectionForm({ name: '' });
+                    }
                   }}>
                     <DialogTrigger asChild>
                       <button className="w-10 h-10 border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center text-gray-400 hover:text-blue-900 hover:border-blue-900 transition-all">
@@ -229,8 +279,8 @@ const AcademicStructure = () => {
                 </div>
               </div>
             ))}
-            {gradeLevels.length === 0 && !loadingGrades && (
-              <div className="col-span-full py-10 text-center text-gray-400 font-bold">No classes found. Create one above.</div>
+            {activeGradeLevels.length === 0 && !loadingGrades && (
+              <div className="col-span-full py-10 text-center text-gray-400 font-bold">No active grade levels found for the selected academic year.</div>
             )}
           </div>
         </div>
@@ -276,7 +326,13 @@ const AcademicStructure = () => {
                   {y.isCurrent ? (
                     <span className="flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-100 px-3 py-1 rounded-full"><CheckCircle className="w-3 h-3"/> Active</span>
                   ) : (
-                    <button onClick={() => activateYearMutation.mutate(y.id)} className="text-xs font-bold text-gray-400 hover:text-blue-600">Activate</button>
+                    <button
+                      onClick={() => activateYear(y.id)}
+                      disabled={isActivating}
+                      className="text-xs font-bold text-gray-400 hover:text-blue-600 disabled:opacity-50"
+                    >
+                      {isActivating ? 'Activating...' : 'Activate'}
+                    </button>
                   )}
                 </div>
               ))}

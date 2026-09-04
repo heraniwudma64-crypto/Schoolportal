@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Calendar, LayoutGrid, AlertCircle, RefreshCw } from 'lucide-react';
-import { useAcademicYears, useGradeLevels } from '../../hooks/useAcademicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useGradeLevels } from '../../hooks/useAcademicStructure';
 import {
   useSectionSchedule,
   useTimetablePeriods,
@@ -87,20 +88,24 @@ function areSchedulesEqual(entriesA: ScheduleEntry[], entriesB: ScheduleEntry[])
 
 const TimetableManagement: React.FC = () => {
   const {
-    data: academicYears = [],
+    academicYears,
+    activeAcademicYear,
+    activeAcademicYearId,
     isLoading: loadingYears,
     isError: errorYears,
-    refetch: refetchYears,
-  } = useAcademicYears();
+    refetchAcademicYears: refetchYears,
+  } = useAcademicYear();
+
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
+  const academicYearId = selectedAcademicYearId || activeAcademicYearId;
 
   const {
     data: gradeLevels = [],
     isLoading: loadingGrades,
     isError: errorGrades,
     refetch: refetchGrades,
-  } = useGradeLevels();
+  } = useGradeLevels(academicYearId);
 
-  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
   const [selectedGradeLevelId, setSelectedGradeLevelId] = useState<string>('');
   const [selectedClassSectionId, setSelectedClassSectionId] = useState<string>('');
 
@@ -127,26 +132,37 @@ const TimetableManagement: React.FC = () => {
 
   const lastLoadedContextRef = useRef<string>('');
 
+  const activeGradeLevels = useMemo(() => {
+    return gradeLevels.filter((g) => g.ClassSection && g.ClassSection.length > 0);
+  }, [gradeLevels]);
+
   // 1. Default to current academic year when loaded
   useEffect(() => {
-    if (!selectedAcademicYearId && academicYears.length > 0) {
-      const current = academicYears.find((y) => y.isCurrent) || academicYears[0];
-      setSelectedAcademicYearId(current.id);
+    if (!selectedAcademicYearId && activeAcademicYearId) {
+      setSelectedAcademicYearId(activeAcademicYearId);
     }
-  }, [academicYears, selectedAcademicYearId]);
+  }, [activeAcademicYearId, selectedAcademicYearId]);
 
-  // 2. Default to first grade level and first section when grades load
+  // 2. Default to first active grade level and first section when grades load
   useEffect(() => {
-    if (!selectedGradeLevelId && gradeLevels.length > 0) {
-      const firstGrade = gradeLevels[0];
-      setSelectedGradeLevelId(firstGrade.id);
-
-      const firstSection = firstGrade.ClassSection?.[0];
-      if (firstSection) {
-        setSelectedClassSectionId(firstSection.id);
+    if (activeGradeLevels.length > 0) {
+      const currentGrade = activeGradeLevels.find((g) => g.id === selectedGradeLevelId) || activeGradeLevels[0];
+      if (currentGrade.id !== selectedGradeLevelId) {
+        setSelectedGradeLevelId(currentGrade.id);
       }
+
+      const sections = currentGrade.ClassSection || [];
+      const currentSection = sections.find((s) => s.id === selectedClassSectionId) || sections[0];
+      if (currentSection && currentSection.id !== selectedClassSectionId) {
+        setSelectedClassSectionId(currentSection.id);
+      } else if (!currentSection) {
+        setSelectedClassSectionId('');
+      }
+    } else {
+      setSelectedGradeLevelId('');
+      setSelectedClassSectionId('');
     }
-  }, [gradeLevels, selectedGradeLevelId]);
+  }, [activeGradeLevels, selectedGradeLevelId, selectedClassSectionId]);
 
   // 3. React Query hooks for periods, schedule, and mutations
   const {
@@ -428,7 +444,7 @@ const TimetableManagement: React.FC = () => {
       {/* 2. Filter & Workflow Toolbar */}
       <TimetableToolbar
         academicYears={academicYears}
-        gradeLevels={gradeLevels}
+        gradeLevels={activeGradeLevels}
         selectedAcademicYearId={selectedAcademicYearId}
         selectedGradeLevelId={selectedGradeLevelId}
         selectedClassSectionId={selectedClassSectionId}

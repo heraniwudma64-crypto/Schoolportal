@@ -9,7 +9,10 @@ import {
   Query,
   UseGuards,
   Req,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -27,9 +30,14 @@ export class VideosController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
-  create(@Body() dto: CreateVideoDto, @Req() req: any) {
+  @UseInterceptors(FileInterceptor('videoFile'))
+  create(
+    @Body() dto: CreateVideoDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: any,
+  ) {
     const userId = req.user?.sub || req.user?.id;
-    return this.videosService.create(dto, userId);
+    return this.videosService.create(dto, userId, file);
   }
 
   // ── Teacher: List videos submitted by this teacher ────────────────────────
@@ -45,13 +53,15 @@ export class VideosController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
+  @UseInterceptors(FileInterceptor('videoFile'))
   update(
     @Param('id') id: string,
     @Body() dto: UpdateVideoDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
     @Req() req: any,
   ) {
     const userId = req.user?.sub || req.user?.id;
-    return this.videosService.update(id, dto, userId);
+    return this.videosService.update(id, dto, userId, file);
   }
 
   // ── Teacher: Submit a draft or rejected video for Admin Review ─────────────
