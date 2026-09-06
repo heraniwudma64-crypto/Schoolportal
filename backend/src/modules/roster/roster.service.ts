@@ -1,9 +1,13 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CalculationService } from '../results/calculation.service';
 
 @Injectable()
 export class RosterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly calculationService: CalculationService,
+  ) {}
 
   /**
    * Resolves the value used by class selectors. Selectors normally send a
@@ -127,92 +131,7 @@ export class RosterService {
   }
 
   async getConsolidatedRoster(academicYearId: string, classSectionId: string) {
-    if (!academicYearId || !classSectionId) throw new BadRequestException('Academic Year and Class Section are required');
-
-    const [section, enrollments, results, assignments, absences] = await Promise.all([
-      this.prisma.classSection.findUnique({
-        where: { id: classSectionId },
-        select: {
-          id: true,
-          name: true,
-          GradeLevel: { select: { name: true } },
-          homeroomTeacher: { select: { firstName: true, lastName: true } },
-        },
-      }),
-      this.prisma.studentEnrollment.findMany({
-        where: { academicYearId, classSectionId, status: 'ACTIVE' },
-        select: {
-          Student: { select: { id: true, admissionNo: true, firstName: true, lastName: true, gender: true } },
-        },
-        orderBy: { Student: { lastName: 'asc' } },
-      }),
-      (this.prisma as any).subjectResult.findMany({
-        where: { academicYearId, classSectionId, status: 'SUBMITTED' },
-        select: {
-          studentId: true,
-          term: true,
-          marks: true,
-          Subject: { select: { id: true, name: true, code: true } },
-        },
-      }),
-      (this.prisma as any).sectionSubjectTeacher.findMany({
-        where: { academicYearId, classSectionId },
-        select: {
-          Subject: { select: { id: true, name: true, code: true } },
-        },
-      }),
-      this.prisma.studentAttendance.findMany({
-        where: { classSectionId, status: 'ABSENT' },
-        select: { studentId: true },
-      }),
-    ]);
-    if (!section) throw new NotFoundException('Class Section not found');
-
-    const termKeys = ['TERM_1', 'TERM_2', 'TERM_3', 'TERM_4'];
-    const normalizeTerm = (term: string) => {
-      const match = term.match(/[1-4]/);
-      return match ? `TERM_${match[0]}` : term.toUpperCase();
-    };
-    const subjectOrder = ['Amharic', 'English', 'Math', 'Economics', 'Geography', 'ICT', 'History'];
-    const subjects = [...new Map([
-      ...assignments.map((assignment: any) => [assignment.Subject.id, assignment.Subject]),
-      ...results.map((result: any) => [result.Subject.id, result.Subject]),
-    ]).values()]
-      .sort((left: any, right: any) => {
-        const leftIndex = subjectOrder.findIndex((name) => left.name.toLowerCase() === name.toLowerCase());
-        const rightIndex = subjectOrder.findIndex((name) => right.name.toLowerCase() === name.toLowerCase());
-        return (leftIndex < 0 ? 100 : leftIndex) - (rightIndex < 0 ? 100 : rightIndex) || left.name.localeCompare(right.name);
-      });
-
-    const absentDaysByStudent = absences.reduce((counts, absence) => {
-      counts.set(absence.studentId, (counts.get(absence.studentId) || 0) + 1);
-      return counts;
-    }, new Map<string, number>());
-    const rows = enrollments.map((enrollment: any) => {
-      const studentResults = results.filter((result: any) => result.studentId === enrollment.Student.id);
-      const subjectScores = subjects.map((subject: any) => {
-        const scores = termKeys.map((term) => studentResults.find((result: any) => result.Subject.id === subject.id && normalizeTerm(result.term) === term)?.marks ?? null);
-        const available = scores.filter((score): score is number => score !== null);
-        const semesterA = scores.slice(0, 2).filter((score): score is number => score !== null);
-        const semesterB = scores.slice(2).filter((score): score is number => score !== null);
-        const average = (values: number[]) => values.length ? Number((values.reduce((sum, score) => sum + score, 0) / values.length).toFixed(2)) : null;
-        return {
-          subjectId: subject.id,
-          subject: subject.name,
-          code: subject.code,
-          term1: scores[0], term2: scores[1], term3: scores[2], term4: scores[3],
-          sem1Avg: average(semesterA), sem2Avg: average(semesterB), yearlyAverage: average(available),
-          // Preserved for the existing compact roster view.
-          terms: scores, semesterAverages: [average(semesterA), average(semesterB)],
-        };
-      });
-      const yearlyAverages = subjectScores.map((score) => score.yearlyAverage).filter((score): score is number => score !== null);
-      const sum = Number(yearlyAverages.reduce((total, score) => total + score, 0).toFixed(2));
-      return { studentId: enrollment.Student.id, admissionNo: enrollment.Student.admissionNo, studentName: `${enrollment.Student.firstName} ${enrollment.Student.lastName}`, sex: enrollment.Student.gender ?? '', subjectScores, sum, average: yearlyAverages.length ? Number((sum / yearlyAverages.length).toFixed(2)) : null, rank: 0, absentDays: absentDaysByStudent.get(enrollment.Student.id) || 0, conduct: null };
-    });
-    rows.sort((left, right) => (right.average ?? -1) - (left.average ?? -1));
-    rows.forEach((row, index) => { row.rank = row.average === null ? 0 : index + 1; });
-    return { section: { id: section.id, name: section.name, grade: section.GradeLevel?.name, homeroomTeacher: section.homeroomTeacher ? `${section.homeroomTeacher.firstName} ${section.homeroomTeacher.lastName}` : null }, terms: termKeys, subjects: subjects.map((subject: any) => ({ id: subject.id, name: subject.name, code: subject.code })), students: rows };
+    return this.calculationService.calculateSectionRoster(academicYearId, classSectionId);
   }
 
   async getRoster(academicYearId: string, classSectionId: string) {

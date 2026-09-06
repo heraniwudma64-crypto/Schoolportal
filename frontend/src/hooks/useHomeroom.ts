@@ -26,6 +26,12 @@ export interface SubjectSubmission {
   isSubmitted: boolean;
   completionPercentage: number;
   submittedAt: string | null;
+  isReturnedForCorrection?: boolean;
+  correctionRequired?: boolean;
+  correctionReason?: string | null;
+  returnedAt?: string | null;
+  canReturn?: boolean;
+  status?: string;
 }
 
 export interface SubmissionMatrixData {
@@ -37,6 +43,8 @@ export interface SubmissionMatrixData {
   classSectionName: string;
   academicYear: string;
   term: string;
+  isRosterLocked?: boolean;
+  rosterReviewStatus?: string;
 }
 
 export interface StudentResultData {
@@ -67,12 +75,18 @@ export interface RosterStudent {
   admissionNo: string;
   studentName: string;
   sex: string;
+  age?: number | null;
   subjectScores: SubjectScore[];
-  sum: number;
+  sum: number | null;
   average: number | null;
-  rank: number;
+  rank: number | null;
   absentDays: number;
   conduct: string | null;
+  isComplete?: boolean;
+  missingSubjects?: string[];
+  requiredSubjectCount?: number;
+  completedSubjectCount?: number;
+  status?: string;
 }
 
 export interface ConsolidatedRosterData {
@@ -199,3 +213,93 @@ export function useCompiledReportCards(sectionId?: string | null, yearId?: strin
     staleTime: 5 * 60 * 1000,
   });
 }
+
+export interface OfficialPrintHeader {
+  institutionName: string;
+  documentTitle: string;
+  academicYear: string;
+  gradeLevel: string;
+  sectionName: string;
+  homeroomTeacher: string;
+  reviewId: string;
+  status: string;
+  reviewedAt?: string | null;
+  reviewedById?: string | null;
+}
+
+export interface PaperPeriodRow {
+  period: '1st' | '2nd' | 'Ave1' | '3rd' | '4th' | 'Ave2' | 'Yearly';
+  scores: Record<string, number | null>;
+}
+
+export interface PaperStudentGroup {
+  studentId: string;
+  admissionNo: string;
+  studentName: string;
+  sex: string;
+  age?: number | null;
+  isComplete: boolean;
+  missingSubjects: string[];
+  sum: number | null;
+  average: number | null;
+  rank: number | null;
+  absentDays: number;
+  conduct: string | null;
+  status: 'COMPLETE' | 'INCOMPLETE';
+  periods: PaperPeriodRow[];
+}
+
+export interface OfficialPrintRosterData {
+  officialHeader: OfficialPrintHeader;
+  section: { id?: string; name: string; grade?: string; homeroomTeacher: string | null };
+  terms: string[];
+  subjects: Array<{ id: string; name: string; code: string }>;
+  students: RosterStudent[];
+  statistics?: {
+    totalEnrolled: number;
+    completeCount: number;
+    incompleteCount: number;
+    classAverage: number | null;
+  };
+  paperRows?: PaperStudentGroup[];
+}
+
+export interface RosterStatusResponse {
+  reviewId: string | null;
+  classSectionId: string;
+  academicYearId: string;
+  status: 'DRAFT' | 'SUBMITTED_TO_ADMIN' | 'REJECTED' | 'APPROVED';
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+}
+
+export function useRosterReviewStatus(sectionId?: string | null, yearId?: string | null) {
+  return useQuery<RosterStatusResponse>({
+    queryKey: ['roster-status', sectionId, yearId],
+    queryFn: () =>
+      api.get<RosterStatusResponse>(
+        `/admin/reports/roster-status/${sectionId}?academicYearId=${yearId}`,
+      ),
+    enabled: !!sectionId && !!yearId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useOfficialPrintRoster(
+  sectionId?: string | null,
+  yearId?: string | null,
+  enabled: boolean = true,
+) {
+  return useQuery<OfficialPrintRosterData>({
+    queryKey: ['roster-official-print', sectionId, yearId],
+    queryFn: () =>
+      api.get<OfficialPrintRosterData>(
+        `/admin/reports/roster/${sectionId}/print?academicYearId=${yearId}`,
+      ),
+    enabled: !!sectionId && !!yearId && enabled,
+    staleTime: 60 * 1000,
+    retry: false,
+  });
+}
+

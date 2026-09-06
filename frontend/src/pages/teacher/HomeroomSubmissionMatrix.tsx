@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CheckCircle2, AlertCircle, Clock, Users, Download, Printer, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Clock, Users, Download, Printer, RefreshCw, RotateCcw, AlertTriangle, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '../../lib/api';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
 import {
   useHomeroomContext,
@@ -21,6 +22,12 @@ type SubmissionStatus = {
   submittedCount: number;
   enrolledCount: number;
   completionPercentage: number;
+  isReturnedForCorrection?: boolean;
+  correctionRequired?: boolean;
+  correctionReason?: string | null;
+  returnedAt?: string | null;
+  canReturn?: boolean;
+  status?: string;
 };
 
 type SubmissionMatrix = {
@@ -31,6 +38,8 @@ type SubmissionMatrix = {
   subjects: SubmissionStatus[];
   totalSubmitted: number;
   totalSubjects: number;
+  isRosterLocked?: boolean;
+  rosterReviewStatus?: string;
 };
 
 type StudentResult = {
@@ -57,6 +66,11 @@ const STATIC_TERMS = [
 export default function HomeroomSubmissionMatrix() {
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+
+  // Return to teacher modal state
+  const [returnModalSubject, setReturnModalSubject] = useState<SubmissionStatus | null>(null);
+  const [returnReason, setReturnReason] = useState('');
+  const [submittingReturn, setSubmittingReturn] = useState(false);
 
   // 1. Homeroom Context & Academic Years (Shared React Query Cache)
   const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
@@ -102,6 +116,35 @@ export default function HomeroomSubmissionMatrix() {
       toast.success('Submission matrix refreshed');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Refresh failed');
+    }
+  };
+
+  const handleReturnToTeacher = async () => {
+    if (!returnModalSubject || !sectionId || !yearId) return;
+    const trimmedReason = returnReason.trim();
+    if (!trimmedReason) {
+      toast.error('Please enter a correction reason for the teacher');
+      return;
+    }
+
+    setSubmittingReturn(true);
+    try {
+      await api.post('/results/return-to-teacher', {
+        classSectionId: sectionId,
+        academicYearId: yearId,
+        subjectId: returnModalSubject.subjectId,
+        term: selectedTerm,
+        reason: trimmedReason,
+      });
+      toast.success(`${returnModalSubject.subjectName} returned to teacher for correction`);
+      setReturnModalSubject(null);
+      setReturnReason('');
+      await handleRefresh();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to return subject';
+      toast.error(msg);
+    } finally {
+      setSubmittingReturn(false);
     }
   };
 
@@ -276,7 +319,18 @@ export default function HomeroomSubmissionMatrix() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      {subject.isSubmitted ? (
+                      {subject.isReturnedForCorrection ? (
+                        <div className="inline-flex flex-col items-center">
+                          <span className="inline-flex items-center gap-1 text-amber-800 font-bold text-xs bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" /> Correction Required
+                          </span>
+                          {subject.correctionReason && (
+                            <span className="text-[11px] text-gray-500 italic mt-1 max-w-[170px] truncate" title={subject.correctionReason}>
+                              "{subject.correctionReason}"
+                            </span>
+                          )}
+                        </div>
+                      ) : subject.isSubmitted ? (
                         <span className="inline-flex items-center gap-1.5 text-green-700 font-semibold text-xs">
                           <CheckCircle2 className="w-4 h-4" /> Submitted
                         </span>
@@ -308,16 +362,30 @@ export default function HomeroomSubmissionMatrix() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center no-print">
-                      <button
-                        onClick={() =>
-                          setSelectedSubject(
-                            selectedSubject === subject.subjectId ? null : subject.subjectId,
-                          )
-                        }
-                        className="text-blue-700 hover:text-blue-900 text-sm font-semibold hover:underline"
-                      >
-                        {selectedSubject === subject.subjectId ? 'Hide' : 'View'}
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() =>
+                            setSelectedSubject(
+                              selectedSubject === subject.subjectId ? null : subject.subjectId,
+                            )
+                          }
+                          className="text-blue-700 hover:text-blue-900 text-xs font-semibold hover:underline"
+                        >
+                          {selectedSubject === subject.subjectId ? 'Hide' : 'View'}
+                        </button>
+                        {subject.canReturn && (
+                          <button
+                            onClick={() => {
+                              setReturnModalSubject(subject);
+                              setReturnReason('');
+                            }}
+                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg border border-amber-300 text-amber-900 bg-amber-50 hover:bg-amber-100 transition-colors shadow-sm"
+                            title="Return this subject to teacher for correction"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-700" /> Return to Teacher
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
 
@@ -385,6 +453,79 @@ export default function HomeroomSubmissionMatrix() {
           </table>
         )}
       </div>
+
+      {/* ── Return to Teacher Modal ── */}
+      {returnModalSubject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 no-print">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b">
+              <div className="flex items-center gap-2 text-amber-900 font-bold">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                <h3>Return Subject for Correction</h3>
+              </div>
+              <button
+                onClick={() => setReturnModalSubject(null)}
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <p className="text-sm font-bold text-gray-900">{returnModalSubject.subjectName}</p>
+                <p className="text-xs text-gray-500">
+                  Teacher: {returnModalSubject.teacherName} &bull; Term:{' '}
+                  {STATIC_TERMS.find((t) => t.code === selectedTerm)?.label ?? selectedTerm}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Correction Reason / Note <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder="e.g. Please correct the student's final mark or verify test scores."
+                  rows={4}
+                  className="w-full text-sm border border-gray-200 rounded-xl p-3 outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  This note will be visible to the subject teacher when they open their grade entry sheet.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReturnModalSubject(null)}
+                disabled={submittingReturn}
+                className="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleReturnToTeacher}
+                disabled={submittingReturn || !returnReason.trim()}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold rounded-xl disabled:opacity-50 transition-colors shadow-lg shadow-amber-600/20"
+              >
+                {submittingReturn ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" /> Returning…
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" /> Confirm Return
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @media print {
