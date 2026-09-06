@@ -93,8 +93,10 @@ export interface ReportCardData {
   promotedToGrade?: string;
   classSectionName: string;
   homeroomTeacher?: string;
+  reportDate?: string;
   subjectResults: Array<{
     subjectName: string;
+    subjectCode?: string;
     term1: number | null;
     term2: number | null;
     sem1Avg: number | null;
