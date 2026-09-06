@@ -8,7 +8,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum Role {
@@ -76,6 +75,19 @@ enum ResultStatus {
   DRAFT
   SUBMITTED
   PUBLISHED
+  RETURNED_FOR_CORRECTION
+}
+
+enum CorrectionRequestStatus {
+  PENDING
+  RESOLVED
+}
+
+enum RosterReviewStatus {
+  DRAFT
+  SUBMITTED_TO_ADMIN
+  REJECTED
+  APPROVED
 }
 
 enum DayOfWeek {
@@ -155,14 +167,17 @@ model User {
   resetOtpExpiresAt DateTime?
 
   // Relations
-  Course            Course[]
-  Enrollment        Enrollment[]
-  Notice            Notice[]
-  Parent            Parent?
-  Student           Student?
-  StudentAttendance StudentAttendance[]
-  Teacher           Teacher?
-  materials         Material[]
+  Course                      Course[]
+  Enrollment                  Enrollment[]
+  Notice                      Notice[]
+  Parent                      Parent?
+  Student                     Student?
+  StudentAttendance           StudentAttendance[]
+  Teacher                     Teacher?
+  materials                   Material[]
+  rosterReviewsSubmitted      ClassRosterReview[]        @relation("RosterReviewSubmittedBy")
+  rosterReviewsReviewed       ClassRosterReview[]        @relation("RosterReviewReviewedBy")
+  subjectCorrectionsRequested SubjectCorrectionRequest[] @relation("SubjectCorrectionRequestedBy")
 
   @@index([isDeleted, role, isActive])
 }
@@ -178,16 +193,18 @@ model AcademicYear {
   createdAt DateTime @default(now())
   updatedAt DateTime
 
-  ClassSection      ClassSection[]
-  Term              Term[]
-  StudentEnrollment StudentEnrollment[]
-  GradeSubject      GradeSubject[]
-  subjectResults    SubjectResult[]
-  reportCards       ReportCard[]
-  sectionSubjectTeachers SectionSubjectTeacher[]
-  schedulePeriods   SchedulePeriod[]
-  classSchedules    ClassSchedule[]
-  scheduleEntries   ScheduleEntry[]
+  ClassSection              ClassSection[]
+  Term                      Term[]
+  StudentEnrollment         StudentEnrollment[]
+  GradeSubject              GradeSubject[]
+  subjectResults            SubjectResult[]
+  reportCards               ReportCard[]
+  sectionSubjectTeachers    SectionSubjectTeacher[]
+  schedulePeriods           SchedulePeriod[]
+  classSchedules            ClassSchedule[]
+  scheduleEntries           ScheduleEntry[]
+  classRosterReviews        ClassRosterReview[]
+  subjectCorrectionRequests SubjectCorrectionRequest[]
 }
 
 model Term {
@@ -229,26 +246,28 @@ model ClassSection {
   updatedAt      DateTime @updatedAt
   gradeLevelId   String?
   status         String   @default("ACTIVE")
-  teacherId      String?  
+  teacherId      String?
 
-  Assignment        Assignment[]
-  AcademicYear      AcademicYear?         @relation(fields: [academicYearId], references: [id])
-  GradeLevel        GradeLevel?           @relation(fields: [gradeLevelId], references: [id])
-  Examination       Examination[]
-  students          Student[]
-  StudentAttendance StudentAttendance[]
-  Timetable         Timetable[]
-  StudentEnrollment StudentEnrollment[]
-  Notice            Notice[]
-  subjectResults    SubjectResult[]
-  reportCards       ReportCard[]
-  subjectTeachers   SectionSubjectTeacher[]
-  materials         Material[]
-  classSchedules    ClassSchedule[]
-  educationalVideos EducationalVideo[]
+  Assignment                Assignment[]
+  AcademicYear              AcademicYear?              @relation(fields: [academicYearId], references: [id])
+  GradeLevel                GradeLevel?                @relation(fields: [gradeLevelId], references: [id])
+  Examination               Examination[]
+  students                  Student[]
+  StudentAttendance         StudentAttendance[]
+  Timetable                 Timetable[]
+  StudentEnrollment         StudentEnrollment[]
+  Notice                    Notice[]
+  subjectResults            SubjectResult[]
+  reportCards               ReportCard[]
+  subjectTeachers           SectionSubjectTeacher[]
+  materials                 Material[]
+  classSchedules            ClassSchedule[]
+  educationalVideos         EducationalVideo[]
+  classRosterReviews        ClassRosterReview[]
+  subjectCorrectionRequests SubjectCorrectionRequest[]
 
-  Teacher           Teacher?              @relation("GeneralTeacher", fields: [teacherId], references: [id], map: "ClassSection_general_teacher_fkey")
-  homeroomTeacher   Teacher?              @relation("HomeroomTeacher", fields: [teacherId], references: [id], map: "ClassSection_homeroom_teacher_fkey")
+  Teacher         Teacher? @relation("GeneralTeacher", fields: [teacherId], references: [id], map: "ClassSection_general_teacher_fkey")
+  homeroomTeacher Teacher? @relation("HomeroomTeacher", fields: [teacherId], references: [id], map: "ClassSection_homeroom_teacher_fkey")
 
   // Canonical identity for newly-created sections. Legacy rows may have a
   // missing year/grade and are deliberately excluded from enrollment flows.
@@ -330,28 +349,29 @@ model Student {
 }
 
 model Teacher {
-  id             String   @id
-  userId         String   @unique
-  firstName      String
-  lastName       String
-  address        String?
-  createdAt      DateTime @default(now())
-  phoneNumber    String?
-  qualification  String?
-  staffId        String?  @unique
-  updatedAt      DateTime
+  id            String   @id
+  userId        String   @unique
+  firstName     String
+  lastName      String
+  address       String?
+  createdAt     DateTime @default(now())
+  phoneNumber   String?
+  qualification String?
+  staffId       String?  @unique
+  updatedAt     DateTime
 
-  ClassSection       ClassSection[] @relation("GeneralTeacher") // Added relation name here
-  User               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Timetable          Timetable[]
-  classes            ClassTeacher[]
-  subjects           Subject[]
-  assignments        Assignment[]
-  examinations       Examination[]
-  homeroomSections   ClassSection[] @relation("HomeroomTeacher")
-  subjectSections    SectionSubjectTeacher[]
-  scheduleEntries    ScheduleEntry[]
-  educationalVideos  EducationalVideo[]
+  ClassSection      ClassSection[]          @relation("GeneralTeacher") // Added relation name here
+  User              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  Timetable         Timetable[]
+  classes           ClassTeacher[]
+  subjects          Subject[]
+  assignments       Assignment[]
+  examinations      Examination[]
+  homeroomSections  ClassSection[]          @relation("HomeroomTeacher")
+  subjectSections   SectionSubjectTeacher[]
+  scheduleEntries   ScheduleEntry[]
+  educationalVideos EducationalVideo[]
+  rosterReviews     ClassRosterReview[]     @relation("RosterReviewHomeroomTeacher")
 
   @@index([firstName, lastName])
 }
@@ -437,15 +457,16 @@ model Subject {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  Examination    Examination[]
-  Timetable      Timetable[]
-  GradeSubject   GradeSubject[]
-  teacherId      String?
-  teacher        Teacher?        @relation(fields: [teacherId], references: [id])
-  subjectResults SubjectResult[]
-  sectionSubjectTeachers SectionSubjectTeacher[]
-  scheduleEntries        ScheduleEntry[]
-  educationalVideos      EducationalVideo[]
+  Examination               Examination[]
+  Timetable                 Timetable[]
+  GradeSubject              GradeSubject[]
+  teacherId                 String?
+  teacher                   Teacher?                   @relation(fields: [teacherId], references: [id])
+  subjectResults            SubjectResult[]
+  sectionSubjectTeachers    SectionSubjectTeacher[]
+  scheduleEntries           ScheduleEntry[]
+  educationalVideos         EducationalVideo[]
+  subjectCorrectionRequests SubjectCorrectionRequest[]
 }
 
 model GradeSubject {
@@ -503,7 +524,7 @@ model ClassSchedule {
 }
 
 model ScheduleEntry {
-  id              String         @id @default(uuid())
+  id              String    @id @default(uuid())
   classScheduleId String
   academicYearId  String
   dayOfWeek       DayOfWeek
@@ -511,8 +532,8 @@ model ScheduleEntry {
   subjectId       String
   teacherId       String
   roomOverride    String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   classSchedule ClassSchedule  @relation(fields: [classScheduleId], references: [id], onDelete: Cascade)
   academicYear  AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
@@ -572,14 +593,14 @@ model Examination {
   // windowStart: when the Start button unlocks for students (server-authoritative)
   // windowEnd:   when the exam closes — no new sessions allowed after this
   // delayMinutes: accumulated teacher-applied delays; added to both window times
-  windowStart       DateTime?
-  windowEnd         DateTime?
-  delayMinutes      Int        @default(0)
+  windowStart  DateTime?
+  windowEnd    DateTime?
+  delayMinutes Int       @default(0)
 
   // ── Post-Exam Review Release ────────────────────────────────────────────────
   // resultsReleased: whether teacher has released graded results & answer key to students
   // resultsReleasedAt: timestamp when results were released
-  resultsReleased   Boolean    @default(false)
+  resultsReleased   Boolean   @default(false)
   resultsReleasedAt DateTime?
 
   ClassSection ClassSection        @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
@@ -853,41 +874,41 @@ model Grade {
   @@index([examinationId])
   @@index([assignmentId])
 }
+
 model SectionSubjectTeacher {
-  id             String       @id @default(uuid())
+  id             String @id @default(uuid())
   classSectionId String
   subjectId      String
   teacherId      String
   academicYearId String
 
-  ClassSection   ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
-  Subject        Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  Teacher        Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
-  AcademicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  ClassSection ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  Subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  Teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  AcademicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
 
   @@unique([classSectionId, subjectId, academicYearId])
   @@index([teacherId, academicYearId])
 }
 
-
 // ─── Materials (Preserved with exact existing column mappings) ────────────────
 
 model Material {
-  id          String    @id @default(uuid())
-  title       String
-  description String?
-  fileUrl     String?   @map("file_url")
-  fileName    String?   @map("file_name")
-  fileSize    BigInt?   @map("file_size") // Changed from Int? to BigInt? to match your DB
-  fileType    String?   @map("file_type")
-  category    String?   @map("category")
-  targetRole  String?   @map("target_role")
-  createdAt   DateTime? @default(now()) @map("created_at")
-  updatedAt   DateTime? @updatedAt @map("updated_at")
-  userId      String?
-  classSectionId String? @map("class_section_id")
-  user        User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ClassSection ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
+  id             String        @id @default(uuid())
+  title          String
+  description    String?
+  fileUrl        String?       @map("file_url")
+  fileName       String?       @map("file_name")
+  fileSize       BigInt?       @map("file_size") // Changed from Int? to BigInt? to match your DB
+  fileType       String?       @map("file_type")
+  category       String?       @map("category")
+  targetRole     String?       @map("target_role")
+  createdAt      DateTime?     @default(now()) @map("created_at")
+  updatedAt      DateTime?     @updatedAt @map("updated_at")
+  userId         String?
+  classSectionId String?       @map("class_section_id")
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ClassSection   ClassSection? @relation(fields: [classSectionId], references: [id], onDelete: SetNull)
 
   @@map("materials")
 }
@@ -900,7 +921,7 @@ model Material {
 
 enum ExamSessionStatus {
   ACTIVE
-  INTERRUPTED     // student disconnected unexpectedly; timer paused
+  INTERRUPTED // student disconnected unexpectedly; timer paused
   AWAITING_RESUME // teacher must approve before student can continue
   COMPLETED
   TIMED_OUT
@@ -917,7 +938,7 @@ model ExamSession {
   timeRemainingSeconds Int
   // Snapshot of answers as JSON: { [questionId]: selectedOptionId }
   answersJson          String            @default("{}")
-  deviceFingerprint    String?           // browser UA + IP hash for single-device check
+  deviceFingerprint    String? // browser UA + IP hash for single-device check
   score                Float?
   totalMarks           Float?
   percentage           Float?
@@ -926,7 +947,7 @@ model ExamSession {
   completedAt          DateTime?
   // Set when teacher clicks "Resume Exam" for this session
   resumeApprovedAt     DateTime?
-  resumeApprovedById   String?           // Teacher user id who approved
+  resumeApprovedById   String? // Teacher user id who approved
 
   Examination Examination @relation(fields: [examinationId], references: [id], onDelete: Cascade)
 
@@ -980,4 +1001,57 @@ model EducationalVideo {
   @@index([teacherId])
   @@index([subjectId])
   @@map("educational_videos")
+}
+
+// ─── Class Roster Review (Official Workflow State Machine) ───────────────────
+
+model ClassRosterReview {
+  id                String             @id @default(uuid())
+  classSectionId    String
+  academicYearId    String
+  homeroomTeacherId String
+  status            RosterReviewStatus @default(DRAFT)
+  submittedAt       DateTime?
+  submittedById     String?
+  reviewedAt        DateTime?
+  reviewedById      String?
+  rejectionReason   String?
+  conductData       Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  classSection    ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  homeroomTeacher Teacher      @relation("RosterReviewHomeroomTeacher", fields: [homeroomTeacherId], references: [id], onDelete: Restrict)
+  submittedBy     User?        @relation("RosterReviewSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy      User?        @relation("RosterReviewReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([classSectionId, academicYearId])
+  @@index([academicYearId, status])
+  @@index([classSectionId])
+  @@index([homeroomTeacherId])
+  @@map("class_roster_reviews")
+}
+
+// ─── Subject Grade Correction Requests (Step 2 Workflow) ─────────────────────
+
+model SubjectCorrectionRequest {
+  id             String                  @id @default(uuid())
+  classSectionId String
+  academicYearId String
+  subjectId      String
+  term           String
+  requestedById  String
+  reason         String?
+  status         CorrectionRequestStatus @default(PENDING)
+  createdAt      DateTime                @default(now())
+  resolvedAt     DateTime?
+
+  classSection ClassSection @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  requestedBy  User         @relation("SubjectCorrectionRequestedBy", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([classSectionId, academicYearId, subjectId, term, status])
+  @@map("subject_correction_requests")
 }

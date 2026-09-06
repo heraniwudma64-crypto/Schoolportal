@@ -40,6 +40,7 @@ import TeacherProfile from './pages/teacher/Profile';
 import HomeroomReportCards from './pages/teacher/HomeroomReportCards';
 import HomeroomSubmissionMatrix from './pages/teacher/HomeroomSubmissionMatrix';
 import HomeroomRosterRedesigned from './pages/teacher/HomeroomRosterRedesigned';
+import RosterPaperView from './pages/teacher/RosterPaperView';
 import ReportCardPrintable from './pages/teacher/ReportCardPrintable';
 
 import MyChildren from './pages/parent/MyChildren';
@@ -82,6 +83,8 @@ function App() {
             {/* Teacher Only */}
             <Route path="homeroom/submissions" element={<RequireRole allowedRoles={['teacher']}><HomeroomSubmissionMatrix /></RequireRole>} />
             <Route path="homeroom/roster" element={<RequireRole allowedRoles={['teacher']}><HomeroomRosterRedesigned /></RequireRole>} />
+            <Route path="homeroom/roster/paper" element={<RequireRole allowedRoles={['teacher', 'admin']}><RosterPaperView /></RequireRole>} />
+            <Route path="admin/roster/paper" element={<RequireRole allowedRoles={['admin']}><RosterPaperView /></RequireRole>} />
             <Route path="homeroom/report-cards" element={<RequireRole allowedRoles={['teacher']}><ReportCardPrintable /></RequireRole>} />
             {/* Retained for existing saved links. */}
             <Route path="homeroom/reports" element={<RequireRole allowedRoles={['teacher']}><HomeroomReportCards /></RequireRole>} />
@@ -92,6 +95,7 @@ function App() {
             <Route path="teacher-assignments" element={<RequireRole allowedRoles={['admin']}><TeacherAssignments /></RequireRole>} />
             <Route path="timetable" element={<RequireRole allowedRoles={['admin']}><TimetableManagement /></RequireRole>} />
             <Route path="roster" element={<RequireRole allowedRoles={['admin']}><ClassRoster /></RequireRole>} />
+            <Route path="admin/class-roster" element={<RequireRole allowedRoles={['admin']}><ClassRoster /></RequireRole>} />
             <Route path="exam-review" element={<RequireRole allowedRoles={['admin']}><ExamReviewApproval /></RequireRole>} />
             <Route path="report-cards" element={<RequireRole allowedRoles={['admin']}><AdminReportCards /></RequireRole>} />
             <Route path="announcements" element={<RequireRole allowedRoles={['admin']}><AnnouncementCenter /></RequireRole>} />

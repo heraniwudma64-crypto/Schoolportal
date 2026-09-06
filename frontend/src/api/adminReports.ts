@@ -10,11 +10,19 @@ export interface AdminSectionSummary {
   displayName: string;
   gradeLevelName: string;
   academicYearId: string | null;
+  academicYearName?: string | null;
   homeroomTeacher: string | null;
   enrolledCount: number;
   totalSubjects: number;
   submittedSubjects: number;
   submissionStatus: SectionSubmissionStatus;
+  conductCompleted?: number;
+  conductStatus?: 'complete' | 'partial' | 'none';
+  reviewStatus?: string | null;
+  reviewId?: string | null;
+  rejectionReason?: string | null;
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
   /** UI-friendly label: 'Submitted' | 'Pending Review' | 'Draft' */
   status: string;
 }
@@ -57,6 +65,14 @@ export interface AdminRosterEntry {
   subjectScores: Record<string, number>;
   totalMarks: number;
   average: number;
+  conduct?: string | null;
+}
+
+export interface SaveConductReceipt {
+  success: boolean;
+  reviewId: string;
+  status: string;
+  conductData: Record<string, string>;
 }
 
 export interface AdminSubmitReceipt {
@@ -129,3 +145,68 @@ export const submitBothToAdmin = (
     academicYearId,
     type: 'both',
   });
+
+/**
+ * Homeroom teacher saves conduct grades for active students in section.
+ */
+export const saveHomeroomConduct = (
+  classSectionId: string,
+  academicYearId: string,
+  conductData: Record<string, string>,
+) =>
+  api.post<SaveConductReceipt>('/admin/reports/homeroom/save-conduct', {
+    classSectionId,
+    academicYearId,
+    conductData,
+  });
+
+/**
+ * Admin approves a submitted class roster.
+ */
+export const approveRosterReview = (reviewId: string) =>
+  api.post<{ success: boolean; message: string; review: any }>(
+    `/admin/reports/roster-reviews/${reviewId}/approve`,
+    {},
+  );
+
+/**
+ * Admin rejects a submitted class roster with a required reason.
+ */
+export const rejectRosterReview = (reviewId: string, reason: string) =>
+  api.post<{ success: boolean; message: string; review: any }>(
+    `/admin/reports/roster-reviews/${reviewId}/reject`,
+    { reason },
+  );
+
+/**
+ * Admin reopens an approved class roster back to DRAFT with a reason.
+ */
+export const reopenRosterReview = (reviewId: string, reason: string) =>
+  api.post<{ success: boolean; message: string; review: any }>(
+    `/admin/reports/roster-reviews/${reviewId}/reopen`,
+    { reason },
+  );
+
+/**
+ * Admin gets the authoritative full 7-row calculation roster for review.
+ */
+export const getAdminFullRoster = (classSectionId: string, academicYearId: string) =>
+  api.get<any>(
+    `/admin/reports/sections/${classSectionId}/full-roster?academicYearId=${academicYearId}`,
+  );
+
+/**
+ * Admin reviews queue query with optional filters.
+ */
+export const getAdminRosterReviews = (params?: {
+  status?: string;
+  academicYearId?: string;
+  classSectionId?: string;
+}) => {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (params?.academicYearId) query.set('academicYearId', params.academicYearId);
+  if (params?.classSectionId) query.set('classSectionId', params.classSectionId);
+  const qs = query.toString();
+  return api.get<any[]>(`/admin/reports/roster-reviews${qs ? `?${qs}` : ''}`);
+};
