@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Save, Calculator, ChevronRight, Send } from 'lucide-react';
+import { Search, Save, Calculator, ChevronRight, Send, AlertTriangle, CheckCircle2, Lock } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -27,6 +27,26 @@ interface GradeRow {
   final: number;
 }
 
+interface SubjectStatusInfo {
+  status: string;
+  isSubmitted: boolean;
+  isReturnedForCorrection: boolean;
+  correctionRequired: boolean;
+  correctionReason: string | null;
+  returnedAt: string | null;
+  returnedBy: string | null;
+  rosterReviewStatus: string;
+  rosterLocked: boolean;
+  isRosterLocked: boolean;
+  grades: Array<{
+    studentId: string;
+    admissionNo: string;
+    studentName: string;
+    marks: number;
+    status: string;
+  }>;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** "Quarter 1" → "TERM_1", already-coded strings pass through unchanged */
@@ -49,6 +69,7 @@ const ResultsGradeEntry = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [subjectStatus, setSubjectStatus] = useState<SubjectStatusInfo | null>(null);
 
   const [teachingAssignments, setTeachingAssignments] = useState<TeachingAssignment[]>([]);
 
@@ -68,43 +89,68 @@ const ResultsGradeEntry = () => {
       .catch(() => toast.error('Could not load your active class-subject assignments'));
   }, []);
 
-  // ── Load enrolled students whenever assignment or quarter changes ────────────
+  // ── Load enrolled students and subject status whenever assignment or quarter changes ────
   useEffect(() => {
-    if (!selectedAssignment) { setGrades([]); return; }
+    if (!selectedAssignment) {
+      setGrades([]);
+      setSubjectStatus(null);
+      return;
+    }
 
     let cancelled = false;
     setLoading(true);
 
-    getEnrolledStudents(selectedAssignment.academicYearId, selectedAssignment.classSectionId)
-      .then((data) => {
+    const term = toTermCode(selectedQuarter);
+
+    Promise.all([
+      getEnrolledStudents(selectedAssignment.academicYearId, selectedAssignment.classSectionId),
+      api.get<SubjectStatusInfo>(
+        `/results/subject-status?classSectionId=${selectedAssignment.classSectionId}&academicYearId=${selectedAssignment.academicYearId}&subjectId=${selectedAssignment.subjectId}&term=${term}`,
+      ).catch(() => null),
+    ])
+      .then(([enrolled, statusInfo]) => {
         if (cancelled) return;
-        if (data.length === 0) {
+        setSubjectStatus(statusInfo);
+
+        if (enrolled.length === 0) {
           setGrades([]);
           toast.info(`No students found enrolled in ${formatClassSection(selectedAssignment.ClassSection)}`);
           return;
         }
+
+        const existingMarksMap = new Map<string, number>(
+          (statusInfo?.grades ?? []).map((g) => [g.studentId, Number(g.marks) || 0]),
+        );
+
         setGrades(
-          data.map((s) => ({
-            id: s.id,
-            name: s.name || `${s.firstName ?? ''} ${s.lastName ?? ''}`.trim() || 'Student',
-            mid: 0,
-            assignment: 0,
-            quiz: 0,
-            classwork: 0,
-            final: 0,
-          })),
+          enrolled.map((s) => {
+            const existingTotal = existingMarksMap.get(s.id);
+            return {
+              id: s.id,
+              name: s.name || `${s.firstName ?? ''} ${s.lastName ?? ''}`.trim() || 'Student',
+              mid: 0,
+              assignment: 0,
+              quiz: 0,
+              classwork: 0,
+              final: typeof existingTotal === 'number' ? existingTotal : 0,
+            };
+          }),
         );
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error('Failed to fetch students:', err);
-        toast.error('Could not load students for this class.');
+        console.error('Failed to fetch students / status:', err);
+        toast.error('Could not load class results information.');
         setGrades([]);
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-    return () => { cancelled = true; };
-  }, [selectedAssignment]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAssignment, selectedQuarter]);
 
   // ── Grade change handler ─────────────────────────────────────────────────────
   const handleGradeChange = (id: string, field: string, value: string) => {
@@ -198,6 +244,16 @@ const ResultsGradeEntry = () => {
         grades:         buildGradesPayload(grades),
       });
       toast.success(`${result.count} student results sent to homeroom teacher`);
+      // Update subject status to submitted
+      if (subjectStatus) {
+        setSubjectStatus({
+          ...subjectStatus,
+          status: 'SUBMITTED',
+          isSubmitted: true,
+          isReturnedForCorrection: false,
+          correctionRequired: false,
+        });
+      }
     } catch (err: any) {
       const msg: string = err?.response?.data?.message ?? err?.message ?? 'Could not submit results';
       toast.error(msg);
@@ -215,8 +271,66 @@ const ResultsGradeEntry = () => {
   // ─────────────────────────────────────────────────────────────────────────────
   // Render
   // ─────────────────────────────────────────────────────────────────────────────
+  const isEditingLocked =
+    Boolean(subjectStatus?.isRosterLocked) ||
+    Boolean(subjectStatus?.isSubmitted && !subjectStatus?.correctionRequired);
+
   return (
     <div className="space-y-6">
+      {/* ── Status Banners ── */}
+      {subjectStatus?.correctionRequired && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/30">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-amber-950">
+                  Returned for Correction by Homeroom Teacher
+                </h3>
+                {subjectStatus.returnedAt && (
+                  <span className="text-xs text-amber-800 font-medium">
+                    Date returned: {new Date(subjectStatus.returnedAt).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+              {subjectStatus.returnedBy && (
+                <p className="text-xs text-amber-800 mt-0.5">
+                  Returned by: <span className="font-semibold">{subjectStatus.returnedBy}</span>
+                </p>
+              )}
+              <div className="mt-3 p-4 bg-white/90 rounded-xl border border-amber-200">
+                <p className="text-xs font-bold text-amber-900 uppercase tracking-wider">Reason:</p>
+                <p className="text-sm text-gray-800 mt-1 whitespace-pre-wrap font-medium">
+                  {subjectStatus.correctionReason || 'Please verify and correct the recorded student marks.'}
+                </p>
+              </div>
+              <p className="text-xs text-amber-900/80 mt-2 font-medium">
+                Existing grades are loaded below. You can now edit the marks, save your draft, and click{' '}
+                <strong>Send to Homeroom</strong> to submit again.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {subjectStatus?.isRosterLocked && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-800 text-sm font-semibold flex items-center gap-3">
+          <Lock className="w-5 h-5 text-red-600 shrink-0" />
+          The class roster has been{' '}
+          {subjectStatus.rosterReviewStatus === 'APPROVED' ? 'approved by administrator' : 'submitted to admin'}{' '}
+          and is locked for editing.
+        </div>
+      )}
+
+      {subjectStatus?.isSubmitted && !subjectStatus?.correctionRequired && !subjectStatus?.isRosterLocked && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-green-800 text-sm font-semibold flex items-center gap-3">
+          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+          Grades for this subject and term have been submitted to the homeroom teacher.
+        </div>
+      )}
+
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
@@ -228,7 +342,7 @@ const ResultsGradeEntry = () => {
         <div className="flex gap-2 items-center">
           <button
             onClick={handleSave}
-            disabled={saving || grades.length === 0 || !selectedAssignment}
+            disabled={saving || grades.length === 0 || !selectedAssignment || isEditingLocked}
             className="flex items-center gap-2 px-6 py-2 bg-blue-900 text-white rounded-xl text-sm font-bold hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
@@ -236,11 +350,11 @@ const ResultsGradeEntry = () => {
           </button>
           <button
             onClick={submitToHomeroom}
-            disabled={submitting || saving || grades.length === 0 || !selectedAssignment}
+            disabled={submitting || saving || grades.length === 0 || !selectedAssignment || (isEditingLocked && !subjectStatus?.correctionRequired)}
             className="flex items-center gap-2 px-4 py-2 border border-blue-900 text-blue-900 rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-blue-50 transition-colors"
           >
             <Send className="w-4 h-4" />
-            {submitting ? 'Sending…' : 'Send to Homeroom'}
+            {submitting ? 'Sending…' : subjectStatus?.correctionRequired ? 'Submit Again' : 'Send to Homeroom'}
           </button>
         </div>
       </div>
@@ -338,8 +452,9 @@ const ResultsGradeEntry = () => {
                             min={0}
                             max={field === 'final' ? 40 : field === 'quiz' || field === 'classwork' ? 10 : 20}
                             value={grade[field]}
+                            disabled={isEditingLocked}
                             onChange={(e) => handleGradeChange(grade.id, field, e.target.value)}
-                            className="w-16 text-center bg-gray-50 border border-gray-100 rounded-lg py-2 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition-all"
+                            className="w-16 text-center bg-gray-50 border border-gray-100 rounded-lg py-2 text-sm font-bold focus:bg-white focus:border-blue-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                           />
                         </div>
                       </td>

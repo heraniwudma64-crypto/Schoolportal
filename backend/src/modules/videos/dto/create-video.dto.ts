@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
 
 export class CreateVideoDto {
   @IsString()
@@ -10,8 +10,13 @@ export class CreateVideoDto {
   description?: string;
 
   @IsString()
-  @IsNotEmpty()
-  youtubeUrl!: string;
+  @IsOptional()
+  @IsIn(['YOUTUBE', 'UPLOAD'])
+  sourceType?: 'YOUTUBE' | 'UPLOAD';
+
+  @IsString()
+  @IsOptional()
+  youtubeUrl?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -21,7 +26,6 @@ export class CreateVideoDto {
   @IsOptional()
   classSectionId?: string;
 
-  @IsBoolean()
   @IsOptional()
-  isDraft?: boolean;
+  isDraft?: boolean | string;
 }

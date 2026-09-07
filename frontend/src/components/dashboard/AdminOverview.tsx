@@ -1,125 +1,194 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { 
   Users, 
   UserCheck, 
   BookOpen, 
-  FileCheck,
-  Activity,
+  Calendar,
+  Layers,
+  GraduationCap,
+  Shield,
   ArrowUpRight,
-  TrendingUp
+  CheckCircle2
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import StatCard from './StatCard';
-import { MOCK_USERS, MOCK_EXAMS } from '../../data/mockData';
+import { useAcademicYear } from '../../context/AcademicYearContext';
+import { useGradeLevels } from '../../hooks/useAcademicStructure';
+import { useUsers } from '../../hooks/useUsers';
 
-const AdminOverview = () => {
+const AdminOverview: React.FC = () => {
+  const { activeAcademicYear, activeAcademicYearId, isLoading: isLoadingYear } = useAcademicYear();
+  const { data: gradeLevels = [], isLoading: isLoadingGrades } = useGradeLevels(activeAcademicYearId);
+  const { stats, isStatsLoading, fetchStats } = useUsers();
+
+  useEffect(() => {
+    void fetchStats();
+  }, [fetchStats]);
+
+  const activeGradeLevels = gradeLevels.filter((g) => g.ClassSection && g.ClassSection.length > 0);
+  const totalSections = activeGradeLevels.reduce((acc, g) => acc + (g.ClassSection?.length || 0), 0);
+  const totalEnrollments = activeGradeLevels.reduce((acc, g) => acc + (g.StudentEnrollment?.length || g._count?.StudentEnrollment || 0), 0);
+
   return (
     <div className="space-y-6">
+      {/* Top Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Total Students" 
-          value={MOCK_USERS.filter(u => u.role === 'student').length} 
-          icon={Users} 
+          value={isStatsLoading ? '...' : (stats?.students ?? 0)} 
+          icon={GraduationCap} 
           iconClassName="bg-blue-50 text-blue-600"
         />
         <StatCard 
           title="Total Teachers" 
-          value={MOCK_USERS.filter(u => u.role === 'teacher').length} 
+          value={isStatsLoading ? '...' : (stats?.teachers ?? 0)} 
           icon={UserCheck} 
           iconClassName="bg-indigo-50 text-indigo-600"
         />
         <StatCard 
-          title="Total Classes" 
-          value="12" 
+          title="Active Class Sections" 
+          value={isLoadingGrades ? '...' : totalSections} 
           icon={BookOpen} 
           iconClassName="bg-amber-50 text-amber-600"
         />
         <StatCard 
-          title="Pending Exam Reviews" 
-          value={MOCK_EXAMS.filter(e => e.status === 'pending_approval').length + 1} 
-          icon={FileCheck} 
-          iconClassName="bg-purple-50 text-purple-600"
+          title="Active Academic Year" 
+          value={isLoadingYear ? '...' : (activeAcademicYear?.year || 'Not Set')} 
+          icon={Calendar} 
+          iconClassName="bg-emerald-50 text-emerald-600"
         />
       </div>
 
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left 2 Cols: Academic Structure & Year Scope */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-8 border-b border-gray-100 flex items-center justify-between">
+          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden p-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-gray-100">
               <div>
-                <h3 className="text-xl font-black text-gray-900">Registration Activity</h3>
-                <p className="text-sm text-gray-500">Student enrollment trends over the last 30 days.</p>
+                <h3 className="text-xl font-black text-gray-900">Academic Structure Breakdown</h3>
+                <p className="text-sm text-gray-500">
+                  Active academic year: <span className="font-semibold text-blue-900">{activeAcademicYear?.year || 'None'}</span> ({totalEnrollments} active enrollments)
+                </p>
               </div>
-              <select className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-2 text-xs font-bold outline-none">
-                <option>Last 30 Days</option>
-                <option>Last 6 Months</option>
-              </select>
+              <Link
+                to="/admin/academic-structure"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-900 bg-blue-50 px-4 py-2 rounded-xl hover:bg-blue-100 transition-colors"
+              >
+                Manage Structure
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
-            <div className="p-8 h-[300px] flex items-end gap-2">
-              {[40, 60, 45, 90, 65, 80, 50, 70, 85, 95, 60, 75].map((h, i) => (
-                <div key={i} className="flex-1 bg-blue-900/10 rounded-t-lg relative group transition-all hover:bg-blue-900/20">
-                  <div 
-                    className="absolute bottom-0 w-full bg-blue-900 rounded-t-lg transition-all"
-                    style={{ height: `${h}%` }}
-                  ></div>
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                    {h} Enrollments
-                  </div>
+
+            {isLoadingGrades ? (
+              <div className="py-12 text-center text-gray-400 text-sm">Loading structure data...</div>
+            ) : activeGradeLevels.length === 0 ? (
+              <div className="py-12 text-center text-gray-400 text-sm">No active grade levels found for the active academic year.</div>
+            ) : (
+              <div className="mt-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {activeGradeLevels.map((grade) => {
+                    const sectionCount = grade.ClassSection?.length || 0;
+                    const enrollmentCount = grade.StudentEnrollment?.length || grade._count?.StudentEnrollment || 0;
+                    return (
+                      <div key={grade.id} className="p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-gray-200 transition-all">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-bold text-gray-900">{grade.name}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                            {grade.gradeNumber != null ? `Grade ${grade.gradeNumber}` : 'Level'}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 flex items-center justify-between">
+                          <span>{sectionCount} {sectionCount === 1 ? 'Section' : 'Sections'}</span>
+                          <span className="font-medium text-gray-700">{enrollmentCount} Enrolled</span>
+                        </div>
+                        {sectionCount > 0 && (
+                          <div className="mt-2.5 flex flex-wrap gap-1">
+                            {grade.ClassSection?.map((sec) => (
+                              <span key={sec.id} className="text-[10px] bg-white border border-gray-200 rounded-md px-1.5 py-0.5 font-medium text-gray-600">
+                                {sec.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-6">
-                <div className="w-12 h-12 bg-green-50 rounded-2xl flex items-center justify-center text-green-600">
-                  <Activity className="w-6 h-6" />
+          {/* User Distribution Card */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
+                  <Users className="w-5 h-5" />
                 </div>
-                <span className="text-[10px] font-black text-green-600 bg-green-50 px-3 py-1 rounded-full uppercase tracking-widest">+12% vs last month</span>
+                <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  Total
+                </span>
               </div>
-              <h4 className="text-sm font-bold text-gray-500 mb-1 uppercase tracking-widest">Average Attendance</h4>
-              <p className="text-3xl font-black text-gray-900">94.2%</p>
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Users</h4>
+              <p className="text-2xl font-black text-gray-900 mt-1">{stats?.total ?? 0}</p>
             </div>
-            <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-6">
-                <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600">
-                  <TrendingUp className="w-6 h-6" />
+
+            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center text-green-600">
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
-                <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-3 py-1 rounded-full uppercase tracking-widest">Target: 85% Average</span>
+                <span className="text-[10px] font-black text-green-600 bg-green-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  Active
+                </span>
               </div>
-              <h4 className="text-sm font-bold text-gray-500 mb-1 uppercase tracking-widest">School Wide Average</h4>
-              <p className="text-3xl font-black text-gray-900">85.4%</p>
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Active Accounts</h4>
+              <p className="text-2xl font-black text-gray-900 mt-1">{stats?.active ?? 0}</p>
+            </div>
+
+            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  Parents
+                </span>
+              </div>
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Parents Registered</h4>
+              <p className="text-2xl font-black text-gray-900 mt-1">{stats?.parents ?? 0}</p>
             </div>
           </div>
         </div>
 
+        {/* Right Col: Quick Admin Actions / Navigation */}
         <div className="space-y-6">
-          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-8 border-b border-gray-100">
-              <h3 className="text-lg font-black text-gray-900 flex items-center gap-3">
-                System Alerts
-              </h3>
-            </div>
-            <div className="divide-y divide-gray-50">
+          <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden p-6">
+            <h3 className="text-base font-black text-gray-900 mb-4 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-blue-900" />
+              Quick Navigation
+            </h3>
+            <div className="space-y-2">
               {[
-                { title: 'New Exam Submission', desc: 'Meron Tadesse submitted Physics Final for review', time: '10m ago', urgent: true },
-                { title: 'Teacher Account Request', desc: 'Solomon Tesfaye requested access to Math Dept', time: '1h ago', urgent: false },
-                { title: 'System Maintenance', desc: 'Portal will be offline Sunday 2AM-4AM', time: '5h ago', urgent: false },
-              ].map((alert, i) => (
-                <div key={i} className="p-6 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start justify-between gap-4 mb-2">
-                    <h4 className="text-sm font-bold text-gray-900 leading-tight">{alert.title}</h4>
-                    {alert.urgent && <div className="w-2 h-2 rounded-full bg-red-500 shrink-0"></div>}
+                { title: 'Academic Structure', desc: 'Manage years, grade levels & sections', path: '/admin/academic-structure' },
+                { title: 'Teacher Assignments', desc: 'Assign subjects and homerooms', path: '/admin/teacher-assignments' },
+                { title: 'Timetable Management', desc: 'Configure periods & weekly schedules', path: '/admin/timetable' },
+                { title: 'Class Roster', desc: 'View student rosters and enrollments', path: '/admin/class-roster' },
+                { title: 'Report Cards Review', desc: 'Inspect term and yearly report cards', path: '/admin/report-cards' },
+                { title: 'User Management', desc: 'Create and manage student & staff accounts', path: '/admin/users' },
+              ].map((item, idx) => (
+                <Link
+                  key={idx}
+                  to={item.path}
+                  className="flex items-center justify-between p-3.5 rounded-xl hover:bg-gray-50 border border-transparent hover:border-gray-100 transition-all group"
+                >
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-900 group-hover:text-blue-900 transition-colors">{item.title}</h4>
+                    <p className="text-[11px] text-gray-400">{item.desc}</p>
                   </div>
-                  <p className="text-xs text-gray-500 leading-relaxed mb-3">{alert.desc}</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase">{alert.time}</span>
-                    <button className="text-[10px] font-black text-blue-900 uppercase tracking-widest hover:underline flex items-center gap-1">
-                      Action
-                      <ArrowUpRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
+                  <ArrowUpRight className="w-4 h-4 text-gray-300 group-hover:text-blue-900 transition-colors" />
+                </Link>
               ))}
             </div>
           </div>

@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ExternalLink,
   Sparkles,
+  Film,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { EducationalVideo, getStudentVideos } from '../../api/videos';
@@ -167,84 +168,125 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {displayedVideos.map((video) => (
-            <div
-              key={video.id}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col group"
-            >
-              {/* Thumbnail Container */}
+          {displayedVideos.map((video) => {
+            const isUpload = video.sourceType === 'UPLOAD' || Boolean(video.videoUrl && !video.youtubeUrl);
+
+            return (
               <div
-                className="relative aspect-video bg-gray-950 cursor-pointer overflow-hidden"
-                onClick={() => setPlayingVideo(video)}
+                key={video.id}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col group"
               >
-                <img
-                  src={
-                    video.thumbnailUrl ||
-                    `https://img.youtube.com/vi/${video.youtubeVideoId}/hqdefault.jpg`
-                  }
-                  alt={video.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-95 group-hover:opacity-100"
-                />
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                  <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                    <Play className="w-5 h-5 fill-white ml-0.5" />
-                  </div>
-                </div>
-
-                {/* Subject badge on thumbnail */}
-                <div className="absolute top-2.5 left-2.5">
-                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-black/70 text-white backdrop-blur-sm shadow">
-                    {video.Subject?.name || 'Lesson'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Card Body */}
-              <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                <div>
-                  <h4 className="font-bold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-red-700 transition-colors">
-                    {video.title}
-                  </h4>
-                  {video.description && (
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                      {video.description}
-                    </p>
+                {/* Thumbnail Container */}
+                <div
+                  className="relative aspect-video bg-gray-950 cursor-pointer overflow-hidden"
+                  onClick={() => setPlayingVideo(video)}
+                >
+                  {isUpload ? (
+                    <div className="w-full h-full bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center justify-center p-4 text-center">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 mb-1.5 group-hover:scale-110 transition-transform">
+                        <Film className="w-6 h-6" />
+                      </div>
+                      <span className="text-[11px] font-bold text-gray-300 line-clamp-1">
+                        {video.title}
+                      </span>
+                      {video.fileSize && (
+                        <span className="text-[10px] text-gray-400 mt-0.5">
+                          {(video.fileSize / (1024 * 1024)).toFixed(1)} MB
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <img
+                      src={
+                        video.thumbnailUrl ||
+                        `https://img.youtube.com/vi/${video.youtubeVideoId}/hqdefault.jpg`
+                      }
+                      alt={video.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-95 group-hover:opacity-100"
+                    />
                   )}
-                </div>
 
-                <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span className="truncate max-w-[120px]">
-                      {video.Teacher?.firstName} {video.Teacher?.lastName}
-                    </span>
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                      <Play className="w-5 h-5 fill-white ml-0.5" />
+                    </div>
                   </div>
 
-                  <button
-                    onClick={() => setPlayingVideo(video)}
-                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shrink-0"
-                  >
-                    <Play className="w-3 h-3 fill-red-700" /> Watch
-                  </button>
+                  {/* Source type badge on thumbnail */}
+                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-black/70 text-white backdrop-blur-sm shadow">
+                      {video.Subject?.name || 'Lesson'}
+                    </span>
+                    {isUpload ? (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider bg-indigo-600/90 text-white backdrop-blur-sm shadow flex items-center gap-1">
+                        <Film className="w-2.5 h-2.5" /> Upload
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider bg-red-600/90 text-white backdrop-blur-sm shadow flex items-center gap-1">
+                        <Video className="w-2.5 h-2.5" /> YouTube
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-red-700 transition-colors">
+                      {video.title}
+                    </h4>
+                    {video.description && (
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                        {video.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      <span className="truncate max-w-[120px]">
+                        {video.Teacher?.firstName} {video.Teacher?.lastName}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => setPlayingVideo(video)}
+                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-bold transition-colors flex items-center gap-1 shrink-0"
+                    >
+                      <Play className="w-3 h-3 fill-red-700" /> Watch
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* ── Modal: YouTube Video Player ──────────────────────────────────────── */}
+      {/* ── Modal: Video Player (YouTube & HTML5 Video) ────────────────────────── */}
       {playingVideo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-gray-950 rounded-3xl border border-gray-800 w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
             <div className="p-4 bg-gray-900/90 border-b border-gray-800 text-white flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-sm text-gray-100 truncate max-w-lg">
-                  {playingVideo.title}
-                </h4>
-                <p className="text-[11px] text-gray-400">
-                  {playingVideo.Subject?.name} &bull; Teacher {playingVideo.Teacher?.firstName} {playingVideo.Teacher?.lastName}
-                </p>
+              <div className="flex items-center gap-2.5">
+                {playingVideo.sourceType === 'UPLOAD' || (playingVideo.videoUrl && !playingVideo.youtubeUrl) ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white flex items-center gap-1 shrink-0">
+                    <Film className="w-3 h-3" /> Uploaded Video
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white flex items-center gap-1 shrink-0">
+                    <Video className="w-3 h-3" /> YouTube
+                  </span>
+                )}
+                <div>
+                  <h4 className="font-bold text-sm text-gray-100 truncate max-w-lg">
+                    {playingVideo.title}
+                  </h4>
+                  <p className="text-[11px] text-gray-400">
+                    {playingVideo.Subject?.name} &bull; Teacher {playingVideo.Teacher?.firstName} {playingVideo.Teacher?.lastName}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setPlayingVideo(null)}
@@ -254,14 +296,23 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
               </button>
             </div>
 
-            <div className="relative aspect-video w-full bg-black">
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${playingVideo.youtubeVideoId}?autoplay=1&rel=0`}
-                title={playingVideo.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full border-0"
-              />
+            <div className="relative aspect-video w-full bg-black flex items-center justify-center">
+              {playingVideo.sourceType === 'UPLOAD' || (playingVideo.videoUrl && !playingVideo.youtubeUrl) ? (
+                <video
+                  src={playingVideo.videoUrl || undefined}
+                  controls
+                  autoPlay
+                  className="w-full h-full max-h-[70vh] object-contain"
+                />
+              ) : (
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${playingVideo.youtubeVideoId}?autoplay=1&rel=0`}
+                  title={playingVideo.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              )}
             </div>
 
             {playingVideo.description && (
@@ -278,3 +329,4 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
     </div>
   );
 }
+

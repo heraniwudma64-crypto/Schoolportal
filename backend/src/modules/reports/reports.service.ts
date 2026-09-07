@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CalculationService } from '../results/calculation.service';
 
 // ─── Shared grade-letter helper ───────────────────────────────────────────────
 function gradeLetter(pct: number): string {
@@ -12,7 +13,14 @@ function gradeLetter(pct: number): string {
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly calcService: CalculationService;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly calculationService?: CalculationService,
+  ) {
+    this.calcService = calculationService ?? new CalculationService(prisma);
+  }
 
   // ── Existing homeroom roster ─────────────────────────────────────────────
 
@@ -63,6 +71,12 @@ export class ReportsService {
     );
     const totalSubjects = new Set(results.map((r: any) => r.subjectId)).size || 1;
 
+    const review = await (this.prisma as any).classRosterReview.findUnique({
+      where: { classSectionId_academicYearId: { classSectionId, academicYearId } },
+      select: { conductData: true },
+    });
+    const conductMap = (review?.conductData as Record<string, string>) || {};
+
     return rosterList.map((item, index) => ({
       rank: index + 1,
       studentId: item.student.id,
@@ -71,6 +85,7 @@ export class ReportsService {
       subjectScores: item.subjects,
       totalMarks: item.totalMarks,
       average: Number((item.totalMarks / totalSubjects).toFixed(2)),
+      conduct: conductMap[item.student.id] || null,
     }));
   }
 
@@ -100,6 +115,7 @@ export class ReportsService {
       include: {
         GradeLevel: { select: { name: true, gradeNumber: true } },
         Teacher: { select: { firstName: true, lastName: true } },
+        AcademicYear: { select: { year: true } },
       },
       orderBy: [
         { GradeLevel: { gradeNumber: 'asc' } },
@@ -145,6 +161,13 @@ export class ReportsService {
       submittedMap.set(`${r.classSectionId}_${r.subjectId}`, r._count.id);
     });
 
+    // Batch query 4: get existing roster reviews
+    const reviews = await (this.prisma as any).classRosterReview.findMany({
+      where: { classSectionId: { in: sectionIds }, academicYearId: yearId },
+    });
+    const reviewMap = new Map<string, any>();
+    reviews.forEach((r: any) => reviewMap.set(r.classSectionId, r));
+
     return sections.map((section) => {
       const enrolledCount = enrollmentMap.get(section.id) || 0;
       const subjects = assignedMap.get(section.id) || [];
@@ -176,18 +199,39 @@ export class ReportsService {
       const gradeName = section.GradeLevel?.name ?? '';
       const displayName = /^grade\b/i.test(gradeName)
         ? `${gradeName} ${section.name}`
-        : `Grade ${gradeName} ${section.name}`.trim();      const statusLabel =
-        section.status === 'APPROVED'
+        : `Grade ${gradeName} ${section.name}`.trim();
+
+      const review = reviewMap.get(section.id);
+      const computedStatus =
+        review?.status === 'APPROVED'
           ? 'Approved'
-          : section.status === 'SUBMITTED_TO_ADMIN'
+          : review?.status === 'SUBMITTED_TO_ADMIN'
           ? 'Submitted'
-          : section.status === 'REVISION_REQUESTED'
-          ? 'Revision Requested'
+          : review?.status === 'REJECTED'
+          ? 'Rejected'
+          : review?.status === 'DRAFT'
+          ? 'Draft'
           : submissionStatus === 'complete'
           ? 'Submitted'
           : submissionStatus === 'partial'
           ? 'Pending Review'
           : 'Draft';
+
+      const conductData = (review?.conductData as Record<string, string>) || {};
+      let conductCompletedCount = 0;
+      if (enrolledCount > 0 && conductData) {
+        conductCompletedCount = Object.values(conductData).filter((v) =>
+          ['A', 'B', 'C'].includes(v),
+        ).length;
+      }
+      const conductStatus =
+        enrolledCount === 0
+          ? 'none'
+          : conductCompletedCount >= enrolledCount
+          ? 'complete'
+          : conductCompletedCount > 0
+          ? 'partial'
+          : 'none';
 
       return {
         id: section.id,
@@ -195,14 +239,186 @@ export class ReportsService {
         displayName,
         gradeLevelName: gradeName,
         academicYearId: yearId,
+        academicYearName: section.AcademicYear?.year ?? null,
         homeroomTeacher,
         enrolledCount,
         totalSubjects,
         submittedSubjects,
         submissionStatus,
-        status: statusLabel,
+        conductCompleted: conductCompletedCount,
+        conductStatus,
+        reviewStatus: review?.status ?? null,
+        reviewId: review?.id ?? null,
+        rejectionReason: review?.rejectionReason ?? null,
+        submittedAt: review?.submittedAt?.toISOString() ?? null,
+        reviewedAt: review?.reviewedAt?.toISOString() ?? null,
+        status: computedStatus,
       };
     });
+  }
+
+  /**
+   * Admin endpoint to list all roster reviews with optional filtering.
+   * Excludes all sensitive credentials (passwords, tokens, secrets).
+   */
+  async getRosterReviews(query?: {
+    status?: string;
+    academicYearId?: string;
+    classSectionId?: string;
+  }) {
+    const whereClause: any = {};
+    if (query?.status) {
+      whereClause.status = query.status;
+    }
+    if (query?.academicYearId) {
+      whereClause.academicYearId = query.academicYearId;
+    }
+    if (query?.classSectionId) {
+      whereClause.classSectionId = query.classSectionId;
+    }
+
+    const reviews = await (this.prisma as any).classRosterReview.findMany({
+      where: whereClause,
+      include: {
+        classSection: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            academicYearId: true,
+            GradeLevel: { select: { id: true, name: true, gradeNumber: true } },
+            AcademicYear: { select: { id: true, year: true } },
+            Teacher: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+        homeroomTeacher: {
+          select: { id: true, firstName: true, lastName: true, staffId: true },
+        },
+        submittedBy: {
+          select: { id: true, name: true, role: true, email: true },
+        },
+        reviewedBy: {
+          select: { id: true, name: true, role: true, email: true },
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    });
+
+    const results = [];
+    for (const rev of reviews) {
+      const enrolledCount = await this.prisma.studentEnrollment.count({
+        where: {
+          classSectionId: rev.classSectionId,
+          academicYearId: rev.academicYearId,
+          status: 'ACTIVE',
+        },
+      });
+
+      const assignedSubjects = await (this.prisma as any).sectionSubjectTeacher.findMany({
+        where: { classSectionId: rev.classSectionId, academicYearId: rev.academicYearId },
+        select: { subjectId: true },
+      });
+      const totalSubjects = assignedSubjects.length;
+
+      let submittedSubjects = 0;
+      if (enrolledCount > 0 && totalSubjects > 0) {
+        for (const { subjectId } of assignedSubjects) {
+          const count = await (this.prisma as any).subjectResult.count({
+            where: {
+              classSectionId: rev.classSectionId,
+              subjectId,
+              academicYearId: rev.academicYearId,
+              status: 'SUBMITTED',
+            },
+          });
+          if (count >= enrolledCount) {
+            submittedSubjects++;
+          }
+        }
+      }
+
+      const conductData = (rev.conductData as Record<string, string>) || {};
+      const conductCompletedCount = Object.values(conductData).filter((v) =>
+        ['A', 'B', 'C'].includes(v),
+      ).length;
+
+      const gradeName = rev.classSection?.GradeLevel?.name ?? '';
+      const displayName = /^grade\b/i.test(gradeName)
+        ? `${gradeName} ${rev.classSection?.name}`
+        : `Grade ${gradeName} ${rev.classSection?.name}`.trim();
+
+      const teacherName = rev.homeroomTeacher
+        ? `${rev.homeroomTeacher.firstName} ${rev.homeroomTeacher.lastName}`.trim()
+        : rev.classSection?.Teacher
+        ? `${rev.classSection.Teacher.firstName} ${rev.classSection.Teacher.lastName}`.trim()
+        : 'Unassigned';
+
+      results.push({
+        reviewId: rev.id,
+        classSectionId: rev.classSectionId,
+        academicYearId: rev.academicYearId,
+        sectionName: rev.classSection?.name ?? '',
+        displayName,
+        gradeLevelName: gradeName,
+        academicYear: rev.classSection?.AcademicYear?.year ?? rev.academicYearId,
+        homeroomTeacher: teacherName,
+        enrolledCount,
+        totalSubjects,
+        submittedSubjects,
+        subjectCompletion:
+          totalSubjects === 0
+            ? 'none'
+            : submittedSubjects >= totalSubjects
+            ? 'complete'
+            : submittedSubjects > 0
+            ? 'partial'
+            : 'none',
+        conductCompleted: conductCompletedCount,
+        conductCompletion:
+          enrolledCount === 0
+            ? 'none'
+            : conductCompletedCount >= enrolledCount
+            ? 'complete'
+            : conductCompletedCount > 0
+            ? 'partial'
+            : 'none',
+        status: rev.status,
+        submittedAt: rev.submittedAt?.toISOString() ?? null,
+        submittedBy: rev.submittedBy
+          ? { id: rev.submittedBy.id, name: rev.submittedBy.name, role: rev.submittedBy.role }
+          : null,
+        reviewedAt: rev.reviewedAt?.toISOString() ?? null,
+        reviewedBy: rev.reviewedBy
+          ? { id: rev.reviewedBy.id, name: rev.reviewedBy.name, role: rev.reviewedBy.role }
+          : null,
+        rejectionReason: rev.rejectionReason,
+        conductData: rev.conductData,
+        createdAt: rev.createdAt?.toISOString() ?? null,
+        updatedAt: rev.updatedAt?.toISOString() ?? null,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Authoritative calculation data for Admin full roster view.
+   * Verifies section and academic year matching.
+   */
+  async getFullSectionRoster(classSectionId: string, academicYearId: string) {
+    if (!classSectionId || !academicYearId) {
+      throw new BadRequestException('Class Section ID and Academic Year ID are required');
+    }
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+    });
+    if (!section) {
+      throw new NotFoundException('Class section not found');
+    }
+    if (section.academicYearId !== academicYearId) {
+      throw new BadRequestException('Class section does not belong to the selected academic year');
+    }
+    return this.calcService.calculateSectionRoster(academicYearId, classSectionId);
   }
 
   // ── NEW: compiled report cards for admin ────────────────────────────────
@@ -312,7 +528,7 @@ export class ReportsService {
         overallAverage,
         overallRank: 0,          // filled below after sorting
         absentDays: absentCounts.get(student.id) || 0,
-        conduct: enrollment.conduct || 'A',
+        conduct: 'A',
       };
     });
 
@@ -321,18 +537,337 @@ export class ReportsService {
     return compiled;
   }
 
-  // ── Homeroom teacher: submit to admin ─────────────────────────────────────
+  // ── Class Roster Review Workflow Operations ───────────────────────────────
+
+  /**
+   * Validate and sanitize conduct entries.
+   * Ensures every student is actively enrolled in classSectionId & academicYearId.
+   * Ensures every provided conduct value is strictly 'A', 'B', or 'C'.
+   */
+  private async validateConductData(
+    classSectionId: string,
+    academicYearId: string,
+    conductData: Record<string, string>,
+    existingConduct: Record<string, string> = {},
+  ): Promise<Record<string, string>> {
+    if (!conductData || typeof conductData !== 'object' || Array.isArray(conductData)) {
+      throw new BadRequestException('conductData must be a key-value object of student IDs to conduct grades');
+    }
+
+    const activeEnrollments = await this.prisma.studentEnrollment.findMany({
+      where: { classSectionId, academicYearId, status: 'ACTIVE' },
+      select: { studentId: true },
+    });
+    const validStudentIds = new Set(activeEnrollments.map((e) => e.studentId));
+
+    const updatedConduct: Record<string, string> = { ...existingConduct };
+
+    for (const [studentId, rawValue] of Object.entries(conductData)) {
+      if (rawValue === null || rawValue === undefined || rawValue === '') {
+        delete updatedConduct[studentId];
+        continue;
+      }
+
+      if (!validStudentIds.has(studentId)) {
+        throw new BadRequestException(`Student ${studentId} is not actively enrolled in this section and academic year`);
+      }
+
+      const val = typeof rawValue === 'string' ? rawValue.trim() : '';
+      if (!['A', 'B', 'C'].includes(val)) {
+        throw new BadRequestException(
+          `Invalid conduct value "${rawValue}" for student ${studentId}. Allowed conduct values are strictly "A", "B", or "C".`,
+        );
+      }
+
+      updatedConduct[studentId] = val;
+    }
+
+    return updatedConduct;
+  }
+
+  /**
+   * Save conduct by homeroom teacher.
+   * Validates teacher homeroom authorization, active enrollment, and A/B/C values.
+   * Editable in DRAFT and REJECTED states.
+   * Locked in SUBMITTED_TO_ADMIN and APPROVED states.
+   * Preserves review status (e.g. REJECTED remains REJECTED).
+   * Does NOT alter ClassSection.status.
+   */
+  async saveConduct(
+    dto: { classSectionId: string; academicYearId: string; conductData: Record<string, string> },
+    userId: string,
+  ) {
+    const { classSectionId, academicYearId, conductData } = dto;
+
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (!teacher) {
+      throw new ForbiddenException('Only registered teachers can save conduct');
+    }
+
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+      include: { GradeLevel: true, AcademicYear: true },
+    });
+    if (!section) {
+      throw new NotFoundException('Class section not found');
+    }
+    if (section.academicYearId !== academicYearId) {
+      throw new BadRequestException('Class section does not belong to the selected academic year');
+    }
+    if (section.status !== 'ACTIVE') {
+      throw new BadRequestException('Class section is not active');
+    }
+    if (section.teacherId !== teacher.id) {
+      throw new ForbiddenException('You are not authorized as the homeroom teacher for this section');
+    }
+
+    const existingReview = await (this.prisma as any).classRosterReview.findUnique({
+      where: { classSectionId_academicYearId: { classSectionId, academicYearId } },
+    });
+
+    if (existingReview) {
+      if (existingReview.status === 'APPROVED') {
+        throw new BadRequestException('Cannot modify conduct: this roster has been approved and is locked.');
+      }
+      if (existingReview.status === 'SUBMITTED_TO_ADMIN') {
+        throw new BadRequestException('Cannot modify conduct: this roster has been submitted to admin and is locked for editing.');
+      }
+
+      const validatedConduct = await this.validateConductData(
+        classSectionId,
+        academicYearId,
+        conductData,
+        (existingReview.conductData as Record<string, string>) || {},
+      );
+
+      const updated = await (this.prisma as any).classRosterReview.update({
+        where: { id: existingReview.id },
+        data: {
+          conductData: validatedConduct,
+        },
+      });
+
+      return {
+        success: true,
+        reviewId: updated.id,
+        status: updated.status,
+        conductData: updated.conductData,
+      };
+    }
+
+    const validatedConduct = await this.validateConductData(
+      classSectionId,
+      academicYearId,
+      conductData,
+      {},
+    );
+
+    const created = await (this.prisma as any).classRosterReview.create({
+      data: {
+        classSectionId,
+        academicYearId,
+        homeroomTeacherId: section.teacherId,
+        status: 'DRAFT',
+        conductData: validatedConduct,
+      },
+    });
+
+    return {
+      success: true,
+      reviewId: created.id,
+      status: created.status,
+      conductData: created.conductData,
+    };
+  }
+
+  /**
+   * Save roster draft by homeroom teacher.
+   * Creates or updates the review in DRAFT status.
+   * Does NOT alter ClassSection.status.
+   */
+  async saveRosterDraft(
+    dto: { classSectionId: string; academicYearId: string; conductData?: any },
+    userId: string,
+  ) {
+    const { classSectionId, academicYearId, conductData } = dto;
+
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (!teacher) {
+      throw new ForbiddenException('Only registered teachers can save roster drafts');
+    }
+
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+      include: { GradeLevel: true, AcademicYear: true },
+    });
+    if (!section) {
+      throw new NotFoundException('Class section not found');
+    }
+    if (section.academicYearId !== academicYearId) {
+      throw new BadRequestException('Class section does not belong to the selected academic year');
+    }
+    if (section.status !== 'ACTIVE') {
+      throw new BadRequestException('Class section is not active');
+    }
+    if (section.teacherId !== teacher.id) {
+      throw new ForbiddenException('You are not authorized as the homeroom teacher for this section');
+    }
+
+    const existingReview = await (this.prisma as any).classRosterReview.findUnique({
+      where: { classSectionId_academicYearId: { classSectionId, academicYearId } },
+    });
+
+    let validatedConduct = existingReview?.conductData ?? {};
+    if (conductData !== undefined && conductData !== null) {
+      validatedConduct = await this.validateConductData(
+        classSectionId,
+        academicYearId,
+        conductData,
+        (existingReview?.conductData as Record<string, string>) || {},
+      );
+    }
+
+    if (existingReview) {
+      if (existingReview.status === 'APPROVED') {
+        throw new BadRequestException('Cannot save draft: this roster has been approved and is locked.');
+      }
+      if (existingReview.status === 'SUBMITTED_TO_ADMIN') {
+        throw new BadRequestException('Cannot save draft: this roster has been submitted to admin and is locked for editing.');
+      }
+
+      const updated = await (this.prisma as any).classRosterReview.update({
+        where: { id: existingReview.id },
+        data: {
+          status: 'DRAFT',
+          conductData: conductData !== undefined ? validatedConduct : existingReview.conductData,
+        },
+      });
+      return { success: true, review: updated };
+    }
+
+    const created = await (this.prisma as any).classRosterReview.create({
+      data: {
+        classSectionId,
+        academicYearId,
+        homeroomTeacherId: section.teacherId,
+        status: 'DRAFT',
+        conductData: validatedConduct,
+      },
+    });
+    return { success: true, review: created };
+  }
+
+  /**
+   * Retrieve current review status for a class section and academic year.
+   * Returns clear default DRAFT if no review record exists.
+   */
+  async getRosterStatus(
+    classSectionId: string,
+    academicYearId: string,
+    userId?: string,
+    userRole?: string,
+  ) {
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+      include: {
+        Teacher: { select: { id: true, userId: true, firstName: true, lastName: true } },
+      },
+    });
+    if (!section) {
+      throw new NotFoundException('Class section not found');
+    }
+    if (section.academicYearId !== academicYearId) {
+      throw new BadRequestException('Class section does not belong to the selected academic year');
+    }
+
+    if (userRole === 'TEACHER' && userId) {
+      if (section.Teacher?.userId !== userId) {
+        throw new ForbiddenException('You are not authorized as the homeroom teacher for this section');
+      }
+    }
+
+    const review = await (this.prisma as any).classRosterReview.findUnique({
+      where: { classSectionId_academicYearId: { classSectionId, academicYearId } },
+      include: {
+        homeroomTeacher: { select: { id: true, firstName: true, lastName: true, staffId: true } },
+        submittedBy: { select: { id: true, name: true, role: true } },
+        reviewedBy: { select: { id: true, name: true, role: true } },
+      },
+    });
+
+    if (review) {
+      return {
+        reviewId: review.id,
+        classSectionId: review.classSectionId,
+        academicYearId: review.academicYearId,
+        homeroomTeacherId: review.homeroomTeacherId,
+        status: review.status,
+        submittedAt: review.submittedAt,
+        submittedById: review.submittedById,
+        reviewedAt: review.reviewedAt,
+        reviewedById: review.reviewedById,
+        rejectionReason: review.rejectionReason,
+        conductData: review.conductData,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt,
+        homeroomTeacher: review.homeroomTeacher,
+        submittedBy: review.submittedBy,
+        reviewedBy: review.reviewedBy,
+      };
+    }
+
+    return {
+      reviewId: null,
+      classSectionId,
+      academicYearId,
+      homeroomTeacherId: section.teacherId,
+      status: 'DRAFT',
+      submittedAt: null,
+      submittedById: null,
+      reviewedAt: null,
+      reviewedById: null,
+      rejectionReason: null,
+      conductData: null,
+      createdAt: null,
+      updatedAt: null,
+      homeroomTeacher: section.Teacher
+        ? {
+            id: section.Teacher.id,
+            firstName: section.Teacher.firstName,
+            lastName: section.Teacher.lastName,
+          }
+        : null,
+      submittedBy: null,
+      reviewedBy: null,
+    };
+  }
 
   /**
    * Called by a homeroom teacher to formally dispatch their finalized
    * roster and/or report cards to the admin portal for review.
+   *
+   * Guards:
+   *  1. Caller must be a Teacher with a profile record.
+   *  2. Caller must be the designated homeroom teacher for the section.
+   *  3. Section must be ACTIVE and belong to academicYearId.
+   *  4. Every assigned subject must have SUBMITTED results covering all
+   *     enrolled students.
+   *
+   * CRITICAL: ClassSection.status is NEVER modified. It remains ACTIVE.
    */
   async submitToAdmin(
     classSectionId: string,
     academicYearId: string,
-    type: 'roster' | 'report-cards' | 'both',
+    type: 'roster' | 'report-cards' | 'both' = 'roster',
     userId: string,
   ) {
+    // 1. Resolve caller to a Teacher record
     const teacher = await this.prisma.teacher.findUnique({
       where: { userId },
       select: { id: true, firstName: true, lastName: true },
@@ -341,6 +876,7 @@ export class ReportsService {
       throw new ForbiddenException('Only registered teachers can submit reports to admin');
     }
 
+    // 2. Verify homeroom ownership and section state
     const section = await this.prisma.classSection.findFirst({
       where: { id: classSectionId, teacherId: teacher.id },
       include: {
@@ -353,7 +889,25 @@ export class ReportsService {
         'You are not the homeroom teacher for this section, or the section does not exist',
       );
     }
+    if (section.academicYearId !== academicYearId) {
+      throw new BadRequestException('Class section does not belong to the selected academic year');
+    }
+    if (section.status !== 'ACTIVE') {
+      throw new BadRequestException('Class section is not active');
+    }
 
+    // 3. Ensure roster is not already approved
+    const existingReview = await (this.prisma as any).classRosterReview.findUnique({
+      where: { classSectionId_academicYearId: { classSectionId, academicYearId } },
+    });
+    if (existingReview?.status === 'APPROVED') {
+      throw new BadRequestException('This roster has already been approved and is locked.');
+    }
+    if (existingReview?.status === 'SUBMITTED_TO_ADMIN') {
+      throw new BadRequestException('This roster has already been submitted to admin and is awaiting review.');
+    }
+
+    // 4. Ensure active enrolment exists
     const enrolledCount = await this.prisma.studentEnrollment.count({
       where: { classSectionId, academicYearId, status: 'ACTIVE' },
     });
@@ -361,6 +915,7 @@ export class ReportsService {
       throw new BadRequestException('No active students are enrolled in this section');
     }
 
+    // 5. Ensure every assigned subject is fully SUBMITTED
     const assignedSubjects = await (this.prisma as any).sectionSubjectTeacher.findMany({
       where: { classSectionId, academicYearId },
       select: { subjectId: true },
@@ -369,11 +924,78 @@ export class ReportsService {
       throw new BadRequestException('No subjects are assigned to this section');
     }
 
-    await this.prisma.classSection.update({
-      where: { id: classSectionId },
-      data: { status: 'SUBMITTED_TO_ADMIN' },
+    const pendingSubjectNames: string[] = [];
+    for (const { subjectId } of assignedSubjects) {
+      const submittedCount = await (this.prisma as any).subjectResult.count({
+        where: { classSectionId, subjectId, academicYearId, status: 'SUBMITTED' },
+      });
+      if (submittedCount < enrolledCount) {
+        const subject = await this.prisma.subject.findUnique({
+          where: { id: subjectId },
+          select: { name: true },
+        });
+        pendingSubjectNames.push(`${subject?.name ?? subjectId} — ${submittedCount}/${enrolledCount} students submitted`);
+      }
+    }
+    if (pendingSubjectNames.length > 0) {
+      throw new BadRequestException(
+        `Cannot submit to admin — the following subjects are incomplete:\n${pendingSubjectNames.join('\n')}`,
+      );
+    }
+
+    // 6. Ensure every active enrolled student has a valid conduct grade (A / B / C)
+    const activeEnrollments = await this.prisma.studentEnrollment.findMany({
+      where: { classSectionId, academicYearId, status: 'ACTIVE' },
+      include: {
+        Student: {
+          select: { id: true, firstName: true, lastName: true, admissionNo: true },
+        },
+      },
+      orderBy: [{ Student: { lastName: 'asc' } }, { Student: { firstName: 'asc' } }],
     });
 
+    const conductData = (existingReview?.conductData as Record<string, string>) || {};
+    const missingConductStudents: string[] = [];
+
+    for (const enr of activeEnrollments) {
+      const val = conductData[enr.Student.id];
+      if (!val || !['A', 'B', 'C'].includes(val)) {
+        const studentName = `${enr.Student.firstName} ${enr.Student.lastName}`.trim();
+        const adm = enr.Student.admissionNo ? ` (${enr.Student.admissionNo})` : '';
+        missingConductStudents.push(`${studentName}${adm}`);
+      }
+    }
+
+    if (missingConductStudents.length > 0) {
+      throw new BadRequestException(
+        `Cannot submit roster — conduct is missing or invalid for ${missingConductStudents.length} student(s):\n${missingConductStudents.map((s) => `- ${s}`).join('\n')}`,
+      );
+    }
+
+    // 7. Create or update ClassRosterReview (NEVER touch ClassSection.status!)
+    const review = await (this.prisma as any).classRosterReview.upsert({
+      where: {
+        classSectionId_academicYearId: { classSectionId, academicYearId },
+      },
+      create: {
+        classSectionId,
+        academicYearId,
+        homeroomTeacherId: section.teacherId,
+        status: 'SUBMITTED_TO_ADMIN',
+        conductData: existingReview?.conductData ?? {},
+        submittedAt: new Date(),
+        submittedById: userId,
+      },
+      update: {
+        status: 'SUBMITTED_TO_ADMIN',
+        submittedAt: new Date(),
+        submittedById: userId,
+        homeroomTeacherId: section.teacherId,
+        rejectionReason: null,
+      },
+    });
+
+    // 7. Return a submission receipt matching existing frontend expectations
     const gradeName = section.GradeLevel?.name ?? '';
     const displayName = /^grade\b/i.test(gradeName)
       ? `${gradeName} ${section.name}`
@@ -381,12 +1003,14 @@ export class ReportsService {
 
     return {
       success: true,
-      submittedAt: new Date().toISOString(),
+      reviewId: review.id,
+      status: review.status,
+      submittedAt: review.submittedAt?.toISOString() ?? new Date().toISOString(),
       submittedBy: `${teacher.firstName} ${teacher.lastName}`.trim(),
       classSectionId,
       classSectionName: displayName,
       academicYear: section.AcademicYear?.year ?? academicYearId,
-      type,
+      type: type ?? 'roster',
       enrolledStudents: enrolledCount,
       submittedSubjects: assignedSubjects.length,
       message: `${
@@ -396,41 +1020,216 @@ export class ReportsService {
     };
   }
 
-  // ── Admin: approve section reports ───────────────────────────────────────
-
-  async approveSection(classSectionId: string) {
-    const section = await this.prisma.classSection.findUnique({
-      where: { id: classSectionId },
+  /**
+   * Admin approves a submitted roster review.
+   * Only SUBMITTED_TO_ADMIN rosters can be approved.
+   * Does NOT alter ClassSection.status.
+   */
+  async approveRoster(reviewId: string, adminUserId: string) {
+    const review = await (this.prisma as any).classRosterReview.findUnique({
+      where: { id: reviewId },
     });
-    if (!section) throw new NotFoundException('Class section not found');
+    if (!review) {
+      throw new NotFoundException('Roster review record not found');
+    }
+    if (review.status !== 'SUBMITTED_TO_ADMIN') {
+      throw new BadRequestException(
+        `Cannot approve roster with status '${review.status}'. Only rosters in 'SUBMITTED_TO_ADMIN' status can be approved.`,
+      );
+    }
 
-    await this.prisma.classSection.update({
-      where: { id: classSectionId },
-      data: { status: 'APPROVED' },
+    const updated = await (this.prisma as any).classRosterReview.update({
+      where: { id: reviewId },
+      data: {
+        status: 'APPROVED',
+        reviewedAt: new Date(),
+        reviewedById: adminUserId,
+        rejectionReason: null,
+      },
+      include: {
+        classSection: { select: { id: true, name: true, status: true } },
+        reviewedBy: { select: { id: true, name: true } },
+      },
     });
 
     return {
       success: true,
-      message: `Class section roster and report cards approved successfully.`,
+      message: 'Class roster successfully approved and locked.',
+      review: updated,
     };
   }
 
-  // ── Admin: request section revision ─────────────────────────────────────
+  /**
+   * Admin rejects a submitted roster review with a required reason.
+   * Only SUBMITTED_TO_ADMIN rosters can be rejected.
+   * Does NOT alter ClassSection.status.
+   */
+  async rejectRoster(reviewId: string, adminUserId: string, reason: string) {
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A rejection reason is required and cannot be empty or whitespace.');
+    }
 
-  async requestSectionRevision(classSectionId: string, feedback?: string) {
-    const section = await this.prisma.classSection.findUnique({
-      where: { id: classSectionId },
+    const review = await (this.prisma as any).classRosterReview.findUnique({
+      where: { id: reviewId },
     });
-    if (!section) throw new NotFoundException('Class section not found');
+    if (!review) {
+      throw new NotFoundException('Roster review record not found');
+    }
+    if (review.status !== 'SUBMITTED_TO_ADMIN') {
+      throw new BadRequestException(
+        `Cannot reject roster with status '${review.status}'. Only rosters in 'SUBMITTED_TO_ADMIN' status can be rejected.`,
+      );
+    }
 
-    await this.prisma.classSection.update({
-      where: { id: classSectionId },
-      data: { status: 'REVISION_REQUESTED' },
+    const updated = await (this.prisma as any).classRosterReview.update({
+      where: { id: reviewId },
+      data: {
+        status: 'REJECTED',
+        reviewedAt: new Date(),
+        reviewedById: adminUserId,
+        rejectionReason: reason.trim(),
+      },
+      include: {
+        classSection: { select: { id: true, name: true, status: true } },
+        reviewedBy: { select: { id: true, name: true } },
+      },
     });
 
     return {
       success: true,
-      message: `Revision requested from homeroom teacher.${feedback ? ` Feedback: ${feedback}` : ''}`,
+      message: 'Class roster rejected and returned to homeroom teacher for correction.',
+      review: updated,
+    };
+  }
+
+  /**
+   * Admin reopens an approved roster back to DRAFT.
+   * Only APPROVED rosters can be reopened.
+   * Does NOT alter ClassSection.status.
+   */
+  async reopenRoster(reviewId: string, adminUserId: string, reason: string) {
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A reopen reason is required and cannot be empty or whitespace.');
+    }
+
+    const review = await (this.prisma as any).classRosterReview.findUnique({
+      where: { id: reviewId },
+    });
+    if (!review) {
+      throw new NotFoundException('Roster review record not found');
+    }
+    if (review.status !== 'APPROVED') {
+      throw new BadRequestException(
+        `Cannot reopen roster with status '${review.status}'. Only approved rosters can be reopened.`,
+      );
+    }
+
+    const updated = await (this.prisma as any).classRosterReview.update({
+      where: { id: reviewId },
+      data: {
+        status: 'DRAFT',
+        reviewedAt: null,
+        reviewedById: null,
+        rejectionReason: `Reopened by admin: ${reason.trim()}`,
+      },
+      include: {
+        classSection: { select: { id: true, name: true, status: true } },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Approved roster successfully reopened and transitioned to DRAFT status.',
+      review: updated,
+    };
+  }
+
+  /**
+   * Official printable roster data.
+   * Strictly gated: only APPROVED rosters can be printed.
+   * Rejects DRAFT, SUBMITTED_TO_ADMIN, and REJECTED reviews.
+   */
+  async getOfficialPrintRoster(
+    classSectionId: string,
+    academicYearId: string,
+    userId?: string,
+    userRole?: string,
+  ) {
+    if (!classSectionId || !academicYearId) {
+      throw new BadRequestException('Class Section ID and Academic Year ID are required');
+    }
+
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+      include: {
+        GradeLevel: { select: { id: true, name: true } },
+        Teacher: { select: { id: true, firstName: true, lastName: true } },
+        homeroomTeacher: { select: { id: true, firstName: true, lastName: true } },
+        AcademicYear: { select: { id: true, year: true } },
+      },
+    });
+    if (!section) {
+      throw new NotFoundException(`Class section ${classSectionId} not found`);
+    }
+
+    if (section.academicYearId && section.academicYearId !== academicYearId) {
+      throw new BadRequestException('Academic Year mismatch for the specified Class Section');
+    }
+
+    // Role-based authorization
+    if (userRole === 'TEACHER' && userId) {
+      const teacher = await this.prisma.teacher.findFirst({ where: { userId } });
+      if (!teacher || section.teacherId !== teacher.id) {
+        throw new ForbiddenException('Only the assigned homeroom teacher or an administrator may access the official printable roster');
+      }
+    } else if (userRole && userRole !== 'ADMIN' && userRole !== 'TEACHER') {
+      throw new ForbiddenException('Unauthorized role for official print');
+    }
+
+    // Gate on ClassRosterReview
+    const review = await (this.prisma as any).classRosterReview.findUnique({
+      where: {
+        classSectionId_academicYearId: {
+          classSectionId,
+          academicYearId,
+        },
+      },
+    });
+
+    if (!review || review.status !== 'APPROVED') {
+      throw new BadRequestException(
+        `Official print is locked. Class roster review must be APPROVED before official printing. Current status: ${review?.status ?? 'DRAFT'}`,
+      );
+    }
+
+    // Authoritative calculation from Step 3
+    const calculated = await this.calcService.calculateSectionRoster(academicYearId, classSectionId);
+    const paperRows = this.calcService.generatePaperRosterRows(calculated.students);
+    const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
+
+    return {
+      officialHeader: {
+        institutionName: 'School Management Portal',
+        documentTitle: 'STUDENT ACADEMIC ROSTER',
+        academicYear: academicYear?.year ?? section.AcademicYear?.year ?? academicYearId,
+        gradeLevel: section.GradeLevel?.name ?? 'N/A',
+        sectionName: section.name,
+        homeroomTeacher: section.homeroomTeacher
+          ? `${section.homeroomTeacher.firstName} ${section.homeroomTeacher.lastName}`.trim()
+          : section.Teacher
+          ? `${section.Teacher.firstName} ${section.Teacher.lastName}`.trim()
+          : 'Unassigned',
+        reviewId: review.id,
+        status: review.status,
+        reviewedAt: review.reviewedAt,
+        reviewedById: review.reviewedById,
+      },
+      section: calculated.section,
+      terms: calculated.terms,
+      subjects: calculated.subjects,
+      students: calculated.students,
+      statistics: calculated.statistics,
+      paperRows,
     };
   }
 }

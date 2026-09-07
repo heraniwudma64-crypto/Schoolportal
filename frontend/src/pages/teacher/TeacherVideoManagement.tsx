@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Video,
   Plus,
@@ -14,12 +14,16 @@ import {
   BookOpen,
   Users,
   RefreshCw,
-  RotateCcw,
+  Upload,
+  Film,
+  FileVideo,
+  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   EducationalVideo,
   VideoStatus,
+  VideoSourceType,
   getTeacherVideos,
   createVideo,
   updateVideo,
@@ -43,11 +47,16 @@ export default function TeacherVideoManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form states
+  const [sourceType, setSourceType] = useState<VideoSourceType>('YOUTUBE');
   const [formUrl, setFormUrl] = useState('');
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formSubjectId, setFormSubjectId] = useState('');
   const [formSectionId, setFormSectionId] = useState('');
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const previewVideoId = extractYouTubeVideoId(formUrl);
 
@@ -75,13 +84,31 @@ export default function TeacherVideoManagement() {
     loadData();
   }, [loadData]);
 
+  // Clean up object URL on unmount or reset
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl);
+      }
+    };
+  }, [filePreviewUrl]);
+
   const resetForm = () => {
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
     setEditingVideo(null);
+    setSourceType('YOUTUBE');
     setFormUrl('');
+    setVideoFile(null);
+    setFilePreviewUrl(null);
     setFormTitle('');
     setFormDescription('');
     setFormSubjectId(subjects[0]?.id || '');
     setFormSectionId('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleOpenCreateModal = () => {
@@ -90,8 +117,10 @@ export default function TeacherVideoManagement() {
   };
 
   const handleOpenEditModal = (video: EducationalVideo) => {
+    resetForm();
     setEditingVideo(video);
-    setFormUrl(video.youtubeUrl);
+    setSourceType(video.sourceType || (video.videoUrl ? 'UPLOAD' : 'YOUTUBE'));
+    setFormUrl(video.youtubeUrl || '');
     setFormTitle(video.title);
     setFormDescription(video.description || '');
     setFormSubjectId(video.subjectId);
@@ -99,13 +128,61 @@ export default function TeacherVideoManagement() {
     setIsFormOpen(true);
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate MIME
+    const allowedMimes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/ogg', 'video/x-matroska', 'video/mpeg'];
+    if (!allowedMimes.includes(file.type.toLowerCase()) && !file.name.match(/\.(mp4|webm|mov|mkv|ogg)$/i)) {
+      toast.error('Unsupported video format. Please select an MP4, WebM, or MOV video.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    // Validate size (50MB)
+    const maxSize = 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.error('File exceeds the 50MB maximum size limit.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+
+    setVideoFile(file);
+    const objUrl = URL.createObjectURL(file);
+    setFilePreviewUrl(objUrl);
+  };
+
+  const handleRemoveFile = () => {
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+    setVideoFile(null);
+    setFilePreviewUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const handleSubmit = async (isDraft: boolean) => {
-    if (!formUrl.trim()) {
-      return toast.error('Please enter a YouTube video URL');
+    // Validation
+    if (sourceType === 'YOUTUBE') {
+      if (!formUrl.trim()) {
+        return toast.error('Please enter a YouTube video URL');
+      }
+      if (!previewVideoId) {
+        return toast.error('Please enter a valid YouTube video link (e.g., https://www.youtube.com/watch?v=... or https://youtu.be/...)');
+      }
+    } else if (sourceType === 'UPLOAD') {
+      if (!videoFile && (!editingVideo || !editingVideo.videoUrl)) {
+        return toast.error('Please select a video file to upload');
+      }
     }
-    if (!previewVideoId) {
-      return toast.error('Please enter a valid YouTube video link');
-    }
+
     if (!formTitle.trim()) {
       return toast.error('Please provide a video title');
     }
@@ -115,35 +192,43 @@ export default function TeacherVideoManagement() {
 
     setIsSubmitting(true);
     try {
+      const formData = new FormData();
+      formData.append('title', formTitle.trim());
+      if (formDescription.trim()) {
+        formData.append('description', formDescription.trim());
+      }
+      formData.append('sourceType', sourceType);
+      formData.append('subjectId', formSubjectId);
+      if (formSectionId) {
+        formData.append('classSectionId', formSectionId);
+      }
+      formData.append('isDraft', isDraft ? 'true' : 'false');
+
+      if (sourceType === 'YOUTUBE') {
+        formData.append('youtubeUrl', formUrl.trim());
+      } else if (sourceType === 'UPLOAD') {
+        if (videoFile) {
+          formData.append('videoFile', videoFile);
+        }
+      }
+
       if (editingVideo) {
-        await updateVideo(editingVideo.id, {
-          title: formTitle.trim(),
-          description: formDescription.trim() || undefined,
-          youtubeUrl: formUrl.trim(),
-          subjectId: formSubjectId,
-          classSectionId: formSectionId || undefined,
-          status: isDraft ? 'DRAFT' : 'PENDING_APPROVAL',
-        });
+        formData.append('status', isDraft ? 'DRAFT' : 'PENDING_APPROVAL');
+        await updateVideo(editingVideo.id, formData);
         toast.success(
           isDraft
-            ? 'Video saved as draft.'
-            : 'Video submitted to admin for review!',
+            ? 'Video draft updated successfully.'
+            : 'Video updated and submitted to admin for review!',
         );
       } else {
-        await createVideo({
-          title: formTitle.trim(),
-          description: formDescription.trim() || undefined,
-          youtubeUrl: formUrl.trim(),
-          subjectId: formSubjectId,
-          classSectionId: formSectionId || undefined,
-          isDraft,
-        });
+        await createVideo(formData);
         toast.success(
           isDraft
             ? 'Video saved as draft.'
             : 'Video submitted to admin for review!',
         );
       }
+
       setIsFormOpen(false);
       resetForm();
       await loadData();
@@ -199,9 +284,9 @@ export default function TeacherVideoManagement() {
             <Video className="w-4 h-4 text-red-400" />
             Educational Video Hub
           </div>
-          <h2 className="text-2xl md:text-3xl font-black">Share YouTube Lessons</h2>
+          <h2 className="text-2xl md:text-3xl font-black">Educational Video Lessons</h2>
           <p className="text-xs md:text-sm text-red-100/80 mt-1 max-w-xl">
-            Curate engaging video materials for your students. All video submissions are vetted by admin before being released to your enrolled class sections.
+            Curate engaging video materials for your students using YouTube links or direct video file uploads. All video submissions are vetted by admin before being released to your enrolled class sections.
           </p>
         </div>
 
@@ -298,7 +383,7 @@ export default function TeacherVideoManagement() {
           <h3 className="font-bold text-gray-900 text-base">No video resources found</h3>
           <p className="text-xs text-gray-500 max-w-sm mx-auto">
             {activeFilter === 'ALL'
-              ? 'You have not submitted any YouTube video lessons yet. Click the button above to add educational video content for your class.'
+              ? 'You have not submitted any video lessons yet. Click the button above to add educational video content for your class.'
               : `No videos found matching status "${activeFilter}".`}
           </p>
           {activeFilter === 'ALL' && (
@@ -317,6 +402,7 @@ export default function TeacherVideoManagement() {
             const isPending = video.status === 'PENDING_APPROVAL';
             const isDraft = video.status === 'DRAFT';
             const isRejected = video.status === 'REJECTED';
+            const isUpload = video.sourceType === 'UPLOAD' || Boolean(video.videoUrl && !video.youtubeUrl);
 
             return (
               <div
@@ -328,21 +414,51 @@ export default function TeacherVideoManagement() {
                   className="relative aspect-video bg-gray-900 cursor-pointer group overflow-hidden"
                   onClick={() => setPlayingVideo(video)}
                 >
-                  <img
-                    src={
-                      video.thumbnailUrl ||
-                      `https://img.youtube.com/vi/${video.youtubeVideoId}/hqdefault.jpg`
-                    }
-                    alt={video.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100"
-                  />
+                  {isUpload ? (
+                    <div className="w-full h-full bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center justify-center p-4 text-center">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 mb-2 group-hover:scale-110 transition-transform">
+                        <Film className="w-6 h-6" />
+                      </div>
+                      <span className="text-[11px] font-bold text-gray-300 line-clamp-1">
+                        {video.title}
+                      </span>
+                      {video.fileSize && (
+                        <span className="text-[10px] text-gray-400 mt-0.5">
+                          {(video.fileSize / (1024 * 1024)).toFixed(1)} MB &bull; {video.mimeType?.replace('video/', '').toUpperCase() || 'VIDEO'}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <img
+                      src={
+                        video.thumbnailUrl ||
+                        `https://img.youtube.com/vi/${video.youtubeVideoId}/hqdefault.jpg`
+                      }
+                      alt={video.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100"
+                    />
+                  )}
+
                   <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                     <div className="w-12 h-12 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                       <Play className="w-5 h-5 fill-white ml-0.5" />
                     </div>
                   </div>
 
-                  {/* Status Pill Badge */}
+                  {/* Source Type Badge (Top-Left) */}
+                  <div className="absolute top-3 left-3">
+                    {isUpload ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-md flex items-center gap-1">
+                        <Film className="w-3 h-3" /> Uploaded Video
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white shadow-md flex items-center gap-1">
+                        <Video className="w-3 h-3" /> YouTube
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Status Pill Badge (Top-Right) */}
                   <div className="absolute top-3 right-3">
                     {isLive && (
                       <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-md flex items-center gap-1">
@@ -462,60 +578,215 @@ export default function TeacherVideoManagement() {
               </div>
               <button
                 onClick={() => setIsFormOpen(false)}
-                className="p-1.5 text-red-200 hover:text-white rounded-xl hover:bg-white/10 transition-colors"
+                disabled={isSubmitting}
+                className="p-1.5 text-red-200 hover:text-white rounded-xl hover:bg-white/10 transition-colors disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Form */}
-            <div className="p-6 space-y-4">
-              {/* YouTube Link Input */}
+            <div className="p-6 space-y-5">
+              {/* Video Source Selection */}
               <div>
-                <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                  YouTube Video Link <span className="text-red-500">*</span>
+                <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-2">
+                  VIDEO SOURCE <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="url"
-                  placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
-                  value={formUrl}
-                  onChange={(e) => setFormUrl(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                />
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Accepts standard YouTube URLs, short links (youtu.be), or YouTube Shorts.
-                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourceType('YOUTUBE');
+                      handleRemoveFile();
+                    }}
+                    className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all ${
+                      sourceType === 'YOUTUBE'
+                        ? 'border-red-600 bg-red-50/70 text-red-950 shadow-sm ring-1 ring-red-600'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-700 bg-gray-50/50'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                        sourceType === 'YOUTUBE'
+                          ? 'bg-red-600 text-white shadow'
+                          : 'bg-gray-200 text-gray-600'
+                      }`}
+                    >
+                      <Video className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black">YouTube Video</div>
+                      <div className="text-[10px] text-gray-500">Paste URL link</div>
+                    </div>
+                    {sourceType === 'YOUTUBE' && (
+                      <Check className="w-4 h-4 text-red-600 ml-auto shrink-0" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourceType('UPLOAD');
+                      setFormUrl('');
+                    }}
+                    className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all ${
+                      sourceType === 'UPLOAD'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 shadow-sm ring-1 ring-indigo-600'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-700 bg-gray-50/50'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                        sourceType === 'UPLOAD'
+                          ? 'bg-indigo-600 text-white shadow'
+                          : 'bg-gray-200 text-gray-600'
+                      }`}
+                    >
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black">Upload Video File</div>
+                      <div className="text-[10px] text-gray-500">MP4, WebM, MOV</div>
+                    </div>
+                    {sourceType === 'UPLOAD' && (
+                      <Check className="w-4 h-4 text-indigo-600 ml-auto shrink-0" />
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* Real-time YouTube Preview Card */}
-              {previewVideoId && (
-                <div className="p-3 bg-red-50/60 border border-red-200 rounded-2xl flex items-center gap-3">
-                  <img
-                    src={`https://img.youtube.com/vi/${previewVideoId}/mqdefault.jpg`}
-                    alt="Preview"
-                    className="w-24 h-16 object-cover rounded-xl shadow-sm shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <span className="text-[10px] font-black uppercase text-red-700 bg-red-100 px-2 py-0.5 rounded-full inline-block mb-1">
-                      YouTube Video Detected
-                    </span>
-                    <p className="text-xs font-bold text-gray-800 truncate">ID: {previewVideoId}</p>
-                    <a
-                      href={`https://www.youtube.com/watch?v=${previewVideoId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] text-red-700 font-semibold flex items-center gap-1 hover:underline mt-0.5"
-                    >
-                      Verify on YouTube <ExternalLink className="w-3 h-3" />
-                    </a>
+              {/* YouTube Link Input (Option 1) */}
+              {sourceType === 'YOUTUBE' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                      YOUTUBE VIDEO LINK <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+                      value={formUrl}
+                      onChange={(e) => setFormUrl(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Accepts standard YouTube links, short URLs (youtu.be), or YouTube Shorts.
+                    </p>
                   </div>
+
+                  {/* Real-time YouTube Preview Card */}
+                  {previewVideoId && (
+                    <div className="p-3 bg-red-50/60 border border-red-200 rounded-2xl flex items-center gap-3">
+                      <img
+                        src={`https://img.youtube.com/vi/${previewVideoId}/mqdefault.jpg`}
+                        alt="Preview"
+                        className="w-24 h-16 object-cover rounded-xl shadow-sm shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-black uppercase text-red-700 bg-red-100 px-2 py-0.5 rounded-full inline-block mb-1">
+                          YouTube Video Detected
+                        </span>
+                        <p className="text-xs font-bold text-gray-800 truncate">ID: {previewVideoId}</p>
+                        <a
+                          href={`https://www.youtube.com/watch?v=${previewVideoId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] text-red-700 font-semibold flex items-center gap-1 hover:underline mt-0.5"
+                        >
+                          Verify on YouTube <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Upload Video File (Option 2) */}
+              {sourceType === 'UPLOAD' && (
+                <div className="space-y-3">
+                  <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
+                    VIDEO FILE <span className="text-red-500">*</span>
+                  </label>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime,video/ogg,video/x-matroska,.mp4,.webm,.mov"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="video-upload-input"
+                  />
+
+                  {!videoFile && (!editingVideo || !editingVideo.videoUrl) ? (
+                    <label
+                      htmlFor="video-upload-input"
+                      className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 hover:border-indigo-500 hover:bg-indigo-50/30 rounded-2xl cursor-pointer transition-all text-center group"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <span className="text-xs font-black text-gray-800 uppercase tracking-wider">
+                        Choose Video File
+                      </span>
+                      <span className="text-[11px] text-gray-500 mt-1">
+                        Supported formats: MP4, WebM, MOV &bull; Maximum size: 50MB
+                      </span>
+                    </label>
+                  ) : (
+                    <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <FileVideo className="w-5 h-5 text-indigo-600 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-gray-900 truncate">
+                              {videoFile ? videoFile.name : editingVideo?.title || 'Current Uploaded Video'}
+                            </p>
+                            <p className="text-[10px] text-indigo-700 font-semibold">
+                              {videoFile
+                                ? `${(videoFile.size / (1024 * 1024)).toFixed(2)} MB &bull; Ready to upload`
+                                : 'Uploaded video on file'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label
+                            htmlFor="video-upload-input"
+                            className="px-2.5 py-1 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 rounded-lg cursor-pointer transition-colors"
+                          >
+                            Change
+                          </label>
+                          {videoFile && (
+                            <button
+                              type="button"
+                              onClick={handleRemoveFile}
+                              className="p-1 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                              title="Remove file"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Video Preview Player */}
+                      {(filePreviewUrl || (editingVideo && editingVideo.videoUrl)) && (
+                        <div className="rounded-xl overflow-hidden bg-black aspect-video max-h-48 flex items-center justify-center shadow-inner">
+                          <video
+                            src={filePreviewUrl || editingVideo?.videoUrl || undefined}
+                            controls
+                            className="w-full h-full max-h-48 object-contain"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Title Input */}
               <div>
                 <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                  Video Title <span className="text-red-500">*</span>
+                  VIDEO TITLE <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -529,7 +800,7 @@ export default function TeacherVideoManagement() {
               {/* Description Input */}
               <div>
                 <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                  Description / Study Instructions (Optional)
+                  DESCRIPTION / STUDY INSTRUCTIONS (OPTIONAL)
                 </label>
                 <textarea
                   rows={3}
@@ -545,7 +816,7 @@ export default function TeacherVideoManagement() {
                 {/* Subject Selector */}
                 <div>
                   <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                    Subject <span className="text-red-500">*</span>
+                    SUBJECT <span className="text-red-500">*</span>
                   </label>
                   <select
                     value={formSubjectId}
@@ -563,7 +834,7 @@ export default function TeacherVideoManagement() {
                 {/* Class Section Selector */}
                 <div>
                   <label className="block text-xs font-black uppercase tracking-wider text-gray-600 mb-1.5">
-                    Target Class Section
+                    TARGET CLASS SECTION
                   </label>
                   <select
                     value={formSectionId}
@@ -579,14 +850,32 @@ export default function TeacherVideoManagement() {
                   </select>
                 </div>
               </div>
+
+              {/* Progress indication banner */}
+              {isSubmitting && (
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-900">
+                  <RefreshCw className="w-5 h-5 text-red-600 animate-spin shrink-0" />
+                  <div className="text-xs">
+                    <p className="font-bold">
+                      {sourceType === 'UPLOAD' && videoFile
+                        ? 'Uploading video file & processing submission...'
+                        : 'Submitting video lesson...'}
+                    </p>
+                    <p className="text-red-700/80 text-[11px]">
+                      Please wait while your content is securely uploaded.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Modal Actions */}
             <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col-reverse sm:flex-row items-center justify-end gap-3">
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={() => setIsFormOpen(false)}
-                className="w-full sm:w-auto px-5 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors"
+                className="w-full sm:w-auto px-5 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl text-xs font-black uppercase tracking-wider transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -605,25 +894,36 @@ export default function TeacherVideoManagement() {
                 className="w-full sm:w-auto px-6 py-2.5 bg-red-900 hover:bg-red-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors shadow-md shadow-red-900/20 flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 <Send className="w-3.5 h-3.5" />
-                {isSubmitting ? 'Sending…' : 'Send to Admin for Review'}
+                {isSubmitting ? 'Uploading…' : 'Send to Admin for Review'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Modal: YouTube Video Player ──────────────────────────────────────── */}
+      {/* ── Modal: Video Player (YouTube & HTML5 Video) ────────────────────────── */}
       {playingVideo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-gray-950 rounded-3xl border border-gray-800 w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
             <div className="p-4 bg-gray-900/80 border-b border-gray-800 text-white flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-sm text-gray-100 truncate max-w-lg">
-                  {playingVideo.title}
-                </h4>
-                <p className="text-[11px] text-gray-400">
-                  {playingVideo.Subject?.name} &bull; {playingVideo.ClassSection?.name || 'All Sections'}
-                </p>
+              <div className="flex items-center gap-2.5">
+                {playingVideo.sourceType === 'UPLOAD' || (playingVideo.videoUrl && !playingVideo.youtubeUrl) ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white flex items-center gap-1 shrink-0">
+                    <Film className="w-3 h-3" /> Uploaded Video
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white flex items-center gap-1 shrink-0">
+                    <Video className="w-3 h-3" /> YouTube
+                  </span>
+                )}
+                <div>
+                  <h4 className="font-bold text-sm text-gray-100 truncate max-w-lg">
+                    {playingVideo.title}
+                  </h4>
+                  <p className="text-[11px] text-gray-400">
+                    {playingVideo.Subject?.name} &bull; {playingVideo.ClassSection?.name || 'All Sections'}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setPlayingVideo(null)}
@@ -633,20 +933,29 @@ export default function TeacherVideoManagement() {
               </button>
             </div>
 
-            <div className="relative aspect-video w-full bg-black">
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${playingVideo.youtubeVideoId}?autoplay=1&rel=0`}
-                title={playingVideo.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full border-0"
-              />
+            <div className="relative aspect-video w-full bg-black flex items-center justify-center">
+              {playingVideo.sourceType === 'UPLOAD' || (playingVideo.videoUrl && !playingVideo.youtubeUrl) ? (
+                <video
+                  src={playingVideo.videoUrl || undefined}
+                  controls
+                  autoPlay
+                  className="w-full h-full max-h-[70vh] object-contain"
+                />
+              ) : (
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${playingVideo.youtubeVideoId}?autoplay=1&rel=0`}
+                  title={playingVideo.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              )}
             </div>
 
             {playingVideo.description && (
               <div className="p-4 bg-gray-900 text-xs text-gray-300 border-t border-gray-800">
                 <p className="font-bold text-gray-400 uppercase tracking-wider text-[10px] mb-1">
-                  Lesson Notes
+                  Lesson Notes &amp; Instructions
                 </p>
                 <p>{playingVideo.description}</p>
               </div>
@@ -657,3 +966,4 @@ export default function TeacherVideoManagement() {
     </div>
   );
 }
+

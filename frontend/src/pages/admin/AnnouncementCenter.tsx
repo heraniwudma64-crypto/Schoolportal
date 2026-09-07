@@ -4,7 +4,8 @@ import { cn } from '../../lib/utils';
 import { Toaster, toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getAdminNotices, getUserNotices, createNotice, updateNotice, deleteNotice, Notice } from '../../api/notices';
-import { getGradeLevels } from '../../api/academicStructure';
+import { useGradeLevels } from '../../hooks/useAcademicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { useAuth } from '../../context/AuthContext';
 
 const CATEGORIES = ['General', 'Academic', 'Examination', 'Attendance', 'Fees', 'Events', 'Emergency', 'Results', 'Homework', 'System'];
@@ -12,6 +13,7 @@ const CATEGORIES = ['General', 'Academic', 'Examination', 'Attendance', 'Fees', 
 const AnnouncementCenter = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { activeAcademicYearId } = useAcademicYear();
   const isAdmin = user?.role === 'admin';
   const isTeacher = user?.role === 'teacher';
   const canManage = isAdmin || isTeacher;
@@ -39,10 +41,7 @@ const AnnouncementCenter = () => {
     queryFn: isAdmin ? getAdminNotices : getUserNotices
   });
 
-  const { data: gradeLevels = [] } = useQuery({
-    queryKey: ['gradeLevels'],
-    queryFn: getGradeLevels
-  });
+  const { data: gradeLevels = [] } = useGradeLevels(activeAcademicYearId);
 
   const resetForm = () => {
     setFormData({
@@ -211,7 +210,7 @@ const AnnouncementCenter = () => {
             onChange={(e) => setFormData({ ...formData, gradeId: e.target.value, sectionId: '' })}
           >
             <option value="">Select Grade...</option>
-            {gradeLevels.map(g => (
+            {gradeLevels.filter(g => g.ClassSection && g.ClassSection.length > 0).map(g => (
               <option key={g.id} value={g.id}>{g.name}</option>
             ))}
           </select>

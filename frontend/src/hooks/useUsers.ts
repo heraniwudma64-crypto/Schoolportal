@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, downloadFile } from '../lib/api';
 import {
   ClassSection,
   CreateUserPayload,
@@ -53,6 +53,7 @@ export function useUsers() {
   const [filters, setFilters] = useState<UserFilters>(DEFAULT_FILTERS);
   const [isLoading, setIsLoading] = useState(false);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Debounce search to avoid hammering the API on every keystroke
@@ -84,17 +85,19 @@ export function useUsers() {
     }
   }, []);
 
-  const fetchClassSections = useCallback(async () => {
-    if (classSections.length > 0) return classSections;
+  const fetchClassSections = useCallback(async (academicYearId?: string) => {
     try {
-      const sections = await api.get<ClassSection[]>('/users/class-sections');
+      const url = academicYearId
+        ? `/users/class-sections?academicYearId=${encodeURIComponent(academicYearId)}`
+        : '/users/class-sections';
+      const sections = await api.get<ClassSection[]>(url);
       setClassSections(sections);
       return sections;
     } catch {
       // non-critical
       return [];
     }
-  }, [classSections.length]);
+  }, []);
 
   const fetchParentsList = useCallback(async () => {
     if (parentsList.length > 0) return parentsList;
@@ -215,6 +218,30 @@ export function useUsers() {
     [refresh],
   );
 
+  const exportUsers = useCallback(
+    async (mode: 'all' | 'filtered') => {
+      setIsExporting(true);
+      try {
+        let queryStr = '';
+        if (mode === 'filtered') {
+          const params = new URLSearchParams();
+          if (filters.search) params.set('search', filters.search);
+          if (filters.role) params.set('role', filters.role);
+          if (filters.status) params.set('status', filters.status);
+          if (filters.sortBy) params.set('sortBy', filters.sortBy);
+          if (filters.sortOrder) params.set('sortOrder', filters.sortOrder);
+          queryStr = params.toString();
+        }
+        const path = queryStr ? `/users/export?${queryStr}` : '/users/export';
+        const defaultFilename = `users-${mode}-${new Date().toISOString().split('T')[0]}.csv`;
+        await downloadFile(path, defaultFilename);
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [filters],
+  );
+
   return {
     users,
     meta,
@@ -224,9 +251,11 @@ export function useUsers() {
     filters,
     isLoading,
     isStatsLoading,
+    isExporting,
     error,
     applyFilters,
     refresh,
+    fetchStats,
     fetchClassSections,
     fetchParentsList,
     createUser,
@@ -238,5 +267,6 @@ export function useUsers() {
     getStudentsLookup,
     getParentChildren,
     linkParentChildren,
+    exportUsers,
   };
 }

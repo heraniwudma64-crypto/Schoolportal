@@ -59,19 +59,28 @@ export class AcademicStructureService {
     });
   }
 
-  // ─── GRADE LEVELS ────────────────────────────────────────────────────────────
+  async getGradeLevels(academicYearId?: string) {
+    let yearId = academicYearId?.trim();
+    if (!yearId) {
+      const currentYear = await this.prisma.academicYear.findFirst({
+        where: { isCurrent: true },
+        select: { id: true },
+      });
+      yearId = currentYear?.id;
+    }
 
-  async getGradeLevels() {
     const grades = await this.prisma.gradeLevel.findMany({
       include: {
-        ClassSection: true,
+        ClassSection: {
+          where: yearId ? { academicYearId: yearId } : undefined,
+          orderBy: { name: 'asc' },
+        },
         StudentEnrollment: {
           select: { id: true },
           where: {
-             // Only count active enrollments maybe? Or just count all in current year.
-             // We will count in controller or here. Let's just return relation.
-             AcademicYear: { isCurrent: true }
-          }
+            ...(yearId ? { academicYearId: yearId } : { AcademicYear: { isCurrent: true } }),
+            status: 'ACTIVE',
+          },
         },
       },
       orderBy: { gradeNumber: 'asc' },

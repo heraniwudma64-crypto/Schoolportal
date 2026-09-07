@@ -11,6 +11,11 @@ export class UpdateVideoDto {
 
   @IsString()
   @IsOptional()
+  @IsIn(['YOUTUBE', 'UPLOAD'])
+  sourceType?: 'YOUTUBE' | 'UPLOAD';
+
+  @IsString()
+  @IsOptional()
   youtubeUrl?: string;
 
   @IsString()
@@ -25,4 +30,8 @@ export class UpdateVideoDto {
   @IsOptional()
   @IsIn(['DRAFT', 'PENDING_APPROVAL'])
   status?: 'DRAFT' | 'PENDING_APPROVAL';
+
+  @IsOptional()
+  isDraft?: boolean | string;
 }
+

@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Trash2,
   Search,
+  Film,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -124,9 +125,9 @@ export default function AdminVideoReview() {
             <Video className="w-4 h-4 text-red-400" />
             Admin Media Vetting
           </div>
-          <h2 className="text-2xl md:text-3xl font-black">YouTube Video Approvals</h2>
+          <h2 className="text-2xl md:text-3xl font-black">Educational Video Approvals</h2>
           <p className="text-xs md:text-sm text-blue-100/80 mt-1 max-w-xl">
-            Review and vet educational YouTube media submitted by teachers before release to enrolled students.
+            Review and vet educational YouTube lessons and uploaded video files submitted by teachers before release to enrolled students.
           </p>
         </div>
 
@@ -233,6 +234,7 @@ export default function AdminVideoReview() {
             const isPending = video.status === 'PENDING_APPROVAL';
             const isApproved = video.status === 'APPROVED';
             const isRejected = video.status === 'REJECTED';
+            const isUpload = video.sourceType === 'UPLOAD' || Boolean(video.videoUrl && !video.youtubeUrl);
 
             return (
               <div
@@ -244,14 +246,31 @@ export default function AdminVideoReview() {
                   className="relative w-full md:w-64 aspect-video rounded-2xl overflow-hidden bg-gray-950 cursor-pointer group shrink-0 shadow-sm"
                   onClick={() => setPlayingVideo(video)}
                 >
-                  <img
-                    src={
-                      video.thumbnailUrl ||
-                      `https://img.youtube.com/vi/${video.youtubeVideoId}/hqdefault.jpg`
-                    }
-                    alt={video.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
+                  {isUpload ? (
+                    <div className="w-full h-full bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex flex-col items-center justify-center p-4 text-center">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 mb-1.5 group-hover:scale-110 transition-transform">
+                        <Film className="w-6 h-6" />
+                      </div>
+                      <span className="text-[11px] font-bold text-gray-300 line-clamp-1">
+                        {video.title}
+                      </span>
+                      {video.fileSize && (
+                        <span className="text-[10px] text-gray-400 mt-0.5">
+                          {(video.fileSize / (1024 * 1024)).toFixed(1)} MB
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <img
+                      src={
+                        video.thumbnailUrl ||
+                        `https://img.youtube.com/vi/${video.youtubeVideoId}/hqdefault.jpg`
+                      }
+                      alt={video.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  )}
+
                   <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                     <div className="w-11 h-11 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                       <Play className="w-5 h-5 fill-white ml-0.5" />
@@ -265,6 +284,17 @@ export default function AdminVideoReview() {
                 {/* Details */}
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Source Type Badge */}
+                    {isUpload ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                        <Film className="w-3 h-3" /> Uploaded Video
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-50 text-red-700 border border-red-200 flex items-center gap-1">
+                        <Video className="w-3 h-3" /> YouTube
+                      </span>
+                    )}
+
                     {/* Status Pill */}
                     {isPending && (
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
@@ -310,14 +340,22 @@ export default function AdminVideoReview() {
                       <span className="font-bold text-gray-700">Submitted: </span>
                       {video.submittedAt ? new Date(video.submittedAt).toLocaleDateString() : new Date(video.createdAt).toLocaleDateString()}
                     </div>
-                    <a
-                      href={video.youtubeUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-red-600 hover:text-red-700 font-semibold flex items-center gap-1 hover:underline"
-                    >
-                      Open YouTube Link <ExternalLink className="w-3 h-3" />
-                    </a>
+                    {video.youtubeUrl ? (
+                      <a
+                        href={video.youtubeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-red-600 hover:text-red-700 font-semibold flex items-center gap-1 hover:underline"
+                      >
+                        Open YouTube Link <ExternalLink className="w-3 h-3" />
+                      </a>
+                    ) : (
+                      video.fileSize && (
+                        <span className="text-indigo-700 font-semibold flex items-center gap-1">
+                          File: {(video.fileSize / (1024 * 1024)).toFixed(1)} MB ({video.mimeType || 'video/mp4'})
+                        </span>
+                      )
+                    )}
                   </div>
 
                   {/* Rejection notice if present */}
@@ -442,19 +480,30 @@ export default function AdminVideoReview() {
         </div>
       )}
 
-      {/* ── Modal: YouTube Video Player Preview ──────────────────────────────── */}
+      {/* ── Modal: Video Player Preview (YouTube & HTML5 Video) ────────────────── */}
       {playingVideo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-gray-950 rounded-3xl border border-gray-800 w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col">
             <div className="p-4 bg-gray-900/80 border-b border-gray-800 text-white flex items-center justify-between">
-              <div>
-                <h4 className="font-bold text-sm text-gray-100 truncate max-w-lg">
-                  {playingVideo.title}
-                </h4>
-                <p className="text-[11px] text-gray-400">
-                  {playingVideo.Subject?.name} &bull; Submitted by{' '}
-                  {playingVideo.Teacher?.firstName} {playingVideo.Teacher?.lastName}
-                </p>
+              <div className="flex items-center gap-2.5">
+                {playingVideo.sourceType === 'UPLOAD' || (playingVideo.videoUrl && !playingVideo.youtubeUrl) ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white flex items-center gap-1 shrink-0">
+                    <Film className="w-3 h-3" /> Uploaded Video
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-600 text-white flex items-center gap-1 shrink-0">
+                    <Video className="w-3 h-3" /> YouTube
+                  </span>
+                )}
+                <div>
+                  <h4 className="font-bold text-sm text-gray-100 truncate max-w-lg">
+                    {playingVideo.title}
+                  </h4>
+                  <p className="text-[11px] text-gray-400">
+                    {playingVideo.Subject?.name} &bull; Submitted by{' '}
+                    {playingVideo.Teacher?.firstName} {playingVideo.Teacher?.lastName}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setPlayingVideo(null)}
@@ -464,14 +513,23 @@ export default function AdminVideoReview() {
               </button>
             </div>
 
-            <div className="relative aspect-video w-full bg-black">
-              <iframe
-                src={`https://www.youtube-nocookie.com/embed/${playingVideo.youtubeVideoId}?autoplay=1&rel=0`}
-                title={playingVideo.title}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                className="w-full h-full border-0"
-              />
+            <div className="relative aspect-video w-full bg-black flex items-center justify-center">
+              {playingVideo.sourceType === 'UPLOAD' || (playingVideo.videoUrl && !playingVideo.youtubeUrl) ? (
+                <video
+                  src={playingVideo.videoUrl || undefined}
+                  controls
+                  autoPlay
+                  className="w-full h-full max-h-[70vh] object-contain"
+                />
+              ) : (
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${playingVideo.youtubeVideoId}?autoplay=1&rel=0`}
+                  title={playingVideo.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full border-0"
+                />
+              )}
             </div>
 
             {playingVideo.description && (
@@ -488,3 +546,4 @@ export default function AdminVideoReview() {
     </div>
   );
 }
+

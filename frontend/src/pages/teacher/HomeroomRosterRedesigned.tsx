@@ -1,28 +1,52 @@
-import React, { useState } from 'react';
-import { Download, Printer, RefreshCw, AlertCircle, Clock, Send } from 'lucide-react';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Download,
+  Printer,
+  RefreshCw,
+  AlertCircle,
+  Clock,
+  FileText,
+  Save,
+  Send,
+  CheckCircle2,
+  AlertTriangle,
+  Lock,
+  Check,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
 import {
   useHomeroomContext,
   useConsolidatedRoster,
+  useRosterReviewStatus,
+  ConsolidatedRosterData,
 } from '../../hooks/useHomeroom';
-import { updateStudentConduct } from '../../api/roster';
-import { submitBothToAdmin } from '../../api/adminReports';
+import { saveHomeroomConduct, submitRosterToAdmin } from '../../api/adminReports';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmt(v: number | null | undefined): string {
-  return v != null ? v.toFixed(1) : '—';
+  return v != null ? (typeof v === 'number' ? v.toFixed(1) : String(v)) : '—';
 }
+
+const PERIOD_ROWS = [
+  { key: 'term1', label: '1st', bg: 'bg-white' },
+  { key: 'term2', label: '2nd', bg: 'bg-white' },
+  { key: 'sem1Avg', label: 'Ave1', bg: 'bg-blue-50/70 font-semibold text-blue-950' },
+  { key: 'term3', label: '3rd', bg: 'bg-white' },
+  { key: 'term4', label: '4th', bg: 'bg-white' },
+  { key: 'sem2Avg', label: 'Ave2', bg: 'bg-blue-50/70 font-semibold text-blue-950' },
+  { key: 'yearlyAverage', label: 'Yearly', bg: 'bg-emerald-50/70 font-bold text-emerald-950' },
+] as const;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomRosterRedesigned() {
+  const navigate = useNavigate();
   // 1. Shared Homeroom Context & Academic Years (from Cache)
   const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
   const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
-  const [updatingConductId, setUpdatingConductId] = useState<string | null>(null);
-  const [isSubmittingToAdmin, setIsSubmittingToAdmin] = useState(false);
 
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = homeroomContext?.assignedSection?.id;
@@ -37,6 +61,32 @@ export default function HomeroomRosterRedesigned() {
     refetch,
   } = useConsolidatedRoster(sectionId, yearId);
 
+  // 3. Review Status Query
+  const {
+    data: reviewStatusData,
+    refetch: refetchReviewStatus,
+  } = useRosterReviewStatus(sectionId, yearId);
+
+  const reviewStatus = reviewStatusData?.status || 'DRAFT';
+  const isConductEditable = reviewStatus === 'DRAFT' || reviewStatus === 'REJECTED';
+
+  // 4. Local Conduct State
+  const [conductState, setConductState] = React.useState<Record<string, string>>({});
+  const [savingConduct, setSavingConduct] = React.useState(false);
+  const [submittingRoster, setSubmittingRoster] = React.useState(false);
+  const [conductDirty, setConductDirty] = React.useState(false);
+
+  React.useEffect(() => {
+    if (data?.students) {
+      const initial: Record<string, string> = {};
+      data.students.forEach((s) => {
+        if (s.conduct) initial[s.studentId] = s.conduct;
+      });
+      setConductState(initial);
+      setConductDirty(false);
+    }
+  }, [data]);
+
   const loading = contextLoading || yearsLoading || (rosterLoading && !data);
   const error =
     (contextError as any)?.response?.data?.message ||
@@ -50,42 +100,79 @@ export default function HomeroomRosterRedesigned() {
 
   const handleRefresh = async () => {
     try {
-      await refetch();
+      await Promise.all([refetch(), refetchReviewStatus()]);
       toast.success('Roster refreshed');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Refresh failed');
     }
   };
 
-  // ── Conduct Change ────────────────────────────────────────────────────────
+  const handleConductChange = (studentId: string, val: string) => {
+    setConductState((prev) => ({
+      ...prev,
+      [studentId]: val,
+    }));
+    setConductDirty(true);
+  };
 
-  const handleConductChange = async (studentId: string, newConduct: string) => {
+  const handleSaveConduct = async () => {
     if (!sectionId || !yearId) return;
-    setUpdatingConductId(studentId);
+    setSavingConduct(true);
     try {
-      await updateStudentConduct(studentId, sectionId, yearId, newConduct);
-      toast.success('Conduct grade updated');
-      await refetch();
+      await saveHomeroomConduct(sectionId, yearId, conductState);
+      toast.success('✓ Conduct saved successfully');
+      setConductDirty(false);
+      await Promise.all([refetch(), refetchReviewStatus()]);
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to update conduct grade');
+      toast.error(err?.response?.data?.message || 'Failed to save conduct');
     } finally {
-      setUpdatingConductId(null);
+      setSavingConduct(false);
     }
   };
 
-  // ── Submit Roster & Report Cards to Admin ─────────────────────────────────
-
   const handleSubmitToAdmin = async () => {
-    if (!sectionId || !yearId) return;
-    setIsSubmittingToAdmin(true);
+    if (!sectionId || !yearId || !data) return;
+
+    // 1. Subject completeness validation
+    const incompleteStudents = data.students.filter((s) => s.isComplete === false);
+    if (incompleteStudents.length > 0) {
+      toast.error(
+        `Cannot submit roster: ${incompleteStudents.length} student(s) have incomplete subject results.`,
+      );
+      return;
+    }
+
+    // 2. Conduct completeness validation
+    const missingConduct = data.students.filter(
+      (s) => !conductState[s.studentId] || !['A', 'B', 'C'].includes(conductState[s.studentId]),
+    );
+    if (missingConduct.length > 0) {
+      toast.error(
+        `Cannot submit roster. Conduct is missing for: ${missingConduct.map((s) => s.studentName).join(', ')}`,
+      );
+      return;
+    }
+
+    // Auto-save conduct first if dirty
+    if (conductDirty) {
+      try {
+        await saveHomeroomConduct(sectionId, yearId, conductState);
+        setConductDirty(false);
+      } catch (err: any) {
+        toast.error('Failed to save conduct before submission: ' + (err?.response?.data?.message || err.message));
+        return;
+      }
+    }
+
+    setSubmittingRoster(true);
     try {
-      const res = await submitBothToAdmin(sectionId, yearId);
-      toast.success(res.message || 'Roster & Report Cards submitted to Admin!');
-      await refetch();
+      await submitRosterToAdmin(sectionId, yearId);
+      toast.success('✓ Roster successfully submitted to Admin for review!');
+      await Promise.all([refetch(), refetchReviewStatus()]);
     } catch (err: any) {
-      toast.error(err?.message || 'Could not submit roster to Admin');
+      toast.error(err?.response?.data?.message || 'Failed to submit roster to admin');
     } finally {
-      setIsSubmittingToAdmin(false);
+      setSubmittingRoster(false);
     }
   };
 
@@ -94,25 +181,55 @@ export default function HomeroomRosterRedesigned() {
   const handleExportCsv = () => {
     if (!data) return;
 
-    const subjectCols = data.subjects.flatMap((s) => [
-      `${s.code} 1st`, `${s.code} 2nd`, `${s.code} 3rd`, `${s.code} 4th`,
-      `${s.code} Ave1`, `${s.code} Ave2`, `${s.code} Year`,
-    ]);
-    const headers = ['No', 'Admission No', 'Name', 'Sex', ...subjectCols, 'Sum', 'Avg', 'Rank', 'Abs D', 'Conduct'];
+    const headers = [
+      'No',
+      'Admission No',
+      'Name',
+      'Age',
+      'Sex',
+      'Period',
+      ...data.subjects.map((s) => `${s.name} (${s.code})`),
+      'Sum',
+      'Avg',
+      'Rank',
+      'Abs D',
+      'Conduct',
+    ];
 
-    const rows = data.students.map((student, idx) => {
-      const scoreCols = student.subjectScores.flatMap((sc) => [
-        sc.term1 ?? '', sc.term2 ?? '', sc.term3 ?? '', sc.term4 ?? '',
-        sc.sem1Avg != null ? sc.sem1Avg.toFixed(1) : '',
-        sc.sem2Avg != null ? sc.sem2Avg.toFixed(1) : '',
-        sc.yearlyAverage != null ? sc.yearlyAverage.toFixed(1) : '',
-      ]);
-      return [
-        idx + 1, student.admissionNo, student.studentName, student.sex,
-        ...scoreCols,
-        student.sum, student.average != null ? student.average.toFixed(1) : '',
-        student.rank || '', student.absentDays, student.conduct || 'A',
-      ];
+    const rows: any[] = [];
+    data.students.forEach((student, idx) => {
+      const isComplete = student.isComplete !== false;
+      const subMap = new Map(student.subjectScores.map((sc) => [sc.subjectId, sc]));
+
+      PERIOD_ROWS.forEach((p, pIdx) => {
+        const isFirst = pIdx === 0;
+        const subjectCols = data.subjects.map((subj) => {
+          const sc = subMap.get(subj.id);
+          const raw = sc ? (sc as any)[p.key] : null;
+          return raw != null
+            ? typeof raw === 'number'
+              ? p.key.includes('Avg') || p.key === 'yearlyAverage'
+                ? raw.toFixed(1)
+                : raw
+              : raw
+            : '';
+        });
+
+        rows.push([
+          isFirst ? idx + 1 : '',
+          isFirst ? student.admissionNo : '',
+          isFirst ? student.studentName : '',
+          isFirst ? (student.age != null ? student.age : '—') : '',
+          isFirst ? student.sex || '' : '',
+          p.label,
+          ...subjectCols,
+          isFirst && isComplete && student.sum != null ? student.sum : '',
+          isFirst && isComplete && student.average != null ? student.average.toFixed(1) : '',
+          isFirst && isComplete && student.rank != null ? student.rank : '',
+          isFirst ? student.absentDays : '',
+          isFirst ? conductState[student.studentId] || student.conduct || '' : '',
+        ]);
+      });
     });
 
     const csv = [headers, ...rows]
@@ -172,46 +289,131 @@ export default function HomeroomRosterRedesigned() {
       {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Class Consolidated Roster</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-900">Class Consolidated Roster</h1>
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 ${
+                reviewStatus === 'APPROVED'
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : reviewStatus === 'SUBMITTED_TO_ADMIN'
+                  ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                  : reviewStatus === 'REJECTED'
+                  ? 'bg-red-100 text-red-800 border border-red-300'
+                  : 'bg-gray-100 text-gray-700 border border-gray-300'
+              }`}
+            >
+              {reviewStatus === 'APPROVED' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+              {reviewStatus === 'SUBMITTED_TO_ADMIN' && <Clock className="w-3.5 h-3.5 text-blue-600" />}
+              {reviewStatus === 'REJECTED' && <AlertTriangle className="w-3.5 h-3.5 text-red-600" />}
+              {reviewStatus === 'DRAFT' && <FileText className="w-3.5 h-3.5 text-gray-500" />}
+              {reviewStatus === 'SUBMITTED_TO_ADMIN' ? 'Submitted to Admin' : reviewStatus}
+            </span>
+          </div>
           <p className="text-sm text-gray-500 mt-1">
             {data.section.grade ? `${data.section.grade} ` : ''}
             {data.section.name}
             {data.section.homeroomTeacher && ` • Homeroom: ${data.section.homeroomTeacher}`}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 no-print shrink-0">
-          <button
-            onClick={handleSubmitToAdmin}
-            disabled={isSubmittingToAdmin}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-900 text-white rounded-lg text-sm font-semibold hover:bg-indigo-950 disabled:opacity-50 transition-colors shadow-sm"
-            title="Submit finalized Roster & Report Cards to Admin for Review"
-          >
-            <Send className="w-4 h-4" />
-            {isSubmittingToAdmin ? 'Submitting to Admin…' : 'Submit Roster & Reports to Admin'}
-          </button>
+        <div className="flex flex-wrap items-center gap-2 no-print shrink-0">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
-            title="Reload submitted results"
+            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            title="Reload submitted results and review status"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           <button
             onClick={handleExportCsv}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors"
+            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors shadow-sm"
           >
             <Download className="w-4 h-4" /> Export CSV
           </button>
+          {isConductEditable && (
+            <button
+              onClick={handleSaveConduct}
+              disabled={savingConduct}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm ${
+                conductDirty
+                  ? 'bg-blue-600 text-white hover:bg-blue-700 animate-pulse'
+                  : 'bg-white border border-blue-600 text-blue-700 hover:bg-blue-50'
+              } disabled:opacity-50`}
+              title="Save conduct grades for all students"
+            >
+              <Save className="w-4 h-4" />
+              {savingConduct ? 'Saving…' : conductDirty ? 'Save Conduct *' : 'Save Conduct'}
+            </button>
+          )}
+          {isConductEditable && (
+            <button
+              onClick={handleSubmitToAdmin}
+              disabled={submittingRoster}
+              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-900 text-white rounded-lg text-sm font-semibold hover:bg-indigo-950 disabled:opacity-50 transition-colors shadow-sm"
+              title="Submit verified roster and conduct to administrator"
+            >
+              <Send className="w-4 h-4" />
+              {submittingRoster ? 'Submitting…' : 'Submit to Admin'}
+            </button>
+          )}
           <button
-            onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors"
+            onClick={() => navigate('/homeroom/roster/paper')}
+            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-700 text-white rounded-lg text-sm font-semibold hover:bg-indigo-800 transition-colors shadow-sm"
+            title="Open official 7-row academic paper roster for preview and printing"
           >
-            <Printer className="w-4 h-4" /> Print
+            <FileText className="w-4 h-4" /> 7-Row Paper Roster
           </button>
         </div>
       </div>
+
+      {/* ── Approved & Locked Notice Banner ── */}
+      {reviewStatus === 'APPROVED' && (
+        <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm no-print">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-base text-emerald-950">Roster Approved</p>
+              <p className="text-sm text-emerald-800 font-medium mt-0.5">
+                This roster has been approved by the administrator and is now locked. Official printing is available.
+              </p>
+              {reviewStatusData?.reviewedAt && (
+                <p className="text-xs text-emerald-700 mt-1 font-medium">
+                  Approved on {new Date(reviewStatusData.reviewedAt).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/homeroom/roster/paper')}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold transition-colors shrink-0 shadow-sm uppercase tracking-wider"
+            title="Open official 7-row academic paper roster"
+          >
+            <Printer className="w-4 h-4" /> Print Official Roster
+          </button>
+        </div>
+      )}
+
+      {/* ── Rejection Notice Banner ── */}
+      {reviewStatus === 'REJECTED' && (
+        <div className="bg-red-50 border border-red-300 rounded-xl p-4 flex items-start gap-3 shadow-sm no-print">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold text-base text-red-900">Roster Rejected</p>
+            {reviewStatusData?.rejectionReason ? (
+              <div className="mt-2">
+                <p className="text-xs font-bold text-red-700 uppercase tracking-wider">Reason:</p>
+                <p className="text-sm text-red-800 font-medium bg-red-100/70 p-2.5 rounded-lg border border-red-200 mt-0.5">
+                  {reviewStatusData.rejectionReason}
+                </p>
+              </div>
+            ) : null}
+            <p className="text-xs text-red-700 mt-2">
+              You can edit the roster and submit it again.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Pending-results notice ── */}
       {!hasSubmittedResults && (
@@ -238,124 +440,216 @@ export default function HomeroomRosterRedesigned() {
         </div>
       ) : (
         // ── Main table ──
-        <div className="bg-white border rounded-xl overflow-auto shadow-sm">
+        <div className="bg-white border rounded-xl overflow-x-auto shadow-sm">
           <table className="min-w-full border-collapse text-xs">
             <thead>
-              {/* Row 1 — subject names spanning 7 cols each */}
               <tr className="bg-gray-900 text-white">
-                <th className="border border-gray-700 p-2 text-left" rowSpan={3}>No</th>
-                <th className="border border-gray-700 p-2 text-left" rowSpan={3} style={{ minWidth: 160 }}>
-                  Name
-                </th>
-                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Sex</th>
-                {data.subjects.map((s) => (
+                <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">No</th>
+                <th className="border border-gray-700 p-2.5 text-center w-28 font-bold">Adm No</th>
+                <th className="border border-gray-700 p-2.5 text-left min-w-[170px] font-bold">Student Name</th>
+                <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">Age</th>
+                <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">Sex</th>
+                <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Period</th>
+
+                {/* Dynamic Subject Columns */}
+                {data.subjects.map((subj) => (
                   <th
-                    key={s.id}
-                    className="border border-gray-700 p-2 text-center bg-gray-800"
-                    colSpan={7}
-                    style={{ minWidth: 140 }}
+                    key={subj.id}
+                    className="border border-gray-700 p-2 text-center min-w-[100px] bg-gray-800"
                   >
-                    {s.name}
+                    <div className="font-bold text-xs leading-tight">{subj.name}</div>
+                    <div className="text-[10px] text-gray-300 font-normal mt-0.5">{subj.code}</div>
                   </th>
                 ))}
-                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Sum</th>
-                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Avg</th>
-                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Rank</th>
-                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Abs D</th>
-                <th className="border border-gray-700 p-2 text-center" rowSpan={3}>Conduct</th>
-              </tr>
 
-              {/* Row 2 — quarter/semester sub-headers */}
-              <tr className="bg-gray-700 text-white">
-                {data.subjects.map((s) => (
-                  <React.Fragment key={`${s.id}-r2`}>
-                    <th className="border border-gray-600 p-2 text-center">1st</th>
-                    <th className="border border-gray-600 p-2 text-center">2nd</th>
-                    <th className="border border-gray-600 p-2 text-center">3rd</th>
-                    <th className="border border-gray-600 p-2 text-center">4th</th>
-                    <th className="border border-gray-600 p-2 text-center bg-blue-800">Ave1</th>
-                    <th className="border border-gray-600 p-2 text-center bg-blue-800">Ave2</th>
-                    <th className="border border-gray-600 p-2 text-center bg-green-800">Year</th>
-                  </React.Fragment>
-                ))}
-              </tr>
-
-              {/* Row 3 — subject codes */}
-              <tr className="bg-gray-600 text-white">
-                {data.subjects.map((s) =>
-                  Array.from({ length: 7 }, (_, i) => (
-                    <th key={`${s.id}-c${i}`} className="border border-gray-600 p-1 text-center">
-                      {s.code}
-                    </th>
-                  )),
-                )}
+                {/* Summary Columns */}
+                <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Sum</th>
+                <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Avg</th>
+                <th className="border border-gray-700 p-2.5 text-center w-14 bg-gray-800 font-bold">Rank</th>
+                <th className="border border-gray-700 p-2.5 text-center w-14 font-bold">Abs D</th>
+                <th className="border border-gray-700 p-2.5 text-center w-16 font-bold">Conduct</th>
               </tr>
             </thead>
 
-            <tbody>
-              {data.students.map((student, rowIdx) => (
-                <tr
+            {data.students.map((student, sIdx) => {
+              const isStudentComplete = student.isComplete !== false;
+              const subjectScoreMap = new Map(student.subjectScores.map((sc) => [sc.subjectId, sc]));
+
+              return (
+                <tbody
                   key={student.studentId}
-                  className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
+                  className="student-group border-b-2 border-gray-400 hover:bg-gray-50/30"
                 >
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {rowIdx + 1}
-                  </td>
-                  <td className="border border-gray-200 p-2 text-left font-semibold whitespace-nowrap">
-                    <span className="text-gray-400 mr-1">{student.admissionNo}</span>
-                    {student.studentName}
-                  </td>
-                  <td className="border border-gray-200 p-2 text-center">{student.sex || '—'}</td>
+                  {PERIOD_ROWS.map((period, pIdx) => {
+                    const isFirstRow = pIdx === 0;
 
-                  {student.subjectScores.map((sc) => (
-                    <React.Fragment key={sc.subjectId}>
-                      <td className="border border-gray-200 p-2 text-center">{sc.term1 ?? '—'}</td>
-                      <td className="border border-gray-200 p-2 text-center">{sc.term2 ?? '—'}</td>
-                      <td className="border border-gray-200 p-2 text-center">{sc.term3 ?? '—'}</td>
-                      <td className="border border-gray-200 p-2 text-center">{sc.term4 ?? '—'}</td>
-                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">
-                        {fmt(sc.sem1Avg)}
-                      </td>
-                      <td className="border border-gray-200 p-2 text-center bg-blue-50 font-semibold">
-                        {fmt(sc.sem2Avg)}
-                      </td>
-                      <td className="border border-gray-200 p-2 text-center bg-green-50 font-bold">
-                        {fmt(sc.yearlyAverage)}
-                      </td>
-                    </React.Fragment>
-                  ))}
+                    return (
+                      <tr key={`${student.studentId}-${period.key}`} className={period.bg}>
+                        {/* Left Identifiers Spanned Across 7 Rows */}
+                        {isFirstRow && (
+                          <>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center font-bold bg-gray-50/80 text-gray-800 align-middle"
+                            >
+                              {sIdx + 1}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center font-mono text-[11px] text-gray-700 align-middle whitespace-nowrap"
+                            >
+                              {student.admissionNo}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-left font-bold text-gray-900 align-middle min-w-[170px]"
+                            >
+                              <div className="text-sm">{student.studentName}</div>
+                              {!isStudentComplete && (
+                                <div
+                                  className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 font-normal border border-amber-200"
+                                  title={
+                                    student.missingSubjects?.length
+                                      ? `Missing: ${student.missingSubjects.join(', ')}`
+                                      : 'Incomplete'
+                                  }
+                                >
+                                  ⚠ Incomplete
+                                  {student.missingSubjects?.length
+                                    ? ` (${student.missingSubjects[0]}${
+                                        student.missingSubjects.length > 1 ? '…' : ''
+                                      })`
+                                    : ''}
+                                </div>
+                              )}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center text-gray-700 align-middle"
+                            >
+                              {student.age != null ? student.age : '—'}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center text-gray-700 align-middle"
+                            >
+                              {student.sex || '—'}
+                            </td>
+                          </>
+                        )}
 
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {student.sum}
-                  </td>
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {fmt(student.average)}
-                  </td>
-                  <td className="border border-gray-200 p-2 text-center font-bold">
-                    {student.rank || '—'}
-                  </td>
-                  <td className="border border-gray-200 p-2 text-center">{student.absentDays}</td>
-                  <td className="border border-gray-200 p-1 text-center font-semibold no-print">
-                    <select
-                      value={student.conduct || 'A'}
-                      onChange={(e) => handleConductChange(student.studentId, e.target.value)}
-                      disabled={updatingConductId === student.studentId}
-                      className="bg-white border border-gray-300 rounded px-1.5 py-1 text-xs font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer shadow-sm disabled:opacity-50"
-                      title="Select Conduct Grade"
-                    >
-                      <option value="A">A (Excellent)</option>
-                      <option value="B">B (Good)</option>
-                      <option value="C">C (Satisfactory)</option>
-                      <option value="D">D (Needs Impv.)</option>
-                      <option value="F">F (Unsatisfactory)</option>
-                    </select>
-                  </td>
-                  <td className="border border-gray-200 p-2 text-center font-semibold hidden print:table-cell">
-                    {student.conduct || 'A'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+                        {/* Period Label (1st, 2nd, Ave1, 3rd, 4th, Ave2, Yearly) */}
+                        <td className="border border-gray-300 p-2 text-center font-bold text-xs text-gray-800">
+                          {period.label}
+                        </td>
+
+                        {/* Dynamic Subject Marks for this Period */}
+                        {data.subjects.map((subj) => {
+                          const sc = subjectScoreMap.get(subj.id);
+                          const rawVal = sc ? (sc as any)[period.key] : null;
+                          const displayVal =
+                            rawVal != null
+                              ? typeof rawVal === 'number'
+                                ? period.key.includes('Avg') || period.key === 'yearlyAverage'
+                                  ? rawVal.toFixed(1)
+                                  : rawVal
+                                : rawVal
+                              : '—';
+
+                          return (
+                            <td
+                              key={subj.id}
+                              className={`border border-gray-200 p-2 text-center text-xs ${
+                                period.key === 'yearlyAverage'
+                                  ? 'font-bold text-emerald-950'
+                                  : period.key.includes('Avg')
+                                  ? 'font-semibold text-blue-950'
+                                  : 'text-gray-800'
+                              }`}
+                            >
+                              {displayVal}
+                            </td>
+                          );
+                        })}
+
+                        {/* Summary Metrics Spanned Across 7 Rows */}
+                        {isFirstRow && (
+                          <>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center font-bold text-gray-900 bg-gray-50/60 align-middle"
+                            >
+                              {isStudentComplete && student.sum != null ? student.sum : '—'}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center font-bold text-gray-900 bg-gray-50/60 align-middle"
+                            >
+                              {isStudentComplete && student.average != null
+                                ? student.average.toFixed(1)
+                                : '—'}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center font-black text-sm text-indigo-950 bg-indigo-50/40 align-middle"
+                            >
+                              {isStudentComplete && student.rank != null ? student.rank : '—'}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2.5 text-center text-gray-700 align-middle"
+                            >
+                              {student.absentDays}
+                            </td>
+                            <td
+                              rowSpan={7}
+                              className="border border-gray-300 p-2 text-center align-middle"
+                            >
+                              {isConductEditable ? (
+                                <select
+                                  id={`conduct-select-${student.studentId}`}
+                                  value={conductState[student.studentId] || ''}
+                                  onChange={(e) => handleConductChange(student.studentId, e.target.value)}
+                                  className={`px-2.5 py-1 text-xs font-bold rounded border shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                                    conductState[student.studentId] === 'A'
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                      : conductState[student.studentId] === 'B'
+                                      ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                      : conductState[student.studentId] === 'C'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                      : 'bg-white text-gray-400 border-gray-300'
+                                  }`}
+                                >
+                                  <option value="" disabled>Select</option>
+                                  <option value="A">A</option>
+                                  <option value="B">B</option>
+                                  <option value="C">C</option>
+                                </select>
+                              ) : (
+                                <span
+                                  className={`inline-block px-2.5 py-1 text-xs font-black rounded border ${
+                                    (conductState[student.studentId] || student.conduct) === 'A'
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                      : (conductState[student.studentId] || student.conduct) === 'B'
+                                      ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                      : (conductState[student.studentId] || student.conduct) === 'C'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                      : 'bg-gray-100 text-gray-400 border-gray-200'
+                                  }`}
+                                  title="Locked: Roster submitted or approved"
+                                >
+                                  {conductState[student.studentId] || student.conduct || '—'}
+                                </span>
+                              )}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              );
+            })}
           </table>
         </div>
       )}

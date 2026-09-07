@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Search, RefreshCw, FileCheck, CheckCircle, Clock, Eye, AlertCircle, Award, UserCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
-import { getAcademicYears } from '../../api/academicStructure';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import { getTermsForReportCards } from '../../api/reportCards';
 import { getAdminSections, getAdminSectionReportCards, AdminSectionSummary, AdminReportCardStudent } from '../../api/adminReports';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,7 +11,9 @@ const AdminReportCards = () => {
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
   const [localSearch, setLocalSearch] = useState('');
   
-  const [academicYearId, setAcademicYearId] = useState<string>('');
+  const { academicYears, activeAcademicYearId, isLoading: isLoadingYears } = useAcademicYear();
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
+  const academicYearId = selectedAcademicYearId || activeAcademicYearId;
   const [termId, setTermId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   
@@ -19,24 +21,12 @@ const AdminReportCards = () => {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
 
   const queryClient = useQueryClient();
-
-  const { data: academicYears = [], isLoading: isLoadingYears } = useQuery({
-    queryKey: ['academicYears'],
-    queryFn: getAcademicYears,
-  });
   
   const { data: terms = [] } = useQuery({
     queryKey: ['reportCardTerms', academicYearId],
     queryFn: () => getTermsForReportCards(academicYearId),
     enabled: !!academicYearId,
   });
-
-  React.useEffect(() => {
-    if (!academicYearId && academicYears.length > 0) {
-      const current = academicYears.find((y: any) => y.isCurrent) || academicYears[0];
-      setAcademicYearId(current.id);
-    }
-  }, [academicYears, academicYearId]);
 
   const {
     data: sections = [],
@@ -111,7 +101,7 @@ const AdminReportCards = () => {
           <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Academic Year</label>
           <select
             value={academicYearId}
-            onChange={(e) => { setAcademicYearId(e.target.value); setTermId(''); }}
+            onChange={(e) => { setSelectedAcademicYearId(e.target.value); setTermId(''); }}
             disabled={isLoadingYears}
             className="w-full h-12 px-4 rounded-xl border border-gray-200 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-900/20 outline-none transition-all"
           >

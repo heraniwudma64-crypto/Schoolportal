@@ -67,7 +67,7 @@ const USER_SELECT = {
       birthZone: true,
       birthWoreda: true,
       parentStatus: true,
-      ClassSection: { select: { id: true, name: true } },
+      ClassSection: { select: { id: true, name: true, GradeLevel: { select: { id: true, name: true } } } },
       Parent: {
         select: {
           id: true,
@@ -166,13 +166,9 @@ export class UsersService {
     };
   }
 
-  // ─── LIST with search / filter / sort / pagination ──────────────────────────
+  // ─── Query Builders (Shared between List & Export) ──────────────────────────
 
-  async findAll(query: QueryUsersDto, requesterId: string) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const skip = (page - 1) * limit;
-
+  private buildWhereClause(query: QueryUsersDto): Prisma.UserWhereInput {
     const where: Prisma.UserWhereInput = {
       isDeleted: false,
     };
@@ -198,10 +194,27 @@ export class UsersService {
       ];
     }
 
+    return where;
+  }
+
+  private buildOrderByClause(query: QueryUsersDto): Prisma.UserOrderByWithRelationInput {
     let orderBy: Prisma.UserOrderByWithRelationInput = { createdAt: 'desc' };
     if (query.sortBy === 'role') orderBy = { role: query.sortOrder ?? 'asc' };
     else if (query.sortBy === 'status') orderBy = { isActive: query.sortOrder ?? 'asc' };
     else if (query.sortBy === 'createdAt') orderBy = { createdAt: query.sortOrder ?? 'desc' };
+    else if (query.sortBy === 'name') orderBy = { loginId: query.sortOrder ?? 'asc' };
+    return orderBy;
+  }
+
+  // ─── LIST with search / filter / sort / pagination ──────────────────────────
+
+  async findAll(query: QueryUsersDto, requesterId: string) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const where = this.buildWhereClause(query);
+    const orderBy = this.buildOrderByClause(query);
 
     const [users, total] = await this.prisma.$transaction([
       this.prisma.user.findMany({ where, orderBy, skip, take: limit, select: USER_SELECT }),
@@ -216,6 +229,121 @@ export class UsersService {
         limit,
         totalPages: Math.ceil(total / limit),
       },
+    };
+  }
+
+  // ─── CSV EXPORT (Unpaginated dataset with current filters) ──────────────────
+
+  private escapeCsvCell(val: unknown): string {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }
+
+  async exportUsers(query: QueryUsersDto): Promise<{ csv: string; filename: string; count: number }> {
+    const where = this.buildWhereClause(query);
+    const orderBy = this.buildOrderByClause(query);
+
+    const users = await this.prisma.user.findMany({
+      where,
+      orderBy,
+      select: USER_SELECT,
+    });
+
+    if (users.length === 0) {
+      throw new NotFoundException('No users match the selected filters.');
+    }
+
+    const headers = [
+      'User ID',
+      'Login ID',
+      'Role',
+      'Status',
+      'First Name',
+      'Last Name',
+      'Full Name',
+      'Email',
+      'Phone Number',
+      'Profile ID / Number',
+      'Gender',
+      'Grade Level',
+      'Class Section',
+      'Parent / Guardian Name',
+      'Parent / Guardian Phone',
+      'Teacher Qualification',
+      'Linked Children Count',
+      'Linked Children',
+      'Created At',
+      'Last Login At',
+    ];
+
+    const rows: string[] = [headers.map((h) => this.escapeCsvCell(h)).join(',')];
+
+    for (const rawUser of users) {
+      const u = rawUser as any;
+      const firstName = u.Student?.firstName ?? u.Teacher?.firstName ?? u.Parent?.firstName ?? (u.name ? u.name.split(' ')[0] : '');
+      const lastName = u.Student?.lastName ?? u.Teacher?.lastName ?? u.Parent?.lastName ?? (u.name ? u.name.split(' ').slice(1).join(' ') : '');
+
+      let fullName = '';
+      if (u.Student) fullName = `${u.Student.firstName} ${u.Student.lastName}`.trim();
+      else if (u.Teacher) fullName = `${u.Teacher.firstName} ${u.Teacher.lastName}`.trim();
+      else if (u.Parent) fullName = `${u.Parent.firstName} ${u.Parent.lastName}`.trim();
+      else fullName = u.name || u.loginId;
+
+      const profileId = u.Student?.admissionNo ?? u.Teacher?.staffId ?? '';
+      const phone = u.phoneNumber ?? u.Teacher?.phoneNumber ?? u.Parent?.phoneNumber ?? '';
+
+      const parentName = u.Student?.Parent
+        ? `${u.Student.Parent.firstName} ${u.Student.Parent.lastName}`.trim()
+        : (u.Student?.guardianFullName ?? '');
+
+      const parentPhone = u.Student?.Parent?.phoneNumber ?? u.Student?.guardianPhone ?? '';
+
+      const linkedChildrenCount = u.Parent?.Student?.length !== undefined ? String(u.Parent.Student.length) : '';
+      const linkedChildren = u.Parent?.Student
+        ? u.Parent.Student.map((s: any) => `${s.firstName} ${s.lastName} (${s.admissionNo})`).join('; ')
+        : '';
+
+      const rowValues = [
+        u.id,
+        u.loginId,
+        u.role,
+        u.isActive ? 'Active' : 'Inactive',
+        firstName,
+        lastName,
+        fullName,
+        u.email ?? '',
+        phone,
+        profileId,
+        u.Student?.gender ?? '',
+        u.Student?.ClassSection?.GradeLevel?.name ?? '',
+        u.Student?.ClassSection?.name ?? '',
+        parentName,
+        parentPhone,
+        u.Teacher?.qualification ?? '',
+        linkedChildrenCount,
+        linkedChildren,
+        u.createdAt ? new Date(u.createdAt).toISOString() : '',
+        u.lastLoginAt ? new Date(u.lastLoginAt).toISOString() : '',
+      ];
+
+      rows.push(rowValues.map((val) => this.escapeCsvCell(val)).join(','));
+    }
+
+    // UTF-8 BOM prefix (\uFEFF) ensures Excel and spreadsheet applications recognize Unicode / Amharic encoding
+    const csvContent = '\uFEFF' + rows.join('\r\n');
+
+    const isFiltered = Boolean(query.search || query.role || query.status);
+    const dateStr = new Date().toISOString().split('T')[0];
+    const filename = isFiltered ? `users-filtered-${dateStr}.csv` : `users-all-${dateStr}.csv`;
+
+    return {
+      csv: csvContent,
+      filename,
+      count: users.length,
     };
   }
 
@@ -584,15 +712,19 @@ export class UsersService {
 
   // ─── GET CLASS SECTIONS (for dropdowns) ─────────────────────────────────────
 
-  async getClassSections() {
-    const currentYear = await this.prisma.academicYear.findFirst({
-      where: { isCurrent: true },
-      select: { id: true },
-    });
-    if (!currentYear) return [];
+  async getClassSections(academicYearId?: string) {
+    let yearId = academicYearId?.trim();
+    if (!yearId) {
+      const currentYear = await this.prisma.academicYear.findFirst({
+        where: { isCurrent: true },
+        select: { id: true },
+      });
+      yearId = currentYear?.id;
+    }
+    if (!yearId) return [];
     const sections = await this.prisma.classSection.findMany({
       where: {
-        academicYearId: currentYear.id,
+        academicYearId: yearId,
         gradeLevelId: { not: null },
       },
       select: { id: true, name: true, gradeLevelId: true, GradeLevel: { select: { name: true, gradeNumber: true } } },

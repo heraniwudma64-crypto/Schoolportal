@@ -184,11 +184,17 @@ export class TeachersService {
   }
 
   async getMyHomeroomContext(userId: string) {
+    const currentYear = await this.prisma.academicYear.findFirst({
+      where: { isCurrent: true },
+      select: { id: true },
+    });
+
     const teacher = await this.prisma.teacher.findFirst({
       where: { userId },
       select: {
         id: true,
         homeroomSections: {
+          where: currentYear ? { academicYearId: currentYear.id } : undefined,
           select: {
             id: true,
             name: true,

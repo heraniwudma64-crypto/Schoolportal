@@ -14,6 +14,8 @@ import {
   GraduationCap,
   BookOpen,
   Shield,
+  Download,
+  FileSpreadsheet,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -23,6 +25,7 @@ import { toast, Toaster } from 'sonner';
 import { cn } from '../../lib/utils';
 import { useUsers } from '../../hooks/useUsers';
 import { useAuth } from '../../context/AuthContext';
+import { useAcademicYear } from '../../context/AcademicYearContext';
 import {
   ManagedUser,
   CreateUserPayload,
@@ -93,14 +96,40 @@ const SkeletonRow: React.FC = () => (
 
 const UserManagement: React.FC = () => {
   const { user: currentUser } = useAuth();
+  const { activeAcademicYearId } = useAcademicYear();
 
   const {
     users, meta, stats, classSections, parentsList, filters,
-    isLoading, isStatsLoading, error,
+    isLoading, isStatsLoading, isExporting, error,
     applyFilters, refresh,
     fetchClassSections, fetchParentsList,
     createUser, updateUser, activateUser, deactivateUser, resetPassword, deleteUser,
+    exportUsers,
   } = useUsers();
+
+  // Export menu state
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleExport = async (mode: 'all' | 'filtered') => {
+    setShowExportMenu(false);
+    try {
+      await exportUsers(mode);
+      toast.success(mode === 'all' ? 'All users exported successfully.' : 'Filtered users exported successfully.');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to export users.');
+    }
+  };
 
   // Modal / drawer state
   const [showAddEdit, setShowAddEdit] = useState(false);
@@ -112,10 +141,10 @@ const UserManagement: React.FC = () => {
   // Lazy-load lookup options only when modals actually open
   React.useEffect(() => {
     if (showAddEdit || linkChildrenUser) {
-      void fetchClassSections();
+      void fetchClassSections(activeAcademicYearId);
       void fetchParentsList();
     }
-  }, [showAddEdit, linkChildrenUser, fetchClassSections, fetchParentsList]);
+  }, [showAddEdit, linkChildrenUser, activeAcademicYearId, fetchClassSections, fetchParentsList]);
 
   // Confirm dialog state
   type ConfirmAction =
@@ -229,6 +258,62 @@ const UserManagement: React.FC = () => {
           >
             <RefreshCw className={cn('w-4 h-4', isLoading && 'animate-spin')} />
           </button>
+
+          {/* ── Export Users Dropdown ────────────────────────────────────── */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu((prev) => !prev)}
+              disabled={isExporting}
+              className={cn(
+                'flex items-center gap-2.5 px-5 py-3 bg-white border border-gray-200 text-gray-700 rounded-2xl text-sm font-bold hover:bg-gray-50 hover:text-blue-900 transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed',
+                showExportMenu && 'ring-2 ring-blue-500/20 border-blue-500',
+              )}
+            >
+              <Download className={cn('w-4 h-4 text-blue-900', isExporting && 'animate-bounce')} />
+              <span>{isExporting ? 'Exporting...' : 'Export Users'}</span>
+              <ChevronDown className={cn('w-3.5 h-3.5 text-gray-400 transition-transform duration-200', showExportMenu && 'rotate-180')} />
+            </button>
+
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="px-3 py-2 border-b border-gray-50 mb-1">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">CSV Export Options</p>
+                </div>
+                <button
+                  onClick={() => void handleExport('all')}
+                  disabled={isExporting}
+                  className="w-full flex items-start gap-3 p-2.5 rounded-xl hover:bg-purple-50/70 text-left transition-colors group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-100 transition-colors">
+                    <FileSpreadsheet className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-gray-900 group-hover:text-purple-900">Download All Users</p>
+                    <p className="text-[10px] text-gray-400 font-medium leading-tight mt-0.5">
+                      Export entire user directory ({stats?.total ? `${stats.total} users` : 'all records'})
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => void handleExport('filtered')}
+                  disabled={isExporting}
+                  className="w-full flex items-start gap-3 p-2.5 rounded-xl hover:bg-blue-50/70 text-left transition-colors group mt-1"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition-colors">
+                    <Filter className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-gray-900 group-hover:text-blue-900">Download Filtered Users</p>
+                    <p className="text-[10px] text-gray-400 font-medium leading-tight mt-0.5">
+                      Export matching search & filter criteria
+                    </p>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={openAdd}
             className="flex items-center gap-3 px-6 py-3 bg-blue-900 text-white rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-blue-800 transition-colors shadow-lg shadow-blue-900/20"
