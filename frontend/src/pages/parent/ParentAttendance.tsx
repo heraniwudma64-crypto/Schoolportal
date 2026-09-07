@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParent } from '../../context/ParentContext';
-import { getChildAttendance, ChildAttendanceRecord } from '../../api/parents';
+import { getChildAttendance } from '../../api/parents';
 import { 
   CheckSquare, 
   Calendar, 
@@ -11,14 +11,13 @@ import {
   RefreshCw, 
   CheckCircle2, 
   XCircle, 
-  AlertTriangle, 
   FileText,
-  Filter,
   ArrowUpDown
 } from 'lucide-react';
 import { ChildSelector } from '../../components/parent/ChildSelector';
 import StatCard from '../../components/dashboard/StatCard';
 import { Link } from 'react-router-dom';
+import { useTranslation } from '../../i18n/LanguageContext';
 
 const ParentAttendance: React.FC = () => {
   const { 
@@ -29,6 +28,7 @@ const ParentAttendance: React.FC = () => {
     error: parentError, 
     refetchChildren 
   } = useParent();
+  const { t } = useTranslation();
 
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'>('ALL');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -69,7 +69,7 @@ const ParentAttendance: React.FC = () => {
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-blue-900 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium text-gray-500">Loading student attendance...</span>
+          <span className="text-sm font-medium text-gray-500">{t('parent.attendance.loading')}</span>
         </div>
       </div>
     );
@@ -81,14 +81,14 @@ const ParentAttendance: React.FC = () => {
         <div className="p-6 bg-red-50 border border-red-200 rounded-3xl text-red-700 flex items-start gap-4">
           <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h3 className="font-bold text-red-900">Failed to load guardian profile</h3>
+            <h3 className="font-bold text-red-900">{t('parent.attendance.loadError')}</h3>
             <p className="text-sm text-red-700">{parentError}</p>
             <button
               onClick={() => void refetchChildren()}
               className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-semibold hover:bg-red-700 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Try Again
+              {t('common.actions.tryAgain')}
             </button>
           </div>
         </div>
@@ -104,16 +104,16 @@ const ParentAttendance: React.FC = () => {
           <div className="w-16 h-16 bg-blue-50 text-blue-900 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
             <Users className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">No Linked Students</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t('parent.attendance.emptyTitle')}</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto leading-relaxed">
-            There are currently no student accounts linked to your guardian account. Please contact school administration to view attendance records.
+            {t('parent.attendance.emptyDesc')}
           </p>
           <div className="pt-2">
             <Link
               to="/account"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-900 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors"
             >
-              My Account
+              {t('common.nav.myAccount')}
             </Link>
           </div>
         </div>
@@ -125,8 +125,16 @@ const ParentAttendance: React.FC = () => {
   const summary = attendanceData?.summary;
   const attendanceRate = summary?.attendancePercentage ?? 100;
   const gradeLevel = selectedChild?.classSection?.gradeLevel || selectedChild?.currentEnrollment?.gradeLevel;
-  const sectionName = selectedChild?.classSection?.name || selectedChild?.currentEnrollment?.classSection || 'Enrolled';
+  const sectionName = selectedChild?.classSection?.name || selectedChild?.currentEnrollment?.classSection || t('common.childSelector.enrolled');
   const academicYear = selectedChild?.currentEnrollment?.academicYear || 'Current Year';
+
+  const tabLabels: Record<typeof statusFilter, string> = {
+    ALL: t('parent.attendance.tabAll'),
+    PRESENT: t('parent.attendance.tabPresent'),
+    ABSENT: t('parent.attendance.tabAbsent'),
+    LATE: t('parent.attendance.tabLate'),
+    EXCUSED: t('parent.attendance.tabExcused'),
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -148,7 +156,7 @@ const ParentAttendance: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-gray-500 font-medium">
-              Admission ID: <span className="font-mono font-semibold text-gray-700">{selectedChild?.admissionNo}</span> • Academic Year: <span className="text-gray-700">{academicYear}</span>
+              {t('parent.attendance.admissionId')} <span className="font-mono font-semibold text-gray-700">{selectedChild?.admissionNo}</span> • {t('parent.attendance.academicYear')} <span className="text-gray-700">{academicYear}</span>
             </p>
           </div>
         </div>
@@ -156,7 +164,7 @@ const ParentAttendance: React.FC = () => {
         {/* Child Selector on top right if parent has multiple children */}
         {childrenList.length > 1 && (
           <div className="flex items-center gap-3 self-start md:self-auto bg-gray-50 p-2 rounded-2xl border border-gray-200/70">
-            <span className="text-xs font-semibold text-gray-500 pl-2">Switch Student:</span>
+            <span className="text-xs font-semibold text-gray-500 pl-2">{t('common.childSelector.switchStudent')}</span>
             <ChildSelector />
           </div>
         )}
@@ -167,13 +175,13 @@ const ParentAttendance: React.FC = () => {
         <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-start gap-4">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h4 className="font-bold text-red-900">Unable to load attendance records</h4>
-            <p className="text-xs text-red-700">{(fetchError as any)?.message || 'Network error occurred.'}</p>
+            <h4 className="font-bold text-red-900">{t('parent.attendance.apiError')}</h4>
+            <p className="text-xs text-red-700">{(fetchError as Error)?.message || 'Network error occurred.'}</p>
             <button
               onClick={() => void refetchAttendance()}
               className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
             >
-              <RefreshCw className="w-3 h-3" /> Retry
+              <RefreshCw className="w-3 h-3" /> {t('common.actions.retry')}
             </button>
           </div>
         </div>
@@ -184,7 +192,7 @@ const ParentAttendance: React.FC = () => {
         {/* Attendance Rate */}
         <div className="p-5 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-400 uppercase">Rate</span>
+            <span className="text-xs font-bold text-gray-400 uppercase">{t('parent.attendance.statRate')}</span>
             <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
               <CheckSquare className="w-4 h-4" />
             </div>
@@ -198,14 +206,14 @@ const ParentAttendance: React.FC = () => {
               attendanceRate >= 75 ? 'bg-amber-50 text-amber-700' :
               'bg-rose-50 text-rose-700'
             }`}>
-              {attendanceRate >= 90 ? 'Excellent' : attendanceRate >= 75 ? 'Moderate' : 'Low'}
+              {attendanceRate >= 90 ? t('parent.attendance.excellent') : attendanceRate >= 75 ? t('parent.attendance.moderate') : t('parent.attendance.low')}
             </span>
           </div>
         </div>
 
         {/* Total Days */}
         <StatCard
-          title="Total Days"
+          title={t('parent.attendance.statTotalDays')}
           value={attendanceLoading ? '…' : summary?.totalDays ?? 0}
           icon={Calendar}
           iconClassName="bg-blue-50 text-blue-600"
@@ -214,7 +222,7 @@ const ParentAttendance: React.FC = () => {
 
         {/* Present */}
         <StatCard
-          title="Present"
+          title={t('parent.attendance.statPresent')}
           value={attendanceLoading ? '…' : summary?.present ?? 0}
           icon={CheckCircle2}
           iconClassName="bg-green-50 text-green-600"
@@ -223,7 +231,7 @@ const ParentAttendance: React.FC = () => {
 
         {/* Absent */}
         <StatCard
-          title="Absent"
+          title={t('parent.attendance.statAbsent')}
           value={attendanceLoading ? '…' : summary?.absent ?? 0}
           icon={XCircle}
           iconClassName="bg-red-50 text-red-600"
@@ -232,7 +240,7 @@ const ParentAttendance: React.FC = () => {
 
         {/* Late */}
         <StatCard
-          title="Late"
+          title={t('parent.attendance.statLate')}
           value={attendanceLoading ? '…' : summary?.late ?? 0}
           icon={Clock}
           iconClassName="bg-amber-50 text-amber-600"
@@ -241,7 +249,7 @@ const ParentAttendance: React.FC = () => {
 
         {/* Excused */}
         <StatCard
-          title="Excused"
+          title={t('parent.attendance.statExcused')}
           value={attendanceLoading ? '…' : summary?.excused ?? 0}
           icon={FileText}
           iconClassName="bg-purple-50 text-purple-600"
@@ -256,10 +264,10 @@ const ParentAttendance: React.FC = () => {
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               <CheckSquare className="w-5 h-5 text-blue-600" />
-              Attendance Log
+              {t('parent.attendance.title')}
             </h3>
             <span className="text-xs bg-gray-100 text-gray-600 font-bold px-2.5 py-1 rounded-full">
-              {attendanceLoading ? '…' : `${records.length} Records`}
+              {attendanceLoading ? '…' : (records.length === 1 ? t('parent.attendance.recordsCountSingular') : t('parent.attendance.recordsCount', { count: records.length }))}
             </span>
           </div>
 
@@ -277,7 +285,7 @@ const ParentAttendance: React.FC = () => {
                       : 'hover:text-gray-900'
                   }`}
                 >
-                  {tab.charAt(0) + tab.slice(1).toLowerCase()}
+                  {tabLabels[tab]}
                 </button>
               ))}
             </div>
@@ -289,7 +297,7 @@ const ParentAttendance: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-300 rounded-xl text-xs font-semibold text-gray-700 shadow-xs transition-colors"
             >
               <ArrowUpDown className="w-3.5 h-3.5 text-gray-500" />
-              {sortOrder === 'desc' ? 'Newest' : 'Oldest'}
+              {sortOrder === 'desc' ? t('parent.attendance.sortNewest') : t('parent.attendance.sortOldest')}
             </button>
           </div>
         </div>
@@ -299,11 +307,11 @@ const ParentAttendance: React.FC = () => {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-gray-50/80 text-[11px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
-                <th className="px-6 py-4">Date</th>
-                <th className="px-6 py-4">Period</th>
-                <th className="px-6 py-4">Class Section</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Remarks</th>
+                <th className="px-6 py-4">{t('parent.attendance.colDate')}</th>
+                <th className="px-6 py-4">{t('parent.attendance.colPeriod')}</th>
+                <th className="px-6 py-4">{t('parent.attendance.colClassSection')}</th>
+                <th className="px-6 py-4">{t('parent.attendance.colStatus')}</th>
+                <th className="px-6 py-4">{t('parent.attendance.colRemarks')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -312,7 +320,7 @@ const ParentAttendance: React.FC = () => {
                   <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-6 h-6 border-2 border-blue-900 border-t-transparent rounded-full animate-spin"></div>
-                      <span>Loading attendance history for {childName}...</span>
+                      <span>{t('parent.attendance.loadingHistory', { name: childName })}</span>
                     </div>
                   </td>
                 </tr>
@@ -323,11 +331,11 @@ const ParentAttendance: React.FC = () => {
                   <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500">
                     <div className="flex flex-col items-center gap-2 max-w-sm mx-auto">
                       <Calendar className="w-8 h-8 text-gray-300" />
-                      <span className="font-bold text-gray-700">No attendance entries found</span>
+                      <span className="font-bold text-gray-700">{t('parent.attendance.noEntries')}</span>
                       <p className="text-xs text-gray-400">
                         {statusFilter !== 'ALL'
-                          ? `No records match the filter "${statusFilter}". Try switching to All.`
-                          : `No attendance records have been logged for ${childName} yet.`}
+                          ? t('parent.attendance.noEntriesFilter', { filter: tabLabels[statusFilter] || statusFilter })
+                          : t('parent.attendance.noEntriesGeneral', { name: childName })}
                       </p>
                     </div>
                   </td>
@@ -348,7 +356,7 @@ const ParentAttendance: React.FC = () => {
                         })}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 font-medium">
-                        {record.period ? `Period ${record.period}` : 'Daily Session'}
+                        {record.period ? t('parent.attendance.periodLabel', { period: record.period }) : t('parent.attendance.dailySession')}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">
                         {record.classSection || sectionName}
@@ -369,7 +377,7 @@ const ParentAttendance: React.FC = () => {
                           {status === 'ABSENT' && <XCircle className="w-3.5 h-3.5" />}
                           {status === 'LATE' && <Clock className="w-3.5 h-3.5" />}
                           {status === 'EXCUSED' && <FileText className="w-3.5 h-3.5" />}
-                          {status}
+                          {status === 'PRESENT' ? t('common.status.present') : status === 'ABSENT' ? t('common.status.absent') : status === 'LATE' ? t('common.status.late') : status === 'EXCUSED' ? t('common.status.excused') : status}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-xs text-gray-500 italic max-w-xs truncate">

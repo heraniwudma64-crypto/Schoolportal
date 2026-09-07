@@ -45,6 +45,15 @@ export interface AccountProfile {
     ClassSection?: { id: string; name: string } | null;
   } | null;
   Teacher?: { id: string; firstName: string; lastName: string; staffId?: string | null; phoneNumber?: string | null; address?: string | null; qualification?: string | null } | null;
+  Parent?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    phoneNumber?: string | null;
+    occupation?: string | null;
+    relationship?: string | null;
+    Student?: Array<{ id: string; firstName: string; lastName: string; admissionNo: string }>;
+  } | null;
 }
 
 export const getMyAccount = () => api.get<AccountProfile>('/account/me');
@@ -63,8 +72,8 @@ export const updateMyAccount = (data: {
 }) =>
   api.patch<AccountProfile>('/account/me', data);
 
-export const updateMyPassword = (data: { currentPassword?: string; newPassword?: string }) => 
-  api.patch<{ success: boolean }>('/account/me/password', data);
+export const updateMyPassword = (data: { currentPassword?: string; newPassword?: string; confirmPassword?: string }) => 
+  api.patch<{ success: boolean; message?: string }>('/account/me/password', data);
 
 export const uploadMyAvatar = (file: File) => {
   const formData = new FormData();

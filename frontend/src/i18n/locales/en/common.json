@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "myChildren": "My Children",
+    "attendance": "Attendance",
+    "results": "Results",
+    "reportCard": "Report Card",
+    "classSchedule": "Class Schedule",
+    "assignments": "Assignments",
+    "account": "Account",
+    "myAccount": "My Account",
+    "logout": "Log Out",
+    "searchPlaceholder": "Search for something..."
+  },
+  "status": {
+    "present": "Present",
+    "absent": "Absent",
+    "late": "Late",
+    "excused": "Excused",
+    "active": "Active",
+    "pending": "Pending",
+    "submitted": "Submitted",
+    "graded": "Graded",
+    "overdue": "Overdue",
+    "completed": "Completed"
+  },
+  "days": {
+    "monday": "Monday",
+    "tuesday": "Tuesday",
+    "wednesday": "Wednesday",
+    "thursday": "Thursday",
+    "friday": "Friday"
+  },
+  "actions": {
+    "retry": "Retry",
+    "tryAgain": "Try Again",
+    "refresh": "Refresh",
+    "viewAll": "View All",
+    "print": "Print",
+    "clearFilters": "Clear Filters"
+  },
+  "childSelector": {
+    "loading": "Loading students...",
+    "noStudents": "No Linked Students",
+    "selectStudent": "Select Student",
+    "studentsCount": "{count} Students",
+    "studentCountSingular": "1 Student",
+    "adm": "Adm:",
+    "enrolled": "Enrolled",
+    "switchStudent": "Switch Student:",
+    "studentLabel": "Student:"
+  },
+  "language": {
+    "selectLanguage": "Language",
+    "en": "English",
+    "am": "አማርኛ"
+  }
+}

@@ -23,6 +23,7 @@ import {
 import { cn } from '../../lib/utils';
 import { useHomeroomContext } from '../../hooks/useHomeroom';
 import { APP_NAME, APP_DESCRIPTION } from '../../config/branding';
+import { useTranslation } from '../../i18n/LanguageContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ interface SidebarProps {
 
 const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const location = useLocation();
 
   // Check if the current user is assigned as a Homeroom Teacher (shared React Query hook)
@@ -100,14 +102,14 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
 
     if (role === 'parent') {
       return [
-        ...common,
-        { name: 'My Children', href: '/parent/children', icon: Users },
-        { name: 'Attendance', href: '/parent/attendance', icon: CheckSquare },
-        { name: 'Results', href: '/parent/results', icon: GraduationCap },
-        { name: 'Report Card', href: '/parent/report-card', icon: FileCheck },
-        { name: 'Class Schedule', href: '/parent/schedule', icon: Calendar },
-        { name: 'Assignments', href: '/parent/assignments', icon: ClipboardList },
-        { name: 'Account', href: '/account', icon: Settings },
+        { name: t('common.nav.dashboard'), href: '/dashboard', icon: LayoutDashboard },
+        { name: t('common.nav.myChildren'), href: '/parent/children', icon: Users },
+        { name: t('common.nav.attendance'), href: '/parent/attendance', icon: CheckSquare },
+        { name: t('common.nav.results'), href: '/parent/results', icon: GraduationCap },
+        { name: t('common.nav.reportCard'), href: '/parent/report-card', icon: FileCheck },
+        { name: t('common.nav.classSchedule'), href: '/parent/schedule', icon: Calendar },
+        { name: t('common.nav.assignments'), href: '/parent/assignments', icon: ClipboardList },
+        { name: t('common.nav.account'), href: '/account', icon: Settings },
       ];
     }
 
@@ -179,14 +181,14 @@ const Sidebar = ({ isOpen, onMouseEnter, onMouseLeave }: SidebarProps) => {
           )}
         >
           <UserCog className="w-5 h-5" />
-          <span className="text-sm font-medium">My Account</span>
+          <span className="text-sm font-medium">{user?.role === 'parent' ? t('common.nav.myAccount') : 'My Account'}</span>
         </Link>
         <button
           onClick={logout}
           className="flex items-center gap-3 px-3 py-2 w-full text-blue-100 hover:bg-white/5 hover:text-white rounded-lg transition-colors"
         >
           <LogOut className="w-5 h-5" />
-          <span className="text-sm font-medium">Log Out</span>
+          <span className="text-sm font-medium">{user?.role === 'parent' ? t('common.nav.logout') : 'Log Out'}</span>
         </button>
       </div>
     </div>
