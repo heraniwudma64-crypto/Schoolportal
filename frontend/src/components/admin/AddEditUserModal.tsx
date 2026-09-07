@@ -41,7 +41,6 @@ interface FormState {
   emergencyContact: string;
   // Teacher
   staffId: string;
-  qualification: string;
   // Parent
   occupation: string;
   relationship: string;
@@ -51,7 +50,7 @@ const EMPTY: FormState = {
   loginId: '', password: '', role: 'STUDENT', email: '', phoneNumber: '',
   firstName: '', lastName: '',
   admissionNo: '', classSectionId: '', parentId: '', gender: '', dob: '', address: '', emergencyContact: '',
-  staffId: '', qualification: '',
+  staffId: '',
   occupation: '', relationship: '',
 };
 
@@ -104,7 +103,6 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
       address: s?.address ?? t?.address ?? '',
       emergencyContact: s?.emergencyContact ?? '',
       staffId: t?.staffId ?? '',
-      qualification: t?.qualification ?? '',
       occupation: p?.occupation ?? '',
       relationship: p?.relationship ?? '',
     });
@@ -141,7 +139,7 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
         lastName: form.lastName || undefined,
       };
       if (form.role === 'STUDENT') Object.assign(payload, { admissionNo: form.admissionNo, classSectionId: form.classSectionId || undefined, parentId: form.parentId || null, gender: form.gender || undefined, dob: form.dob || undefined, address: form.address || undefined, emergencyContact: form.emergencyContact || undefined });
-      if (form.role === 'TEACHER') Object.assign(payload, { staffId: form.staffId || undefined, qualification: form.qualification || undefined, address: form.address || undefined });
+      if (form.role === 'TEACHER') Object.assign(payload, { staffId: form.staffId || undefined, address: form.address || undefined });
       if (form.role === 'PARENT') Object.assign(payload, { occupation: form.occupation || undefined, relationship: form.relationship || undefined });
       await onSave(payload);
     } else {
@@ -155,7 +153,7 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
         lastName: form.lastName,
       };
       if (form.role === 'STUDENT') Object.assign(payload, { admissionNo: form.admissionNo, classSectionId: form.classSectionId || undefined, parentId: form.parentId || undefined, gender: form.gender || undefined, dob: form.dob || undefined, address: form.address || undefined, emergencyContact: form.emergencyContact || undefined });
-      if (form.role === 'TEACHER') Object.assign(payload, { staffId: form.staffId || undefined, qualification: form.qualification || undefined, address: form.address || undefined });
+      if (form.role === 'TEACHER') Object.assign(payload, { staffId: form.staffId || undefined, address: form.address || undefined });
       if (form.role === 'PARENT') Object.assign(payload, { occupation: form.occupation || undefined, relationship: form.relationship || undefined });
       await onSave(payload);
     }
@@ -304,13 +302,10 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
                 <Field label="Staff ID">
                   <input className={inputCls} value={form.staffId} onChange={set('staffId')} placeholder="e.g. TCH-001" />
                 </Field>
-                <Field label="Qualification">
-                  <input className={inputCls} value={form.qualification} onChange={set('qualification')} placeholder="e.g. B.Ed. Mathematics" />
+                <Field label="Address">
+                  <input className={inputCls} value={form.address} onChange={set('address')} placeholder="Home address" />
                 </Field>
               </div>
-              <Field label="Address">
-                <input className={inputCls} value={form.address} onChange={set('address')} placeholder="Home address" />
-              </Field>
             </>
           )}
 

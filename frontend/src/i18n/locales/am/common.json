@@ -1,0 +1,58 @@
+{
+  "nav": {
+    "dashboard": "ዳሽቦርድ",
+    "myChildren": "ልጆቼ",
+    "attendance": "የትምህርት ክትትል",
+    "results": "ውጤቶች",
+    "reportCard": "የውጤት ሪፖርት",
+    "classSchedule": "የክፍል የጊዜ ሰሌዳ",
+    "assignments": "የቤት ስራዎች",
+    "account": "መለያ",
+    "myAccount": "የእኔ መለያ",
+    "logout": "ውጣ",
+    "searchPlaceholder": "መፈለጊያ..."
+  },
+  "status": {
+    "present": "የተገኘ",
+    "absent": "የቀረ",
+    "late": "የዘገየ",
+    "excused": "በፈቃድ የቀረ",
+    "active": "ንቁ",
+    "pending": "ያላለቀ",
+    "submitted": "የተላከ",
+    "graded": "የታረመ",
+    "overdue": "ጊዜው ያለፈበት",
+    "completed": "የተጠናቀቀ"
+  },
+  "days": {
+    "monday": "ሰኞ",
+    "tuesday": "ማክሰኞ",
+    "wednesday": "ረቡዕ",
+    "thursday": "ሐሙስ",
+    "friday": "አርብ"
+  },
+  "actions": {
+    "retry": "እንደገና ሞክር",
+    "tryAgain": "እንደገና ሞክር",
+    "refresh": "አድስ",
+    "viewAll": "ሁሉንም እይ",
+    "print": "አትም",
+    "clearFilters": "ማጣሪያዎችን አጽዳ"
+  },
+  "childSelector": {
+    "loading": "የተማሪዎችን መረጃ በመጫን ላይ...",
+    "noStudents": "ምንም የተገናኘ ተማሪ የለም",
+    "selectStudent": "ተማሪ ይምረጡ",
+    "studentsCount": "{count} ተማሪዎች",
+    "studentCountSingular": "1 ተማሪ",
+    "adm": "መለያ:",
+    "enrolled": "የተመዘገበ",
+    "switchStudent": "ተማሪ ቀይር:",
+    "studentLabel": "ተማሪ:"
+  },
+  "language": {
+    "selectLanguage": "ቋንቋ",
+    "en": "English",
+    "am": "አማርኛ"
+  }
+}

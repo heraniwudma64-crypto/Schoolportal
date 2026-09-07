@@ -7,17 +7,15 @@ import {
   Printer, 
   GraduationCap, 
   Calendar, 
-  CheckCircle2, 
-  XCircle, 
   Users, 
   AlertCircle, 
   RefreshCw,
-  FileCheck,
-  Building
+  FileCheck
 } from 'lucide-react';
 import { ChildSelector } from '../../components/parent/ChildSelector';
 import { APP_NAME } from '../../config/branding';
 import { Link } from 'react-router-dom';
+import { useTranslation } from '../../i18n/LanguageContext';
 
 const ParentReportCard: React.FC = () => {
   const { 
@@ -28,6 +26,7 @@ const ParentReportCard: React.FC = () => {
     error: parentError, 
     refetchChildren 
   } = useParent();
+  const { t } = useTranslation();
 
   const [selectedTermId, setSelectedTermId] = useState<string>('');
 
@@ -65,7 +64,7 @@ const ParentReportCard: React.FC = () => {
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-blue-900 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium text-gray-500">Loading student report card...</span>
+          <span className="text-sm font-medium text-gray-500">{t('parent.reportCard.loading')}</span>
         </div>
       </div>
     );
@@ -77,14 +76,14 @@ const ParentReportCard: React.FC = () => {
         <div className="p-6 bg-red-50 border border-red-200 rounded-3xl text-red-700 flex items-start gap-4">
           <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h3 className="font-bold text-red-900">Failed to load guardian profile</h3>
+            <h3 className="font-bold text-red-900">{t('parent.reportCard.loadError')}</h3>
             <p className="text-sm text-red-700">{parentError}</p>
             <button
               onClick={() => void refetchChildren()}
               className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-semibold hover:bg-red-700 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Try Again
+              {t('common.actions.tryAgain')}
             </button>
           </div>
         </div>
@@ -100,16 +99,16 @@ const ParentReportCard: React.FC = () => {
           <div className="w-16 h-16 bg-blue-50 text-blue-900 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
             <Users className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">No Linked Students</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t('parent.reportCard.emptyTitle')}</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto leading-relaxed">
-            There are currently no student accounts linked to your guardian profile. Please contact school administration to view formal term report cards.
+            {t('parent.reportCard.emptyDesc')}
           </p>
           <div className="pt-2">
             <Link
               to="/account"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-900 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors"
             >
-              My Account
+              {t('common.nav.myAccount')}
             </Link>
           </div>
         </div>
@@ -130,14 +129,14 @@ const ParentReportCard: React.FC = () => {
       {/* Top Action Bar (hidden on print) */}
       <div className="no-print bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-gray-900">Academic Report Card</h2>
-          <p className="text-sm text-gray-500">Official term performance statement, subject marks, and attendance summary.</p>
+          <h2 className="text-2xl font-black text-gray-900">{t('parent.reportCard.title')}</h2>
+          <p className="text-sm text-gray-500">{t('parent.reportCard.subtitle')}</p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
           {childrenList.length > 1 && (
             <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-2xl border border-gray-200/70">
-              <span className="text-xs font-semibold text-gray-500 pl-2">Student:</span>
+              <span className="text-xs font-semibold text-gray-500 pl-2">{t('common.childSelector.studentLabel')}</span>
               <ChildSelector />
             </div>
           )}
@@ -149,7 +148,7 @@ const ParentReportCard: React.FC = () => {
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-900 text-white rounded-xl text-xs font-bold hover:bg-blue-800 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Printer className="w-4 h-4" />
-            Print Report Card
+            {t('parent.reportCard.printReportCard')}
           </button>
         </div>
       </div>
@@ -159,7 +158,7 @@ const ParentReportCard: React.FC = () => {
         <div className="no-print bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-blue-900" />
-            <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Select Term:</span>
+            <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">{t('parent.reportCard.selectTerm')}</span>
           </div>
           <div className="flex gap-2 flex-wrap">
             {availableTerms.map((term) => {
@@ -188,13 +187,13 @@ const ParentReportCard: React.FC = () => {
         <div className="no-print p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-start gap-4">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h4 className="font-bold text-red-900">Unable to load report card</h4>
-            <p className="text-xs text-red-700">{(fetchError as any)?.message || 'Network error occurred.'}</p>
+            <h4 className="font-bold text-red-900">{t('parent.reportCard.apiError')}</h4>
+            <p className="text-xs text-red-700">{(fetchError as Error)?.message || 'Network error occurred.'}</p>
             <button
               onClick={() => void refetchReportCard()}
               className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
             >
-              <RefreshCw className="w-3 h-3" /> Retry
+              <RefreshCw className="w-3 h-3" /> {t('common.actions.retry')}
             </button>
           </div>
         </div>
@@ -204,7 +203,7 @@ const ParentReportCard: React.FC = () => {
       {reportCardLoading && (
         <div className="bg-white rounded-3xl p-12 shadow-sm border border-gray-100 text-center space-y-4">
           <div className="w-10 h-10 border-4 border-blue-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm font-medium text-gray-600">Generating report card for {childName}...</p>
+          <p className="text-sm font-medium text-gray-600">{t('parent.reportCard.generating', { name: childName })}</p>
         </div>
       )}
 
@@ -214,11 +213,11 @@ const ParentReportCard: React.FC = () => {
           <div className="w-16 h-16 bg-blue-50 text-blue-900 rounded-2xl flex items-center justify-center mx-auto">
             <FileCheck className="w-8 h-8" />
           </div>
-          <h3 className="text-xl font-bold text-gray-900">No Report Card Published</h3>
+          <h3 className="text-xl font-bold text-gray-900">{t('parent.reportCard.noPublishedTitle')}</h3>
           <p className="text-xs text-gray-500 leading-relaxed">
             {availableTerms.length === 0
-              ? `There are no academic terms configured for ${childName}'s enrolled class.`
-              : `The official report card for the selected term has not yet been computed or published by the school administration.`}
+              ? t('parent.reportCard.noTerms', { name: childName })
+              : t('parent.reportCard.notComputed')}
           </p>
         </div>
       )}
@@ -234,25 +233,25 @@ const ParentReportCard: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <h1 className="text-2xl font-black tracking-tight">{APP_NAME}</h1>
-                <p className="text-blue-200 text-xs font-bold uppercase tracking-widest">Official Academic Report Card</p>
+                <p className="text-blue-200 text-xs font-bold uppercase tracking-widest">{t('parent.reportCard.officialHeading')}</p>
                 <div className="flex items-center gap-3 text-xs text-blue-100 font-medium pt-2 flex-wrap">
-                  <span>ACADEMIC YEAR: <strong>{academicInfo?.academicYear || 'Current'}</strong></span>
+                  <span>{t('parent.reportCard.academicYearLabel')} <strong>{academicInfo?.academicYear || t('parent.reportCard.currentLabel')}</strong></span>
                   <span className="w-px h-3 bg-white/30" />
-                  <span>TERM: <strong>{academicInfo?.term || 'Current Term'}</strong></span>
+                  <span>{t('parent.reportCard.termLabel')} <strong>{academicInfo?.term || t('parent.reportCard.currentTermLabel')}</strong></span>
                 </div>
               </div>
             </div>
 
             <div className="text-left md:text-right flex flex-col justify-end space-y-1 border-t md:border-t-0 border-white/10 pt-4 md:pt-0">
-              <span className="text-[11px] font-bold text-blue-200 uppercase tracking-wider">Student Information</span>
+              <span className="text-[11px] font-bold text-blue-200 uppercase tracking-wider">{t('parent.reportCard.studentInfoHeading')}</span>
               <h3 className="text-lg font-bold">
                 {currentReportCard.student.firstName} {currentReportCard.student.lastName}
               </h3>
               <p className="text-xs text-blue-100">
-                Admission No: <span className="font-mono font-bold">{currentReportCard.student.admissionNo}</span>
+                {t('parent.reportCard.admissionNoLabel')} <span className="font-mono font-bold">{currentReportCard.student.admissionNo}</span>
               </p>
               <p className="text-xs text-blue-100">
-                Class: <span className="font-bold">{academicInfo?.grade} • {academicInfo?.section}</span>
+                {t('parent.reportCard.classLabel')} <span className="font-bold">{academicInfo?.grade} • {academicInfo?.section}</span>
               </p>
             </div>
           </div>
@@ -264,19 +263,19 @@ const ParentReportCard: React.FC = () => {
               <table className="w-full text-left border border-gray-200 rounded-xl overflow-hidden">
                 <thead>
                   <tr className="bg-gray-50/90 text-xs font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200">
-                    <th className="px-5 py-3.5 border-r border-gray-200">Subject Name</th>
-                    <th className="px-5 py-3.5 border-r border-gray-200 text-center">Code</th>
-                    <th className="px-5 py-3.5 border-r border-gray-200 text-center">Marks Obtained</th>
-                    <th className="px-5 py-3.5 border-r border-gray-200 text-center">Max Marks</th>
-                    <th className="px-5 py-3.5 border-r border-gray-200 text-center bg-blue-50/50 text-blue-900">Score %</th>
-                    <th className="px-5 py-3.5 text-center font-black bg-blue-900 text-white">Grade</th>
+                    <th className="px-5 py-3.5 border-r border-gray-200">{t('parent.reportCard.colSubjectName')}</th>
+                    <th className="px-5 py-3.5 border-r border-gray-200 text-center">{t('parent.reportCard.colCode')}</th>
+                    <th className="px-5 py-3.5 border-r border-gray-200 text-center">{t('parent.reportCard.colMarksObtained')}</th>
+                    <th className="px-5 py-3.5 border-r border-gray-200 text-center">{t('parent.reportCard.colMaxMarks')}</th>
+                    <th className="px-5 py-3.5 border-r border-gray-200 text-center bg-blue-50/50 text-blue-900">{t('parent.reportCard.colScorePercent')}</th>
+                    <th className="px-5 py-3.5 text-center font-black bg-blue-900 text-white">{t('parent.reportCard.colGrade')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 text-sm">
                   {subjects.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-5 py-8 text-center text-gray-500">
-                        No subject grades recorded for this term.
+                        {t('parent.reportCard.noSubjectGrades')}
                       </td>
                     </tr>
                   )}
@@ -313,15 +312,15 @@ const ParentReportCard: React.FC = () => {
               {/* Overall Standing Card */}
               <div className="p-6 bg-gradient-to-br from-blue-900 to-indigo-900 text-white rounded-2xl shadow-sm flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-200 uppercase tracking-widest">Term Academic Standing</span>
+                  <span className="text-xs font-bold text-blue-200 uppercase tracking-widest">{t('parent.reportCard.termAcademicStanding')}</span>
                   <Award className="w-6 h-6 text-blue-200" />
                 </div>
                 <div className="my-4">
                   <div className="text-4xl font-black">{overall?.percentage ?? 0}%</div>
-                  <p className="text-xs text-blue-200 mt-1">Cumulative Term Weighted Average</p>
+                  <p className="text-xs text-blue-200 mt-1">{t('parent.reportCard.cumulativeWeightedAverage')}</p>
                 </div>
                 <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs font-semibold">
-                  <span className="text-blue-100">Overall Grade Letter:</span>
+                  <span className="text-blue-100">{t('parent.reportCard.overallGradeLetter')}</span>
                   <span className="px-3 py-0.5 bg-white text-blue-900 rounded-md font-black text-sm">
                     {overall?.gradeLetter || '—'}
                   </span>
@@ -331,29 +330,29 @@ const ParentReportCard: React.FC = () => {
               {/* Attendance Summary Card */}
               <div className="p-6 bg-gray-50 rounded-2xl border border-gray-200 flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Term Attendance Summary</span>
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{t('parent.reportCard.termAttendanceSummary')}</span>
                   <Calendar className="w-5 h-5 text-gray-400" />
                 </div>
                 <div className="grid grid-cols-2 gap-3 my-3">
                   <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-gray-400 font-bold block uppercase">Total School Days</span>
+                    <span className="text-[10px] text-gray-400 font-bold block uppercase">{t('parent.reportCard.totalSchoolDays')}</span>
                     <span className="text-lg font-black text-gray-900">{attendance?.total ?? 0}</span>
                   </div>
                   <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-emerald-600 font-bold block uppercase">Days Present</span>
+                    <span className="text-[10px] text-emerald-600 font-bold block uppercase">{t('parent.reportCard.daysPresent')}</span>
                     <span className="text-lg font-black text-emerald-700">{attendance?.present ?? 0}</span>
                   </div>
                   <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-rose-600 font-bold block uppercase">Days Absent</span>
+                    <span className="text-[10px] text-rose-600 font-bold block uppercase">{t('parent.reportCard.daysAbsent')}</span>
                     <span className="text-lg font-black text-rose-700">{attendance?.absent ?? 0}</span>
                   </div>
                   <div className="p-3 bg-white rounded-xl border border-gray-100">
-                    <span className="text-[10px] text-blue-600 font-bold block uppercase">Attendance Rate</span>
+                    <span className="text-[10px] text-blue-600 font-bold block uppercase">{t('parent.reportCard.attendanceRate')}</span>
                     <span className="text-lg font-black text-blue-900">{attendance?.percentage ?? 0}%</span>
                   </div>
                 </div>
                 <div className="text-[11px] text-gray-500 font-medium">
-                  Attendance recorded from {academicInfo?.term || 'selected term'} records.
+                  {t('parent.reportCard.attendanceRecordedFrom', { term: academicInfo?.term || t('parent.reportCard.currentTermLabel') })}
                 </div>
               </div>
             </div>
@@ -362,16 +361,16 @@ const ParentReportCard: React.FC = () => {
             <div className="pt-8 border-t border-gray-200 grid grid-cols-1 sm:grid-cols-2 gap-8 text-center text-xs text-gray-500">
               <div className="space-y-4">
                 <div className="w-48 h-px bg-gray-300 mx-auto mt-8"></div>
-                <p className="font-bold text-gray-700 uppercase tracking-wider">Class Teacher Signature</p>
+                <p className="font-bold text-gray-700 uppercase tracking-wider">{t('parent.reportCard.classTeacherSignature')}</p>
               </div>
               <div className="space-y-4">
                 <div className="w-48 h-px bg-gray-300 mx-auto mt-8"></div>
-                <p className="font-bold text-gray-700 uppercase tracking-wider">Principal / Academic Director</p>
+                <p className="font-bold text-gray-700 uppercase tracking-wider">{t('parent.reportCard.principalSignature')}</p>
               </div>
             </div>
 
             <div className="text-center pt-2 text-[10px] text-gray-400 italic">
-              Generated on {new Date().toLocaleDateString()} • This is an official digital record issued by {APP_NAME}.
+              {t('parent.reportCard.generatedOnNotice', { date: new Date().toLocaleDateString(), appName: APP_NAME })}
             </div>
           </div>
         </div>

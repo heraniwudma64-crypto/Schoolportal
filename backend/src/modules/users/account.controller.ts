@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
 import { UpdateStudentAccountDto } from './dto/update-student-account.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 type AuthRequest = Request & { user: { id: string; role: Role } };
 
@@ -37,7 +38,7 @@ export class AccountController {
   }
 
   @Patch('me/password')
-  updatePassword(@Req() req: AuthRequest, @Body() data: { currentPassword?: string; newPassword?: string }) {
+  updatePassword(@Req() req: AuthRequest, @Body() data: ChangePasswordDto) {
     return this.usersService.updatePassword(req.user.id, data);
   }
 

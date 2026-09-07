@@ -1,0 +1,59 @@
+{
+  "nav": {
+    "dashboard": "Daashboordii",
+    "myChildren": "Ijoollee Koo",
+    "attendance": "Hordoffii Argamaa",
+    "results": "Bu'aawwan",
+    "reportCard": "Kaardii Bu'aa",
+    "classSchedule": "Sagantaa Kutaa",
+    "assignments": "Hojii Manneen",
+    "account": "Akkaawuntii",
+    "myAccount": "Akkaawuntii Koo",
+    "logout": "Ba'i",
+    "searchPlaceholder": "Waan barbaadan barbaadaa..."
+  },
+  "status": {
+    "present": "Argameera",
+    "absent": "Hafeera",
+    "late": "Turaniiru",
+    "excused": "Eeyyamaan",
+    "active": "Hojirra",
+    "pending": "Eeggamaa",
+    "submitted": "Galfameera",
+    "graded": "Qullaa'eera",
+    "overdue": "Yeroon darbe",
+    "completed": "Xumurameera"
+  },
+  "days": {
+    "monday": "Wiixata",
+    "tuesday": "Qibxata",
+    "wednesday": "Roobii",
+    "thursday": "Kamisa",
+    "friday": "Jimaata"
+  },
+  "actions": {
+    "retry": "Irra deebi'ii yaali",
+    "tryAgain": "Ammas yaali",
+    "refresh": "Haaromsi",
+    "viewAll": "Hundaa ilaali",
+    "print": "Maxxansi",
+    "clearFilters": "Calaltuuwwan haqi"
+  },
+  "childSelector": {
+    "loading": "Odeeffannoo barattootaa fe'aa jira...",
+    "noStudents": "Barataan walqabate hin jiru",
+    "selectStudent": "Barataa filadhu",
+    "studentsCount": "Barattoota {count}",
+    "studentCountSingular": "Barataa 1",
+    "adm": "Lakk:",
+    "enrolled": "Galmaa'eera",
+    "switchStudent": "Barataa jijjiiri:",
+    "studentLabel": "Barataa:"
+  },
+  "language": {
+    "selectLanguage": "Afaan",
+    "en": "English",
+    "am": "አማርኛ",
+    "om": "Afaan Oromoo"
+  }
+}

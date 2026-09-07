@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParent } from '../../context/ParentContext';
-import { getChildAssignments, ChildAssignmentRecord } from '../../api/parents';
+import { getChildAssignments } from '../../api/parents';
 import { 
   ClipboardList, 
   Calendar, 
@@ -21,10 +21,11 @@ import {
 import { ChildSelector } from '../../components/parent/ChildSelector';
 import StatCard from '../../components/dashboard/StatCard';
 import { Link } from 'react-router-dom';
+import { useTranslation } from '../../i18n/LanguageContext';
 
-function getDueStatus(dueDateStr: string, status: string): { label: string; isOverdue: boolean; color: string } {
+function getDueStatus(dueDateStr: string, status: string, t: (key: string, params?: Record<string, string | number>) => string): { label: string; isOverdue: boolean; color: string } {
   if (status === 'SUBMITTED' || status === 'GRADED') {
-    return { label: 'Completed', isOverdue: false, color: 'text-emerald-700 bg-emerald-50 border-emerald-200' };
+    return { label: t('parent.assignments.statusCompleted'), isOverdue: false, color: 'text-emerald-700 bg-emerald-50 border-emerald-200' };
   }
 
   const now = new Date();
@@ -32,15 +33,15 @@ function getDueStatus(dueDateStr: string, status: string): { label: string; isOv
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diffDays < 0) {
-    return { label: 'Overdue', isOverdue: true, color: 'text-rose-700 bg-rose-50 border-rose-200' };
+    return { label: t('parent.assignments.statusOverdue'), isOverdue: true, color: 'text-rose-700 bg-rose-50 border-rose-200' };
   }
   if (diffDays === 0) {
-    return { label: 'Due Today', isOverdue: false, color: 'text-amber-700 bg-amber-50 border-amber-200' };
+    return { label: t('parent.assignments.statusDueToday'), isOverdue: false, color: 'text-amber-700 bg-amber-50 border-amber-200' };
   }
   if (diffDays === 1) {
-    return { label: 'Due Tomorrow', isOverdue: false, color: 'text-amber-700 bg-amber-50 border-amber-200' };
+    return { label: t('parent.assignments.statusDueTomorrow'), isOverdue: false, color: 'text-amber-700 bg-amber-50 border-amber-200' };
   }
-  return { label: `Due in ${diffDays} days`, isOverdue: false, color: 'text-blue-700 bg-blue-50 border-blue-200' };
+  return { label: t('parent.assignments.statusDueInDays', { days: diffDays }), isOverdue: false, color: 'text-blue-700 bg-blue-50 border-blue-200' };
 }
 
 const ParentAssignments: React.FC = () => {
@@ -52,6 +53,7 @@ const ParentAssignments: React.FC = () => {
     error: parentError, 
     refetchChildren 
   } = useParent();
+  const { t } = useTranslation();
 
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SUBMITTED' | 'GRADED' | 'OVERDUE'>('ALL');
   const [subjectFilter, setSubjectFilter] = useState<string>('ALL');
@@ -70,7 +72,7 @@ const ParentAssignments: React.FC = () => {
     enabled: !!selectedChildId,
   });
 
-  const rawAssignments = assignmentsResponse?.assignments || [];
+  const rawAssignments = useMemo(() => assignmentsResponse?.assignments || [], [assignmentsResponse?.assignments]);
 
   // Extract unique subjects
   const availableSubjects = useMemo(() => {
@@ -123,7 +125,7 @@ const ParentAssignments: React.FC = () => {
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-blue-900 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium text-gray-500">Loading student assignments...</span>
+          <span className="text-sm font-medium text-gray-500">{t('parent.assignments.loading')}</span>
         </div>
       </div>
     );
@@ -135,14 +137,14 @@ const ParentAssignments: React.FC = () => {
         <div className="p-6 bg-red-50 border border-red-200 rounded-3xl text-red-700 flex items-start gap-4">
           <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h3 className="font-bold text-red-900">Failed to load guardian profile</h3>
+            <h3 className="font-bold text-red-900">{t('parent.assignments.loadError')}</h3>
             <p className="text-sm text-red-700">{parentError}</p>
             <button
               onClick={() => void refetchChildren()}
               className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-semibold hover:bg-red-700 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Try Again
+              {t('common.actions.tryAgain')}
             </button>
           </div>
         </div>
@@ -158,16 +160,16 @@ const ParentAssignments: React.FC = () => {
           <div className="w-16 h-16 bg-blue-50 text-blue-900 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
             <Users className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">No Linked Students</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t('parent.assignments.emptyTitle')}</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto leading-relaxed">
-            There are currently no student accounts linked to your guardian profile. Please contact school administration to view coursework and assignments.
+            {t('parent.assignments.emptyDesc')}
           </p>
           <div className="pt-2">
             <Link
               to="/account"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-900 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors"
             >
-              My Account
+              {t('common.nav.myAccount')}
             </Link>
           </div>
         </div>
@@ -177,7 +179,7 @@ const ParentAssignments: React.FC = () => {
 
   const childName = selectedChild?.fullName || 'Student';
   const gradeLevel = selectedChild?.classSection?.gradeLevel || selectedChild?.currentEnrollment?.gradeLevel;
-  const sectionName = selectedChild?.classSection?.name || selectedChild?.currentEnrollment?.classSection || 'Class Section';
+  const sectionName = selectedChild?.classSection?.name || selectedChild?.currentEnrollment?.classSection || t('common.childSelector.enrolled');
   const academicYear = selectedChild?.currentEnrollment?.academicYear || 'Current Year';
 
   const totalCount = assignmentsResponse?.totalAssignments ?? 0;
@@ -205,7 +207,7 @@ const ParentAssignments: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-gray-500 font-medium">
-              Admission ID: <span className="font-mono font-semibold text-gray-700">{selectedChild?.admissionNo}</span> • Academic Year: <span className="text-gray-700">{academicYear}</span>
+              {t('parent.attendance.admissionId')} <span className="font-mono font-semibold text-gray-700">{selectedChild?.admissionNo}</span> • {t('parent.attendance.academicYear')} <span className="text-gray-700">{academicYear}</span>
             </p>
           </div>
         </div>
@@ -213,7 +215,7 @@ const ParentAssignments: React.FC = () => {
         {/* Child Selector if parent has multiple children */}
         {childrenList.length > 1 && (
           <div className="flex items-center gap-3 self-start md:self-auto bg-gray-50 p-2 rounded-2xl border border-gray-200/70">
-            <span className="text-xs font-semibold text-gray-500 pl-2">Switch Student:</span>
+            <span className="text-xs font-semibold text-gray-500 pl-2">{t('common.childSelector.switchStudent')}</span>
             <ChildSelector />
           </div>
         )}
@@ -224,13 +226,13 @@ const ParentAssignments: React.FC = () => {
         <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-start gap-4">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h4 className="font-bold text-red-900">Unable to load assignments</h4>
-            <p className="text-xs text-red-700">{(fetchError as any)?.message || 'Network error occurred.'}</p>
+            <h4 className="font-bold text-red-900">{t('parent.assignments.apiError')}</h4>
+            <p className="text-xs text-red-700">{(fetchError as Error)?.message || 'Network error occurred.'}</p>
             <button
               onClick={() => void refetchAssignments()}
               className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
             >
-              <RefreshCw className="w-3 h-3" /> Retry
+              <RefreshCw className="w-3 h-3" /> {t('common.actions.retry')}
             </button>
           </div>
         </div>
@@ -239,25 +241,25 @@ const ParentAssignments: React.FC = () => {
       {/* Summary StatCards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <StatCard
-          title="Total Assignments"
+          title={t('parent.assignments.statTotal')}
           value={assignmentsLoading ? '…' : totalCount}
           icon={ClipboardList}
           iconClassName="bg-blue-50 text-blue-600"
         />
         <StatCard
-          title="Pending Homework"
+          title={t('parent.assignments.statPending')}
           value={assignmentsLoading ? '…' : pendingCount}
           icon={Clock}
           iconClassName="bg-amber-50 text-amber-600"
         />
         <StatCard
-          title="Submitted Work"
+          title={t('parent.assignments.statSubmitted')}
           value={assignmentsLoading ? '…' : submittedCount}
           icon={CheckCircle2}
           iconClassName="bg-emerald-50 text-emerald-600"
         />
         <StatCard
-          title="Completion Rate"
+          title={t('parent.assignments.statCompletionRate')}
           value={assignmentsLoading ? '…' : `${completionRate}%`}
           icon={GraduationCap}
           iconClassName="bg-purple-50 text-purple-600"
@@ -268,20 +270,31 @@ const ParentAssignments: React.FC = () => {
       <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Status Tabs */}
         <div className="flex bg-gray-100/80 p-1 rounded-2xl text-xs font-semibold text-gray-600 overflow-x-auto">
-          {(['ALL', 'PENDING', 'SUBMITTED', 'OVERDUE'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setStatusFilter(tab)}
-              className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap ${
-                statusFilter === tab
-                  ? 'bg-white text-gray-900 shadow-xs font-bold'
-                  : 'hover:text-gray-900'
-              }`}
-            >
-              {tab.charAt(0) + tab.slice(1).toLowerCase()}
-            </button>
-          ))}
+          {(['ALL', 'PENDING', 'SUBMITTED', 'OVERDUE'] as const).map((tab) => {
+            const tabLabel =
+              tab === 'ALL'
+                ? t('parent.assignments.tabAll')
+                : tab === 'PENDING'
+                ? t('parent.assignments.tabPending')
+                : tab === 'SUBMITTED'
+                ? t('parent.assignments.tabSubmitted')
+                : t('parent.assignments.tabOverdue');
+
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setStatusFilter(tab)}
+                className={`px-4 py-2 rounded-xl transition-all whitespace-nowrap ${
+                  statusFilter === tab
+                    ? 'bg-white text-gray-900 shadow-xs font-bold'
+                    : 'hover:text-gray-900'
+                }`}
+              >
+                {tabLabel}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -292,7 +305,7 @@ const ParentAssignments: React.FC = () => {
               onChange={(e) => setSubjectFilter(e.target.value)}
               className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-blue-900/20"
             >
-              <option value="ALL">All Subjects</option>
+              <option value="ALL">{t('parent.assignments.allSubjects')}</option>
               {availableSubjects.map((sub) => (
                 <option key={sub} value={sub}>
                   {sub}
@@ -306,7 +319,7 @@ const ParentAssignments: React.FC = () => {
             <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search assignments..."
+              placeholder={t('parent.assignments.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all"
@@ -319,7 +332,7 @@ const ParentAssignments: React.FC = () => {
       {assignmentsLoading && (
         <div className="bg-white rounded-3xl p-12 shadow-sm border border-gray-100 text-center space-y-3">
           <div className="w-8 h-8 border-3 border-blue-900 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm font-medium text-gray-500">Loading assignments for {childName}...</p>
+          <p className="text-sm font-medium text-gray-500">{t('parent.assignments.loadingAssignments', { name: childName })}</p>
         </div>
       )}
 
@@ -329,9 +342,9 @@ const ParentAssignments: React.FC = () => {
           <div className="w-16 h-16 bg-blue-50 text-blue-900 rounded-2xl flex items-center justify-center mx-auto">
             <ClipboardList className="w-8 h-8" />
           </div>
-          <h3 className="text-xl font-bold text-gray-900">No Assignments Assigned</h3>
+          <h3 className="text-xl font-bold text-gray-900">{t('parent.assignments.noAssignmentsAssigned')}</h3>
           <p className="text-xs text-gray-500 leading-relaxed">
-            No coursework or homework assignments are currently published for {childName}'s section.
+            {t('parent.assignments.noAssignmentsDesc', { name: childName })}
           </p>
         </div>
       )}
@@ -340,9 +353,9 @@ const ParentAssignments: React.FC = () => {
       {!assignmentsLoading && !assignmentsError && rawAssignments.length > 0 && filteredAssignments.length === 0 && (
         <div className="bg-white rounded-3xl p-10 shadow-sm border border-gray-100 text-center space-y-3">
           <ClipboardList className="w-8 h-8 text-gray-300 mx-auto" />
-          <h4 className="text-sm font-bold text-gray-700">No matching assignments</h4>
+          <h4 className="text-sm font-bold text-gray-700">{t('parent.assignments.noMatchingAssignments')}</h4>
           <p className="text-xs text-gray-400">
-            No assignments match the selected filter criteria. Try clearing search or switching status tabs.
+            {t('parent.assignments.noMatchingDesc')}
           </p>
           <button
             type="button"
@@ -353,7 +366,7 @@ const ParentAssignments: React.FC = () => {
             }}
             className="text-xs text-blue-900 font-bold hover:underline"
           >
-            Clear Filters
+            {t('parent.assignments.clearFilters')}
           </button>
         </div>
       )}
@@ -363,7 +376,7 @@ const ParentAssignments: React.FC = () => {
         <div className="space-y-4">
           {filteredAssignments.map((assignment) => {
             const status = assignment.submissionStatus;
-            const dueInfo = getDueStatus(assignment.dueDate, status);
+            const dueInfo = getDueStatus(assignment.dueDate, status, t);
 
             return (
               <div
@@ -398,7 +411,7 @@ const ParentAssignments: React.FC = () => {
                         </span>
                       )}
                       <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full border ${dueInfo.color}`}>
-                        {status === 'PENDING' ? dueInfo.label : status}
+                        {status === 'PENDING' ? dueInfo.label : (status === 'SUBMITTED' ? t('common.status.submitted') : status === 'GRADED' ? t('common.status.graded') : status)}
                       </span>
                     </div>
 
@@ -406,13 +419,13 @@ const ParentAssignments: React.FC = () => {
                       {assignment.teacherName && (
                         <span className="inline-flex items-center gap-1">
                           <User className="w-3.5 h-3.5 text-gray-400" />
-                          Teacher: {assignment.teacherName}
+                          {t('parent.assignments.teacherLabel', { teacher: assignment.teacherName })}
                         </span>
                       )}
                       {assignment.classSection && (
                         <span className="inline-flex items-center gap-1">
                           <BookOpen className="w-3.5 h-3.5 text-gray-400" />
-                          Class: {assignment.classSection}
+                          {t('parent.assignments.classLabel', { class: assignment.classSection })}
                         </span>
                       )}
                     </div>
@@ -428,7 +441,7 @@ const ParentAssignments: React.FC = () => {
                 {/* Right Side: Due Date and Attachment */}
                 <div className="flex flex-col sm:flex-row md:flex-col items-start sm:items-center md:items-end justify-between gap-4 pt-4 md:pt-0 border-t md:border-t-0 border-gray-100 flex-shrink-0">
                   <div className="text-left md:text-right">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Due Date</span>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">{t('parent.assignments.dueDateLabel')}</span>
                     <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5 mt-0.5">
                       <Calendar className="w-3.5 h-3.5 text-gray-400" />
                       {assignment.dueDate ? new Date(assignment.dueDate).toLocaleDateString(undefined, {
@@ -440,7 +453,7 @@ const ParentAssignments: React.FC = () => {
                     </span>
                     {assignment.submittedAt && (
                       <span className="text-[11px] text-emerald-700 font-medium block mt-1">
-                        Submitted: {new Date(assignment.submittedAt).toLocaleDateString()}
+                        {t('parent.assignments.submittedOn', { date: new Date(assignment.submittedAt).toLocaleDateString() })}
                       </span>
                     )}
                   </div>
@@ -453,7 +466,7 @@ const ParentAssignments: React.FC = () => {
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-900 hover:bg-blue-100 rounded-xl text-xs font-bold transition-colors"
                     >
                       <Paperclip className="w-3.5 h-3.5" />
-                      View Materials
+                      {t('parent.assignments.viewMaterials')}
                       <ExternalLink className="w-3 h-3 ml-0.5" />
                     </a>
                   )}

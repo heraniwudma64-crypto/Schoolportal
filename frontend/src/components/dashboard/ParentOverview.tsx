@@ -9,14 +9,12 @@ import {
   ClipboardList, 
   Calendar, 
   Clock, 
-  BookOpen, 
   AlertCircle,
-  TrendingUp,
-  ArrowRight,
-  UserCheck
+  ArrowRight
 } from 'lucide-react';
 import StatCard from './StatCard';
 import { ChildSelector } from '../parent/ChildSelector';
+import { useTranslation } from '../../i18n/LanguageContext';
 import { 
   getChildAttendance, 
   getChildResults, 
@@ -27,6 +25,7 @@ import { Link } from 'react-router-dom';
 
 const ParentOverview = () => {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const { childrenList, selectedChild, selectedChildId, isLoading: parentLoading, error: parentError } = useParent();
 
   // Queries for active selected child
@@ -91,16 +90,16 @@ const ParentOverview = () => {
           <div className="w-16 h-16 bg-blue-50 text-blue-900 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
             <Users className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">Welcome, {user?.name}!</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t('parent.overview.welcome', { name: user?.name || '' })}</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto">
-            There are currently no student accounts linked to your guardian profile. Please contact the school administration to assign your children.
+            {t('parent.overview.emptyNoChildren')}
           </p>
           <div className="pt-2">
             <Link
               to="/account"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-900 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors"
             >
-              View My Account
+              {t('parent.overview.viewMyAccount')}
             </Link>
           </div>
         </div>
@@ -121,19 +120,19 @@ const ParentOverview = () => {
       {/* Top Header Banner */}
       <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
-          <span className="text-xs font-bold text-blue-200 uppercase tracking-widest">Parent Dashboard</span>
+          <span className="text-xs font-bold text-blue-200 uppercase tracking-widest">{t('parent.overview.badge')}</span>
           <h1 className="text-2xl sm:text-3xl font-black">
-            Welcome, {user?.name}!
+            {t('parent.overview.welcome', { name: user?.name || '' })}
           </h1>
           <p className="text-sm text-blue-100">
-            Monitoring academic progress and attendance for <strong className="text-white underline decoration-blue-400">{selectedChild?.fullName}</strong>.
+            {t('parent.overview.monitoring', { student: selectedChild?.fullName || '' })}
           </p>
         </div>
 
         {/* Header Child Selector if multiple children */}
         {childrenList.length > 1 && (
           <div className="bg-white/10 backdrop-blur-md p-2 rounded-2xl border border-white/15 flex items-center gap-3">
-            <span className="text-xs font-semibold text-blue-100 pl-2 hidden sm:inline">Active Child:</span>
+            <span className="text-xs font-semibold text-blue-100 pl-2 hidden sm:inline">{t('parent.overview.activeChild')}</span>
             <ChildSelector />
           </div>
         )}
@@ -142,25 +141,25 @@ const ParentOverview = () => {
       {/* 4 Overview Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title="Linked Children" 
+          title={t('parent.overview.statLinkedChildren')} 
           value={childrenList.length}
           icon={Users} 
           iconClassName="bg-blue-50 text-blue-600"
         />
         <StatCard 
-          title="Attendance Rate" 
+          title={t('parent.overview.statAttendanceRate')} 
           value={attendanceLoading ? '…' : attendanceRate !== undefined ? `${attendanceRate}%` : '100%'}
           icon={CheckSquare} 
           iconClassName="bg-emerald-50 text-emerald-600"
         />
         <StatCard 
-          title="Academic Average" 
+          title={t('parent.overview.statAcademicAverage')} 
           value={resultsLoading ? '…' : overallAvg !== undefined && resultsData?.totalRecords ? `${overallAvg}%` : '—'}
           icon={GraduationCap} 
           iconClassName="bg-purple-50 text-purple-600"
         />
         <StatCard 
-          title="Pending Assignments" 
+          title={t('parent.overview.statPendingAssignments')} 
           value={assignmentsLoading ? '…' : pendingAssignments}
           icon={ClipboardList} 
           iconClassName="bg-amber-50 text-amber-600"
@@ -176,19 +175,19 @@ const ParentOverview = () => {
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
                 <GraduationCap className="w-5 h-5 text-blue-600" />
-                Recent Academic Results ({childName})
+                {t('parent.overview.recentGradesTitle', { name: childName })}
               </h3>
               <Link to="/parent/results" className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1">
-                View All <ArrowRight className="w-3.5 h-3.5" />
+                {t('common.actions.viewAll')} <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
             <div className="divide-y divide-gray-100">
               {resultsLoading && (
-                <p className="p-6 text-sm text-gray-500">Loading student grades...</p>
+                <p className="p-6 text-sm text-gray-500">{t('parent.overview.loadingGrades')}</p>
               )}
               {!resultsLoading && recentGrades.length === 0 && (
                 <div className="p-8 text-center text-gray-500 text-sm">
-                  No academic grades recorded for {childName} yet.
+                  {t('parent.overview.noGrades', { name: childName })}
                 </div>
               )}
               {recentGrades.map((grade) => (
@@ -196,7 +195,7 @@ const ParentOverview = () => {
                   <div className="space-y-0.5">
                     <h4 className="font-bold text-gray-900 text-sm">{grade.subject}</h4>
                     <p className="text-xs text-gray-500">
-                      {grade.quarter ? `Quarter ${grade.quarter}` : 'General'} • Mid: {grade.mid} | Asgn: {grade.assignment} | Quiz: {grade.quiz} | Final: {grade.final}
+                      {grade.quarter ? t('parent.overview.quarter', { quarter: grade.quarter }) : t('parent.overview.general')} • {t('parent.overview.mid')} {grade.mid} | {t('parent.overview.asgn')} {grade.assignment} | {t('parent.overview.quiz')} {grade.quiz} | {t('parent.overview.final')} {grade.final}
                     </p>
                   </div>
                   <div className="text-right">
@@ -215,23 +214,23 @@ const ParentOverview = () => {
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-indigo-600" />
-                Class Schedule Preview ({selectedChild?.classSection?.name || 'Class'})
+                {t('parent.overview.schedulePreviewTitle', { section: selectedChild?.classSection?.name || 'Class' })}
               </h3>
               <Link to="/parent/schedule" className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1">
-                Full Timetable <ArrowRight className="w-3.5 h-3.5" />
+                {t('parent.overview.fullTimetable')} <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
             <div className="p-6">
-              {scheduleLoading && <p className="text-sm text-gray-500">Loading schedule slots...</p>}
+              {scheduleLoading && <p className="text-sm text-gray-500">{t('parent.overview.loadingSchedule')}</p>}
               {!scheduleLoading && scheduleSlots.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">No scheduled timetable periods found for this class.</p>
+                <p className="text-sm text-gray-500 text-center py-4">{t('parent.overview.noSchedule')}</p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {scheduleSlots.map((slot) => (
                   <div key={slot.id} className="p-3 bg-gray-50/80 rounded-xl border border-gray-100 flex items-center justify-between">
                     <div>
                       <h5 className="font-bold text-gray-900 text-xs">{slot.subjectName}</h5>
-                      <p className="text-[11px] text-gray-500 mt-0.5">{slot.teacherName} • Room {slot.roomNumber}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">{slot.teacherName} • {t('parent.overview.room', { room: slot.roomNumber })}</p>
                     </div>
                     <span className="text-[11px] font-mono font-semibold bg-white text-gray-700 px-2 py-1 rounded-md border border-gray-200">
                       {slot.startTime} - {slot.endTime}
@@ -250,17 +249,17 @@ const ParentOverview = () => {
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
                 <Clock className="w-5 h-5 text-amber-600" />
-                Upcoming Assignments
+                {t('parent.overview.upcomingAssignmentsTitle')}
               </h3>
               <Link to="/parent/assignments" className="text-xs text-blue-600 font-bold hover:underline">
-                View All
+                {t('common.actions.viewAll')}
               </Link>
             </div>
             <div className="p-6 space-y-3">
-              {assignmentsLoading && <p className="text-sm text-gray-500">Loading assignments...</p>}
+              {assignmentsLoading && <p className="text-sm text-gray-500">{t('parent.overview.loadingAssignments')}</p>}
               {!assignmentsLoading && upcomingAssignments.length === 0 && (
                 <div className="text-center py-4 text-sm text-gray-500">
-                  No pending assignments for {childName}.
+                  {t('parent.overview.noAssignments', { name: childName })}
                 </div>
               )}
               {upcomingAssignments.map((a) => (
@@ -268,10 +267,10 @@ const ParentOverview = () => {
                   <div className="flex items-center justify-between">
                     <h5 className="text-xs font-bold text-gray-900">{a.title}</h5>
                     <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full">
-                      Due {new Date(a.dueDate).toLocaleDateString()}
+                      {t('parent.overview.due', { date: new Date(a.dueDate).toLocaleDateString() })}
                     </span>
                   </div>
-                  <p className="text-[11px] text-gray-600">{a.subject || 'General'} • {a.teacherName || 'Teacher'}</p>
+                  <p className="text-[11px] text-gray-600">{a.subject || t('parent.overview.general')} • {a.teacherName || t('parent.overview.teacher')}</p>
                 </div>
               ))}
             </div>
@@ -285,26 +284,26 @@ const ParentOverview = () => {
               </div>
               <div>
                 <h4 className="font-bold text-gray-900">{selectedChild?.fullName}</h4>
-                <p className="text-xs text-gray-500">Admission No: {selectedChild?.admissionNo}</p>
+                <p className="text-xs text-gray-500">{t('parent.overview.profileAdmissionNo', { id: selectedChild?.admissionNo || '' })}</p>
               </div>
             </div>
 
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between py-1 border-b border-gray-50">
-                <span className="text-gray-500">Class Section</span>
+                <span className="text-gray-500">{t('parent.overview.profileClassSection')}</span>
                 <span className="font-semibold text-gray-900">{selectedChild?.classSection?.name || '—'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-50">
-                <span className="text-gray-500">Grade Level</span>
+                <span className="text-gray-500">{t('parent.overview.profileGradeLevel')}</span>
                 <span className="font-semibold text-gray-900">{selectedChild?.classSection?.gradeLevel || '—'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-gray-50">
-                <span className="text-gray-500">Gender</span>
+                <span className="text-gray-500">{t('parent.overview.profileGender')}</span>
                 <span className="font-semibold text-gray-900">{selectedChild?.gender || '—'}</span>
               </div>
               <div className="flex justify-between py-1">
-                <span className="text-gray-500">Status</span>
-                <span className="font-bold text-emerald-600 uppercase">{selectedChild?.status || 'ACTIVE'}</span>
+                <span className="text-gray-500">{t('parent.overview.profileStatus')}</span>
+                <span className="font-bold text-emerald-600 uppercase">{selectedChild?.status === 'ACTIVE' ? t('common.status.active') : (selectedChild?.status || t('common.status.active'))}</span>
               </div>
             </div>
           </div>

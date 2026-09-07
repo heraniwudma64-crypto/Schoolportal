@@ -1070,16 +1070,22 @@ export class UsersService {
     return updatedUser;
   }
 
-  async updatePassword(userId: string, data: { currentPassword?: string; newPassword?: string }) {
-    if (!data.currentPassword || !data.newPassword) {
-      throw new BadRequestException('Current and new password are required');
+  async updatePassword(userId: string, data: { currentPassword?: string; newPassword?: string; confirmPassword?: string }) {
+    if (!data.currentPassword || !data.newPassword || !data.confirmPassword) {
+      throw new BadRequestException('Current password, new password, and confirmation are required');
+    }
+    if (data.newPassword !== data.confirmPassword) {
+      throw new BadRequestException('New password and confirmation do not match');
+    }
+    if (data.newPassword.length < 8) {
+      throw new BadRequestException('New password must be at least 8 characters long');
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Account not found');
 
     const isValid = await bcrypt.compare(data.currentPassword, user.password);
     if (!isValid) {
-      throw new ForbiddenException('Incorrect current password');
+      throw new ForbiddenException('Current password incorrect');
     }
 
     const passwordHash = await bcrypt.hash(data.newPassword, 12);
@@ -1087,7 +1093,7 @@ export class UsersService {
       where: { id: userId },
       data: { password: passwordHash },
     });
-    return { success: true };
+    return { success: true, message: 'Password changed successfully.' };
   }
 
   async uploadAvatar(userId: string, file: Express.Multer.File) {

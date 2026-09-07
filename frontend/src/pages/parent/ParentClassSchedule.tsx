@@ -21,6 +21,7 @@ import { ChildSelector } from '../../components/parent/ChildSelector';
 import StatCard from '../../components/dashboard/StatCard';
 import { Button } from '../../components/ui/button';
 import { Link } from 'react-router-dom';
+import { useTranslation } from '../../i18n/LanguageContext';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
@@ -50,6 +51,17 @@ export const ParentClassSchedule: React.FC = () => {
     error: parentError, 
     refetchChildren 
   } = useParent();
+  const { t } = useTranslation();
+
+  const getDayLabel = (day: string) => {
+    const d = day.toLowerCase();
+    if (d === 'monday') return t('common.days.monday');
+    if (d === 'tuesday') return t('common.days.tuesday');
+    if (d === 'wednesday') return t('common.days.wednesday');
+    if (d === 'thursday') return t('common.days.thursday');
+    if (d === 'friday') return t('common.days.friday');
+    return day;
+  };
 
   const [activeDayTab, setActiveDayTab] = useState<string>('Monday');
   const [viewMode, setViewMode] = useState<'grid' | 'cards'>('grid');
@@ -130,7 +142,7 @@ export const ParentClassSchedule: React.FC = () => {
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-4 border-blue-900 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium text-gray-500">Loading student schedule...</span>
+          <span className="text-sm font-medium text-gray-500">{t('parent.classSchedule.loading')}</span>
         </div>
       </div>
     );
@@ -142,14 +154,14 @@ export const ParentClassSchedule: React.FC = () => {
         <div className="p-6 bg-red-50 border border-red-200 rounded-3xl text-red-700 flex items-start gap-4">
           <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h3 className="font-bold text-red-900">Failed to load guardian profile</h3>
+            <h3 className="font-bold text-red-900">{t('parent.classSchedule.loadError')}</h3>
             <p className="text-sm text-red-700">{parentError}</p>
             <button
               onClick={() => void refetchChildren()}
               className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-semibold hover:bg-red-700 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Try Again
+              {t('common.actions.tryAgain')}
             </button>
           </div>
         </div>
@@ -165,16 +177,16 @@ export const ParentClassSchedule: React.FC = () => {
           <div className="w-16 h-16 bg-blue-50 text-blue-900 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
             <Users className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900">No Linked Students</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{t('parent.classSchedule.emptyTitle')}</h2>
           <p className="text-gray-500 text-sm max-w-md mx-auto leading-relaxed">
-            There are currently no student accounts linked to your guardian account. Please contact school administration to view weekly timetables.
+            {t('parent.classSchedule.emptyDesc')}
           </p>
           <div className="pt-2">
             <Link
               to="/account"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-900 text-white rounded-xl text-sm font-semibold hover:bg-blue-800 transition-colors"
             >
-              My Account
+              {t('common.nav.myAccount')}
             </Link>
           </div>
         </div>
@@ -184,8 +196,8 @@ export const ParentClassSchedule: React.FC = () => {
 
   const childName = selectedChild?.fullName || 'Student';
   const gradeLevel = selectedChild?.classSection?.gradeLevel || selectedChild?.currentEnrollment?.gradeLevel;
-  const sectionName = selectedChild?.classSection?.name || selectedChild?.currentEnrollment?.classSection || 'Class Section';
-  const roomNo = selectedChild?.classSection?.roomNumber || 'Assigned Room';
+  const sectionName = selectedChild?.classSection?.name || selectedChild?.currentEnrollment?.classSection || t('parent.classSchedule.statClassSection');
+  const roomNo = selectedChild?.classSection?.roomNumber || t('parent.classSchedule.statAssignedRoom');
   const academicYear = selectedYear?.year || selectedChild?.currentEnrollment?.academicYear || 'Current Year';
 
   return (
@@ -215,15 +227,15 @@ export const ParentClassSchedule: React.FC = () => {
       {/* ─── Printable Header (Visible only when printing) ─── */}
       <div className="hidden print:block mb-6 border-b border-gray-300 pb-4">
         <h1 className="text-xl font-black text-gray-900">
-          School Portal — Student Class Timetable
+          {t('parent.classSchedule.printTitle')}
         </h1>
         <p className="text-xs text-gray-700 mt-1 font-medium">
-          Student: {childName}
-          {selectedChild?.admissionNo && ` • Admission ID: ${selectedChild.admissionNo}`}
+          {t('common.childSelector.studentLabel')} {childName}
+          {selectedChild?.admissionNo && ` • ${t('parent.attendance.admissionId')} ${selectedChild.admissionNo}`}
           {sectionName && ` • Section: ${sectionName}`}
           {gradeLevel && ` (${gradeLevel})`}
-          {` • Academic Year: ${academicYear}`}
-          {` • Total Weekly Lessons: ${rawSchedule.length}`}
+          {` • ${t('parent.attendance.academicYear')} ${academicYear}`}
+          {` • ${t('parent.classSchedule.printTotalLessons', { count: rawSchedule.length })}`}
         </p>
       </div>
 
@@ -245,7 +257,7 @@ export const ParentClassSchedule: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-gray-500 font-medium">
-              Admission ID: <span className="font-mono font-semibold text-gray-700">{selectedChild?.admissionNo}</span> • Academic Year: <span className="text-gray-700">{academicYear}</span>
+              {t('parent.attendance.admissionId')} <span className="font-mono font-semibold text-gray-700">{selectedChild?.admissionNo}</span> • {t('parent.attendance.academicYear')} <span className="text-gray-700">{academicYear}</span>
             </p>
           </div>
         </div>
@@ -255,7 +267,7 @@ export const ParentClassSchedule: React.FC = () => {
           {/* Child Selector if parent has multiple children */}
           {childrenList.length > 1 && (
             <div className="flex items-center gap-2 bg-gray-50 p-1.5 px-3 rounded-2xl border border-gray-200/70">
-              <span className="text-xs font-bold text-gray-500">Student:</span>
+              <span className="text-xs font-bold text-gray-500">{t('common.childSelector.studentLabel')}</span>
               <ChildSelector />
             </div>
           )}
@@ -263,7 +275,7 @@ export const ParentClassSchedule: React.FC = () => {
           {/* Academic Year Selector */}
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-2xl px-3 py-1.5 shadow-xs">
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-              Year:
+              {t('parent.classSchedule.yearLabel')}
             </span>
             <select
               aria-label="Select Academic Year"
@@ -273,7 +285,7 @@ export const ParentClassSchedule: React.FC = () => {
             >
               {academicYears.map((year) => (
                 <option key={year.id} value={year.id}>
-                  {year.year} {year.isCurrent ? '(Current)' : ''}
+                  {year.year} {year.isCurrent ? t('parent.classSchedule.currentTag') : ''}
                 </option>
               ))}
             </select>
@@ -286,10 +298,10 @@ export const ParentClassSchedule: React.FC = () => {
             size="sm"
             onClick={handlePrint}
             className="rounded-2xl text-xs font-bold border-gray-200 text-gray-700 hover:bg-gray-50 shadow-xs"
-            aria-label="Print timetable"
+            aria-label={t('parent.classSchedule.printTimetableAria')}
           >
             <Printer className="w-3.5 h-3.5 mr-1.5" />
-            Print
+            {t('parent.classSchedule.printButton')}
           </Button>
         </div>
       </div>
@@ -299,13 +311,13 @@ export const ParentClassSchedule: React.FC = () => {
         <div className="p-6 bg-red-50 border border-red-200 rounded-2xl text-red-700 flex items-start gap-4 print:hidden">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <h4 className="font-bold text-red-900">Unable to load class schedule</h4>
+            <h4 className="font-bold text-red-900">{t('parent.classSchedule.apiError')}</h4>
             <p className="text-xs text-red-700">{(fetchError as Error)?.message || 'Network error occurred.'}</p>
             <button
               onClick={() => void refetchSchedule()}
               className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 transition-colors"
             >
-              <RefreshCw className="w-3 h-3" /> Retry
+              <RefreshCw className="w-3 h-3" /> {t('common.actions.retry')}
             </button>
           </div>
         </div>
@@ -314,25 +326,25 @@ export const ParentClassSchedule: React.FC = () => {
       {/* Quick Summary StatCards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
         <StatCard
-          title="Weekly Periods"
+          title={t('parent.classSchedule.statWeeklyPeriods')}
           value={scheduleLoading ? '…' : rawSchedule.length}
           icon={Calendar}
           iconClassName="bg-blue-50 text-blue-600"
         />
         <StatCard
-          title="Active Subjects"
+          title={t('parent.classSchedule.statActiveSubjects')}
           value={scheduleLoading ? '…' : uniqueSubjectsCount}
           icon={BookOpen}
           iconClassName="bg-indigo-50 text-indigo-600"
         />
         <StatCard
-          title="Class Section"
+          title={t('parent.classSchedule.statClassSection')}
           value={sectionName}
           icon={Layers}
           iconClassName="bg-emerald-50 text-emerald-600"
         />
         <StatCard
-          title="Assigned Room"
+          title={t('parent.classSchedule.statAssignedRoom')}
           value={roomNo}
           icon={MapPin}
           iconClassName="bg-purple-50 text-purple-600"
@@ -346,10 +358,10 @@ export const ParentClassSchedule: React.FC = () => {
           <div className="flex items-center gap-3">
             <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
               <Calendar className="w-5 h-5 text-blue-600" />
-              Weekly Class Timetable
+              {t('parent.classSchedule.title')}
             </h3>
             <span className="text-xs bg-gray-100 text-gray-600 font-bold px-2.5 py-1 rounded-full">
-              {scheduleLoading ? '…' : `${rawSchedule.length} Sessions`}
+              {scheduleLoading ? '…' : t('parent.classSchedule.sessionsCount', { count: rawSchedule.length })}
             </span>
           </div>
 
@@ -366,7 +378,7 @@ export const ParentClassSchedule: React.FC = () => {
                 }`}
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
-                Grid View
+                {t('parent.classSchedule.viewGrid')}
               </button>
               <button
                 type="button"
@@ -378,7 +390,7 @@ export const ParentClassSchedule: React.FC = () => {
                 }`}
               >
                 <ListFilter className="w-3.5 h-3.5" />
-                Day View
+                {t('parent.classSchedule.viewDay')}
               </button>
             </div>
           </div>
@@ -389,7 +401,7 @@ export const ParentClassSchedule: React.FC = () => {
           <div className="p-12 text-center text-sm text-gray-500">
             <div className="flex flex-col items-center gap-3 max-w-sm mx-auto">
               <div className="w-8 h-8 border-3 border-blue-900 border-t-transparent rounded-full animate-spin"></div>
-              <span>Loading weekly timetable for {childName}...</span>
+              <span>{t('parent.classSchedule.loadingTimetable', { name: childName })}</span>
             </div>
           </div>
         )}
@@ -400,9 +412,9 @@ export const ParentClassSchedule: React.FC = () => {
             <div className="w-14 h-14 bg-gray-50 text-gray-400 rounded-2xl flex items-center justify-center mx-auto">
               <Calendar className="w-7 h-7" />
             </div>
-            <h4 className="text-base font-bold text-gray-800">No Timetable Assigned</h4>
+            <h4 className="text-base font-bold text-gray-800">{t('parent.classSchedule.noTimetableTitle')}</h4>
             <p className="text-xs text-gray-400 leading-relaxed">
-              No published class schedule is currently available or assigned to {childName}&apos;s section for {academicYear}.
+              {t('parent.classSchedule.noTimetableDesc', { name: childName, year: academicYear })}
             </p>
           </div>
         )}
@@ -413,10 +425,10 @@ export const ParentClassSchedule: React.FC = () => {
             <table className="w-full text-left border-collapse min-w-[700px]">
               <thead>
                 <tr className="bg-gray-50/80 text-xs font-bold text-gray-500 uppercase tracking-wider border-b border-gray-100">
-                  <th className="px-6 py-4 w-40">Time Period</th>
+                  <th className="px-6 py-4 w-40">{t('parent.classSchedule.colTimePeriod')}</th>
                   {DAYS.map((day) => (
                     <th key={day} className="px-6 py-4 font-bold text-gray-900">
-                      {day}
+                      {getDayLabel(day)}
                     </th>
                   ))}
                 </tr>
@@ -449,18 +461,18 @@ export const ParentClassSchedule: React.FC = () => {
                               </div>
                               <div className="space-y-1 pt-1 border-t border-white/10 text-[11px] text-blue-100">
                                 <div className="flex items-center gap-1.5 truncate">
-                                  <User className="w-3 h-3 text-blue-300 flex-shrink-0" />
+                                  <User className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
                                   <span className="truncate">{session.teacherName}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5 truncate">
-                                  <MapPin className="w-3 h-3 text-blue-300 flex-shrink-0" />
-                                  <span className="truncate">Room: {session.roomNumber || roomNo}</span>
+                                  <MapPin className="w-3.5 h-3.5 text-blue-300 flex-shrink-0" />
+                                  <span className="truncate">{t('parent.classSchedule.roomLabel', { room: session.roomNumber || roomNo })}</span>
                                 </div>
                               </div>
                             </div>
                           ) : (
                             <div className="h-24 bg-gray-50/70 rounded-2xl border-2 border-dashed border-gray-100 flex items-center justify-center text-xs text-gray-400 font-medium">
-                              Free Period
+                              {t('parent.classSchedule.freePeriod')}
                             </div>
                           )}
                         </td>
@@ -495,7 +507,7 @@ export const ParentClassSchedule: React.FC = () => {
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    <span>{day}</span>
+                    <span>{getDayLabel(day)}</span>
                     <span
                       className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                         isSelected ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-600'
@@ -512,7 +524,7 @@ export const ParentClassSchedule: React.FC = () => {
             <div className="space-y-3">
               {activeDaySlots.length === 0 && (
                 <div className="p-8 text-center text-gray-400 text-xs bg-gray-50 rounded-2xl border border-gray-100">
-                  No scheduled classes for {activeDayTab}.
+                  {t('parent.classSchedule.noClassesForDay', { day: getDayLabel(activeDayTab) })}
                 </div>
               )}
 
@@ -541,7 +553,7 @@ export const ParentClassSchedule: React.FC = () => {
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                          Room: {session.roomNumber || roomNo}
+                          {t('parent.classSchedule.roomLabel', { room: session.roomNumber || roomNo })}
                         </span>
                       </div>
                     </div>
