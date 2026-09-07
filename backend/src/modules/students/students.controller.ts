@@ -8,6 +8,16 @@ import { StudentsService } from './students.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 
+const safeUserSelect = {
+  id: true,
+  loginId: true,
+  name: true,
+  email: true,
+  phoneNumber: true,
+  avatarUrl: true,
+  role: true,
+} as const;
+
 @Controller('students')
 @UseGuards(JwtAuthGuard)
 export class StudentsController {
@@ -87,6 +97,8 @@ export class StudentsController {
   }
 
   @Get('by-section')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.TEACHER)
   async getStudentsBySection(
     @Query('section') section?: string,
     @Query('subject') subject?: string,
@@ -102,7 +114,7 @@ export class StudentsController {
       },
       include: {
         ClassSection: true,
-        User: true,
+        User: { select: safeUserSelect },
       },
     });
   }
@@ -112,6 +124,8 @@ export class StudentsController {
   // ==========================================
 
   @Get('by-class-section/:classSectionId')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.TEACHER)
   async getStudentsByClassSectionId(
     @Param('classSectionId') classSectionId: string,
     @Query('academicYearId') academicYearId?: string,
@@ -128,12 +142,14 @@ export class StudentsController {
       },
       include: {
         ClassSection: true,
-        User: true,
+        User: { select: safeUserSelect },
       },
     });
   }
 
   @Get()
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.TEACHER)
   async getStudentsByClass(@Query('className') className?: string) {
     return this.prisma.student.findMany({
       where: className ? {
@@ -142,7 +158,7 @@ export class StudentsController {
           { ClassSection: { name: className } },
         ],
       } : undefined,
-      include: { ClassSection: true, User: true },
+      include: { ClassSection: true, User: { select: safeUserSelect } },
     });
   }
 }
