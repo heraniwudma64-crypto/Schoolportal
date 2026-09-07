@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import { ParentProvider } from './context/ParentContext';
 import { AcademicYearProvider } from './context/AcademicYearContext';
+import { LanguageProvider } from './i18n/LanguageContext';
 import DashboardLayout from './components/layout/DashboardLayout';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
@@ -16,12 +17,12 @@ import AssignmentsWrapper from './components/wrappers/AssignmentsWrapper';
 import ExamsWrapper from './components/wrappers/ExamsWrapper';
 import MaterialsWrapper from './components/wrappers/MaterialsWrapper';
 import ScheduleWrapper from './components/wrappers/ScheduleWrapper';
+import AccountWrapper from './components/wrappers/AccountWrapper';
 
 // Student Specific
 import MyCourses from './pages/student/MyCourses';
 import ReportCard from './pages/student/ReportCard';
 import AssignmentDetails from './pages/student/AssignmentDetails';
-import MyAccount from './pages/student/MyAccount';
 
 // Admin Specific
 import UserManagement from './pages/admin/UserManagement';
@@ -52,9 +53,10 @@ import ParentAssignments from './pages/parent/ParentAssignments';
 
 function App() {
   return (
-    <AuthProvider>
-      <ParentProvider>
-        <AcademicYearProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <ParentProvider>
+          <AcademicYearProvider>
           <Router>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
@@ -78,7 +80,7 @@ function App() {
             {/* Shared Schedule Route */}
             <Route path="schedule" element={<RequireRole allowedRoles={['student', 'teacher']}><ScheduleWrapper /></RequireRole>} />
             <Route path="report-card" element={<RequireRole allowedRoles={['student']}><ReportCard /></RequireRole>} />
-            <Route path="account" element={<RequireRole allowedRoles={['student']}><MyAccount /></RequireRole>} />
+            <Route path="account" element={<RequireRole allowedRoles={['student', 'teacher', 'parent']}><AccountWrapper /></RequireRole>} />
 
             {/* Teacher Only */}
             <Route path="homeroom/submissions" element={<RequireRole allowedRoles={['teacher']}><HomeroomSubmissionMatrix /></RequireRole>} />
@@ -161,6 +163,7 @@ function App() {
       </AcademicYearProvider>
       </ParentProvider>
     </AuthProvider>
+    </LanguageProvider>
   );
 }
 

@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParent } from '../../context/ParentContext';
-import { GraduationCap, ChevronDown, Check, Users, Sparkles } from 'lucide-react';
+import { useTranslation } from '../../i18n/LanguageContext';
+import { GraduationCap, ChevronDown, Check, Users } from 'lucide-react';
 
 interface ChildSelectorProps {
   className?: string;
   variant?: 'header' | 'card';
 }
 
-export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '', variant = 'header' }) => {
+export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '' }) => {
   const { childrenList, selectedChild, selectedChildId, setSelectedChildId, isLoading } = useParent();
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -40,7 +42,7 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '', va
     return (
       <div className={`flex items-center gap-2 px-3 py-1.5 bg-gray-100/80 rounded-xl animate-pulse text-xs text-gray-500 font-medium ${className}`}>
         <div className="w-4 h-4 bg-gray-300 rounded-full" />
-        <span>Loading students...</span>
+        <span>{t('common.childSelector.loading')}</span>
       </div>
     );
   }
@@ -50,7 +52,7 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '', va
     return (
       <div className={`inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-700 ${className}`}>
         <Users className="w-4 h-4 text-amber-600" />
-        <span>No Linked Students</span>
+        <span>{t('common.childSelector.noStudents')}</span>
       </div>
     );
   }
@@ -58,7 +60,7 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '', va
   // Case 1: Exactly 1 child (Clean, non-confusing badge)
   if (childrenList.length === 1) {
     const child = childrenList[0];
-    const sectionInfo = child.classSection?.name || child.currentEnrollment?.classSection || 'Enrolled';
+    const sectionInfo = child.classSection?.name || child.currentEnrollment?.classSection || t('common.childSelector.enrolled');
     const gradeInfo = child.classSection?.gradeLevel || child.currentEnrollment?.gradeLevel || '';
 
     return (
@@ -78,7 +80,7 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '', va
 
   // Case 2: Multiple children (Interactive selector dropdown)
   const current = selectedChild || childrenList[0];
-  const sectionText = current.classSection?.name || current.currentEnrollment?.classSection || 'Enrolled';
+  const sectionText = current.classSection?.name || current.currentEnrollment?.classSection || t('common.childSelector.enrolled');
   const gradeText = current.classSection?.gradeLevel || current.currentEnrollment?.gradeLevel || '';
 
   return (
@@ -103,7 +105,7 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '', va
             </span>
           </div>
           <span className="text-[10px] text-gray-500 font-medium leading-none">
-            {gradeText ? `${gradeText} • ` : ''}Adm: {current.admissionNo}
+            {gradeText ? `${gradeText} • ` : ''}{t('common.childSelector.adm')} {current.admissionNo}
           </span>
         </div>
         <ChevronDown
@@ -118,17 +120,19 @@ export const ChildSelector: React.FC<ChildSelectorProps> = ({ className = '', va
           <div className="px-3 py-1.5 border-b border-gray-100 flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center gap-1">
               <GraduationCap className="w-3.5 h-3.5 text-blue-600" />
-              Select Student
+              {t('common.childSelector.selectStudent')}
             </span>
             <span className="text-[10px] bg-gray-100 text-gray-600 font-semibold px-1.5 py-0.5 rounded-full">
-              {childrenList.length} Students
+              {childrenList.length === 1
+                ? t('common.childSelector.studentCountSingular')
+                : t('common.childSelector.studentsCount', { count: childrenList.length })}
             </span>
           </div>
 
           <div className="max-h-64 overflow-y-auto py-1">
             {childrenList.map((child) => {
               const isSelected = child.id === selectedChildId;
-              const childSection = child.classSection?.name || child.currentEnrollment?.classSection || 'Enrolled';
+              const childSection = child.classSection?.name || child.currentEnrollment?.classSection || t('common.childSelector.enrolled');
               const childGrade = child.classSection?.gradeLevel || child.currentEnrollment?.gradeLevel || '';
 
               return (
