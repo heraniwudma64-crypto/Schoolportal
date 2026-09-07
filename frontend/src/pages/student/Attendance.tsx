@@ -15,7 +15,6 @@ const StudentAttendance = () => {
     api.get<any>('/students/me/attendance')
       .then((data) => {
         if (!isMounted) return;
-        console.log("Student attendance data received:", data);
 
         const recordsList = Array.isArray(data) 
           ? data 

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Search, RefreshCw, ClipboardList, CheckCircle, Clock, Eye, AlertCircle, Award, UserCheck } from 'lucide-react';
+import { Search, RefreshCw, ClipboardList, CheckCircle, Clock, Eye, AlertCircle, Award, UserCheck, XCircle } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import { getAcademicYears } from '../../api/academicStructure';
-import { getAdminSections, getAdminSectionRoster, AdminSectionSummary, AdminRosterEntry } from '../../api/adminReports';
+import { getAdminSections, getAdminSectionRoster, approveAdminSection, requestAdminSectionRevision, AdminSectionSummary, AdminRosterEntry } from '../../api/adminReports';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 const ClassRoster = () => {
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
@@ -14,6 +15,8 @@ const ClassRoster = () => {
   
   const [selectedSection, setSelectedSection] = useState<AdminSectionSummary | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRequestingRevision, setIsRequestingRevision] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -68,6 +71,38 @@ const ClassRoster = () => {
     queryClient.invalidateQueries({ queryKey: ['adminSections', academicYearId] });
     if (selectedSection) {
       queryClient.invalidateQueries({ queryKey: ['adminSectionRoster', selectedSection.id, academicYearId] });
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!selectedSection) return;
+    setIsApproving(true);
+    try {
+      const res = await approveAdminSection(selectedSection.id);
+      toast.success(res.message || 'Roster & Report Cards approved successfully!');
+      handleRefresh();
+      setIsReviewModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Approval failed');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleRequestRevision = async () => {
+    if (!selectedSection) return;
+    const feedback = prompt('Enter revision instructions or feedback for the Homeroom Teacher (optional):');
+    if (feedback === null) return;
+    setIsRequestingRevision(true);
+    try {
+      const res = await requestAdminSectionRevision(selectedSection.id, feedback);
+      toast.success(res.message || 'Revision requested from homeroom teacher');
+      handleRefresh();
+      setIsReviewModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Revision request failed');
+    } finally {
+      setIsRequestingRevision(false);
     }
   };
 
@@ -315,16 +350,34 @@ const ClassRoster = () => {
               )}
             </div>
             
-            <div className="p-6 border-t border-gray-100 flex justify-between items-center bg-gray-50">
+            <div className="p-6 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50">
               <span className="text-xs text-gray-500 font-medium">
                 {rosterData.length} active {rosterData.length === 1 ? 'student' : 'students'} displayed
               </span>
-              <button 
-                onClick={() => setIsReviewModalOpen(false)} 
-                className="px-6 py-2.5 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
-              >
-                Close
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRequestRevision}
+                  disabled={isRequestingRevision || isApproving}
+                  className="px-5 py-2.5 bg-amber-100 text-amber-800 hover:bg-amber-200 rounded-xl text-xs font-black uppercase tracking-widest transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  {isRequestingRevision ? 'Requesting…' : 'Request Revision'}
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={isApproving || isRequestingRevision}
+                  className="px-5 py-2.5 bg-green-600 text-white hover:bg-green-700 rounded-xl text-xs font-black uppercase tracking-widest transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  {isApproving ? 'Approving…' : 'Approve Roster & Reports'}
+                </button>
+                <button
+                  onClick={() => setIsReviewModalOpen(false)}
+                  className="px-5 py-2.5 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

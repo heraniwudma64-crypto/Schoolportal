@@ -75,4 +75,19 @@ export class ReportsController {
   ) {
     return this.reportsService.submitToAdmin(body.classSectionId, body.academicYearId, body.type, req.user.id);
   }
+
+  @Post('sections/:classSectionId/approve')
+  @Roles(Role.ADMIN)
+  approveSection(@Param('classSectionId') classSectionId: string) {
+    return this.reportsService.approveSection(classSectionId);
+  }
+
+  @Post('sections/:classSectionId/request-revision')
+  @Roles(Role.ADMIN)
+  requestSectionRevision(
+    @Param('classSectionId') classSectionId: string,
+    @Body('feedback') feedback?: string,
+  ) {
+    return this.reportsService.requestSectionRevision(classSectionId, feedback);
+  }
 }

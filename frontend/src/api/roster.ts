@@ -49,3 +49,7 @@ export const getEnrolledStudents = (academicYearId: string, classSectionId: stri
 export const enrollStudent = (data: { studentId: string; academicYearId: string; gradeLevelId: string; classSectionId: string; enrollmentDate: string; status?: string }) => {
   return api.post<any>('/roster/enroll', data);
 };
+
+export const updateStudentConduct = (studentId: string, classSectionId: string, academicYearId: string, conduct: string) => {
+  return api.patch<any>(`/roster/students/${studentId}/conduct`, { classSectionId, academicYearId, conduct });
+};

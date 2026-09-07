@@ -22,6 +22,12 @@ export class AssignmentsController {
     return this.assignmentsService.findTeacherAssignments(req.user?.sub || req.user?.id);
   }
   
+  @Get('homeroom-submissions')
+  @Roles(Role.TEACHER)
+  getHomeroomSubmissions(@Req() req: any) {
+    return this.assignmentsService.findHomeroomSubmissions(req.user?.sub || req.user?.id);
+  }
+
   @Get(':id/submissions')
   @Roles(Role.TEACHER)
   getSubmissions(@Param('id') id: string, @Req() req: any) {

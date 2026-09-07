@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, ValidationPipe, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, ValidationPipe, Req } from '@nestjs/common';
 import { RosterService } from './roster.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -17,6 +17,21 @@ export class RosterController {
       await this.teachersService.verifyHomeroomAccess(req.user.id, classSectionId);
     }
     return this.rosterService.getConsolidatedRoster(academicYearId, classSectionId);
+  }
+
+  @Patch('students/:studentId/conduct')
+  @Roles('TEACHER', 'ADMIN')
+  async updateConduct(
+    @Param('studentId') studentId: string,
+    @Body('classSectionId') classSectionId: string,
+    @Body('academicYearId') academicYearId: string,
+    @Body('conduct') conduct: string,
+    @Req() req: any,
+  ) {
+    if (req.user?.role === 'TEACHER' && classSectionId) {
+      await this.teachersService.verifyHomeroomAccess(req.user.id, classSectionId);
+    }
+    return this.rosterService.updateStudentConduct(studentId, classSectionId, academicYearId, conduct);
   }
 
   @Get()

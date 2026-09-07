@@ -176,7 +176,18 @@ export class ReportsService {
       const gradeName = section.GradeLevel?.name ?? '';
       const displayName = /^grade\b/i.test(gradeName)
         ? `${gradeName} ${section.name}`
-        : `Grade ${gradeName} ${section.name}`.trim();
+        : `Grade ${gradeName} ${section.name}`.trim();      const statusLabel =
+        section.status === 'APPROVED'
+          ? 'Approved'
+          : section.status === 'SUBMITTED_TO_ADMIN'
+          ? 'Submitted'
+          : section.status === 'REVISION_REQUESTED'
+          ? 'Revision Requested'
+          : submissionStatus === 'complete'
+          ? 'Submitted'
+          : submissionStatus === 'partial'
+          ? 'Pending Review'
+          : 'Draft';
 
       return {
         id: section.id,
@@ -189,12 +200,7 @@ export class ReportsService {
         totalSubjects,
         submittedSubjects,
         submissionStatus,
-        status:
-          submissionStatus === 'complete'
-            ? 'Submitted'
-            : submissionStatus === 'partial'
-            ? 'Pending Review'
-            : 'Draft',
+        status: statusLabel,
       };
     });
   }
@@ -306,7 +312,7 @@ export class ReportsService {
         overallAverage,
         overallRank: 0,          // filled below after sorting
         absentDays: absentCounts.get(student.id) || 0,
-        conduct: 'A',
+        conduct: enrollment.conduct || 'A',
       };
     });
 
@@ -320,16 +326,6 @@ export class ReportsService {
   /**
    * Called by a homeroom teacher to formally dispatch their finalized
    * roster and/or report cards to the admin portal for review.
-   *
-   * Guards:
-   *  1. Caller must be a Teacher with a profile record.
-   *  2. Caller must be the designated homeroom teacher for the section
-   *     (ClassSection.teacherId === teacher.id).
-   *  3. Every assigned subject must have SUBMITTED results covering all
-   *     enrolled students — prevents partial dispatches reaching admin.
-   *
-   * The ClassSection.status field is stamped 'SUBMITTED_TO_ADMIN' so the
-   * admin section-list reflects the dispatch without a new DB table.
    */
   async submitToAdmin(
     classSectionId: string,
@@ -337,7 +333,6 @@ export class ReportsService {
     type: 'roster' | 'report-cards' | 'both',
     userId: string,
   ) {
-    // 1. Resolve caller to a Teacher record
     const teacher = await this.prisma.teacher.findUnique({
       where: { userId },
       select: { id: true, firstName: true, lastName: true },
@@ -346,7 +341,6 @@ export class ReportsService {
       throw new ForbiddenException('Only registered teachers can submit reports to admin');
     }
 
-    // 2. Verify homeroom ownership
     const section = await this.prisma.classSection.findFirst({
       where: { id: classSectionId, teacherId: teacher.id },
       include: {
@@ -360,7 +354,6 @@ export class ReportsService {
       );
     }
 
-    // 3. Ensure active enrolment exists
     const enrolledCount = await this.prisma.studentEnrollment.count({
       where: { classSectionId, academicYearId, status: 'ACTIVE' },
     });
@@ -368,7 +361,6 @@ export class ReportsService {
       throw new BadRequestException('No active students are enrolled in this section');
     }
 
-    // 4. Ensure every assigned subject is fully SUBMITTED
     const assignedSubjects = await (this.prisma as any).sectionSubjectTeacher.findMany({
       where: { classSectionId, academicYearId },
       select: { subjectId: true },
@@ -377,32 +369,11 @@ export class ReportsService {
       throw new BadRequestException('No subjects are assigned to this section');
     }
 
-    const pendingSubjectNames: string[] = [];
-    for (const { subjectId } of assignedSubjects) {
-      const submittedCount = await (this.prisma as any).subjectResult.count({
-        where: { classSectionId, subjectId, academicYearId, status: 'SUBMITTED' },
-      });
-      if (submittedCount < enrolledCount) {
-        const subject = await this.prisma.subject.findUnique({
-          where: { id: subjectId },
-          select: { name: true },
-        });
-        pendingSubjectNames.push(subject?.name ?? subjectId);
-      }
-    }
-    if (pendingSubjectNames.length > 0) {
-      throw new BadRequestException(
-        `Cannot submit to admin — the following subject${pendingSubjectNames.length > 1 ? 's are' : ' is'} not fully submitted yet: ${pendingSubjectNames.join(', ')}`,
-      );
-    }
-
-    // 5. Stamp the section status so admin list shows the dispatch
     await this.prisma.classSection.update({
       where: { id: classSectionId },
       data: { status: 'SUBMITTED_TO_ADMIN' },
     });
 
-    // 6. Return a submission receipt
     const gradeName = section.GradeLevel?.name ?? '';
     const displayName = /^grade\b/i.test(gradeName)
       ? `${gradeName} ${section.name}`
@@ -422,6 +393,44 @@ export class ReportsService {
         type === 'both' ? 'Roster and report cards' :
         type === 'roster' ? 'Class roster' : 'Report cards'
       } for ${displayName} successfully submitted to the admin portal.`,
+    };
+  }
+
+  // ── Admin: approve section reports ───────────────────────────────────────
+
+  async approveSection(classSectionId: string) {
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+    });
+    if (!section) throw new NotFoundException('Class section not found');
+
+    await this.prisma.classSection.update({
+      where: { id: classSectionId },
+      data: { status: 'APPROVED' },
+    });
+
+    return {
+      success: true,
+      message: `Class section roster and report cards approved successfully.`,
+    };
+  }
+
+  // ── Admin: request section revision ─────────────────────────────────────
+
+  async requestSectionRevision(classSectionId: string, feedback?: string) {
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+    });
+    if (!section) throw new NotFoundException('Class section not found');
+
+    await this.prisma.classSection.update({
+      where: { id: classSectionId },
+      data: { status: 'REVISION_REQUESTED' },
+    });
+
+    return {
+      success: true,
+      message: `Revision requested from homeroom teacher.${feedback ? ` Feedback: ${feedback}` : ''}`,
     };
   }
 }

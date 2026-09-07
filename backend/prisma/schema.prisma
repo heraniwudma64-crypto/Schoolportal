@@ -413,6 +413,7 @@ model StudentEnrollment {
   classSectionId String?
   enrollmentDate DateTime @default(now())
   status         String   @default("ACTIVE")
+  conduct        String?  @default("A")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

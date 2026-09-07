@@ -129,3 +129,9 @@ export const submitBothToAdmin = (
     academicYearId,
     type: 'both',
   });
+
+export const approveAdminSection = (classSectionId: string) =>
+  api.post<{ success: boolean; message: string }>(`/admin/reports/sections/${classSectionId}/approve`);
+
+export const requestAdminSectionRevision = (classSectionId: string, feedback?: string) =>
+  api.post<{ success: boolean; message: string }>(`/admin/reports/sections/${classSectionId}/request-revision`, { feedback });

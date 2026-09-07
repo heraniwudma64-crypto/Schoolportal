@@ -1,12 +1,13 @@
-import React from 'react';
-import { Download, Printer, RefreshCw, AlertCircle, Clock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, Printer, RefreshCw, AlertCircle, Clock, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
 import {
   useHomeroomContext,
   useConsolidatedRoster,
-  ConsolidatedRosterData,
 } from '../../hooks/useHomeroom';
+import { updateStudentConduct } from '../../api/roster';
+import { submitBothToAdmin } from '../../api/adminReports';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ export default function HomeroomRosterRedesigned() {
   // 1. Shared Homeroom Context & Academic Years (from Cache)
   const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
   const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
+  const [updatingConductId, setUpdatingConductId] = useState<string | null>(null);
+  const [isSubmittingToAdmin, setIsSubmittingToAdmin] = useState(false);
 
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = homeroomContext?.assignedSection?.id;
@@ -54,6 +57,38 @@ export default function HomeroomRosterRedesigned() {
     }
   };
 
+  // ── Conduct Change ────────────────────────────────────────────────────────
+
+  const handleConductChange = async (studentId: string, newConduct: string) => {
+    if (!sectionId || !yearId) return;
+    setUpdatingConductId(studentId);
+    try {
+      await updateStudentConduct(studentId, sectionId, yearId, newConduct);
+      toast.success('Conduct grade updated');
+      await refetch();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update conduct grade');
+    } finally {
+      setUpdatingConductId(null);
+    }
+  };
+
+  // ── Submit Roster & Report Cards to Admin ─────────────────────────────────
+
+  const handleSubmitToAdmin = async () => {
+    if (!sectionId || !yearId) return;
+    setIsSubmittingToAdmin(true);
+    try {
+      const res = await submitBothToAdmin(sectionId, yearId);
+      toast.success(res.message || 'Roster & Report Cards submitted to Admin!');
+      await refetch();
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not submit roster to Admin');
+    } finally {
+      setIsSubmittingToAdmin(false);
+    }
+  };
+
   // ── Export ────────────────────────────────────────────────────────────────
 
   const handleExportCsv = () => {
@@ -76,7 +111,7 @@ export default function HomeroomRosterRedesigned() {
         idx + 1, student.admissionNo, student.studentName, student.sex,
         ...scoreCols,
         student.sum, student.average != null ? student.average.toFixed(1) : '',
-        student.rank || '', student.absentDays, student.conduct || '',
+        student.rank || '', student.absentDays, student.conduct || 'A',
       ];
     });
 
@@ -135,7 +170,7 @@ export default function HomeroomRosterRedesigned() {
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Class Consolidated Roster</h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -144,7 +179,16 @@ export default function HomeroomRosterRedesigned() {
             {data.section.homeroomTeacher && ` • Homeroom: ${data.section.homeroomTeacher}`}
           </p>
         </div>
-        <div className="flex gap-2 no-print shrink-0">
+        <div className="flex flex-wrap gap-2 no-print shrink-0">
+          <button
+            onClick={handleSubmitToAdmin}
+            disabled={isSubmittingToAdmin}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-900 text-white rounded-lg text-sm font-semibold hover:bg-indigo-950 disabled:opacity-50 transition-colors shadow-sm"
+            title="Submit finalized Roster & Report Cards to Admin for Review"
+          >
+            <Send className="w-4 h-4" />
+            {isSubmittingToAdmin ? 'Submitting to Admin…' : 'Submit Roster & Reports to Admin'}
+          </button>
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -291,8 +335,23 @@ export default function HomeroomRosterRedesigned() {
                     {student.rank || '—'}
                   </td>
                   <td className="border border-gray-200 p-2 text-center">{student.absentDays}</td>
-                  <td className="border border-gray-200 p-2 text-center font-semibold">
-                    {student.conduct || '—'}
+                  <td className="border border-gray-200 p-1 text-center font-semibold no-print">
+                    <select
+                      value={student.conduct || 'A'}
+                      onChange={(e) => handleConductChange(student.studentId, e.target.value)}
+                      disabled={updatingConductId === student.studentId}
+                      className="bg-white border border-gray-300 rounded px-1.5 py-1 text-xs font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer shadow-sm disabled:opacity-50"
+                      title="Select Conduct Grade"
+                    >
+                      <option value="A">A (Excellent)</option>
+                      <option value="B">B (Good)</option>
+                      <option value="C">C (Satisfactory)</option>
+                      <option value="D">D (Needs Impv.)</option>
+                      <option value="F">F (Unsatisfactory)</option>
+                    </select>
+                  </td>
+                  <td className="border border-gray-200 p-2 text-center font-semibold hidden print:table-cell">
+                    {student.conduct || 'A'}
                   </td>
                 </tr>
               ))}

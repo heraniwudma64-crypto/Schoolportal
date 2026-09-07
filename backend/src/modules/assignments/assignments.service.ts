@@ -17,9 +17,52 @@ export class AssignmentsService {
   
   async findSubmissions(id: string, userId: string) {
     const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
-    const assignment = await this.prisma.assignment.findFirst({ where: { id, teacherId: teacher?.id }, select: { id: true } });
+    if (!teacher) throw new UnauthorizedException('Teacher profile not found');
+    const assignment = await this.prisma.assignment.findFirst({
+      where: {
+        id,
+        OR: [
+          { teacherId: teacher.id },
+          { ClassSection: { teacherId: teacher.id } },
+        ],
+      },
+      select: { id: true },
+    });
     if (!assignment) throw new UnauthorizedException('You cannot view submissions for this assignment');
-    return this.prisma.submission.findMany({ where: { assignmentId: id }, include: { student: true, grades: true }, orderBy: { createdAt: 'desc' } });
+    return this.prisma.submission.findMany({
+      where: { assignmentId: id },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true, admissionNo: true } },
+        grades: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findHomeroomSubmissions(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+    if (!teacher) throw new UnauthorizedException('Teacher profile not found');
+
+    const homeroomSection = await this.prisma.classSection.findFirst({
+      where: { teacherId: teacher.id },
+      select: { id: true, name: true },
+    });
+
+    if (!homeroomSection) return [];
+
+    return this.prisma.submission.findMany({
+      where: {
+        assignment: {
+          classSectionId: homeroomSection.id,
+        },
+      },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true, admissionNo: true } },
+        assignment: { select: { id: true, title: true, subject: true, dueDate: true } },
+        grades: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async create(data: any, userId?: string) {

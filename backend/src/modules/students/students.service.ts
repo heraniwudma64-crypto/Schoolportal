@@ -173,6 +173,17 @@ export class StudentsService {
       };
     }
 
+    if (rawUrl.startsWith('/uploads/') || rawUrl.startsWith('uploads/') || rawUrl.startsWith('/')) {
+      const cleanPath = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+      const serverUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+      const fullUrl = `${serverUrl}${cleanPath}`;
+      return {
+        url: fullUrl,
+        downloadUrl: fullUrl,
+        fileName: rawUrl.split('/').pop() || 'resource',
+      };
+    }
+
     const fileName = rawUrl.split('/').pop() || rawUrl;
     let pathInBucket = rawUrl;
     const match = rawUrl.match(/materials\/(.*)$/);

@@ -208,11 +208,30 @@ export class RosterService {
       });
       const yearlyAverages = subjectScores.map((score) => score.yearlyAverage).filter((score): score is number => score !== null);
       const sum = Number(yearlyAverages.reduce((total, score) => total + score, 0).toFixed(2));
-      return { studentId: enrollment.Student.id, admissionNo: enrollment.Student.admissionNo, studentName: `${enrollment.Student.firstName} ${enrollment.Student.lastName}`, sex: enrollment.Student.gender ?? '', subjectScores, sum, average: yearlyAverages.length ? Number((sum / yearlyAverages.length).toFixed(2)) : null, rank: 0, absentDays: absentDaysByStudent.get(enrollment.Student.id) || 0, conduct: null };
+      return { studentId: enrollment.Student.id, admissionNo: enrollment.Student.admissionNo, studentName: `${enrollment.Student.firstName} ${enrollment.Student.lastName}`, sex: enrollment.Student.gender ?? '', subjectScores, sum, average: yearlyAverages.length ? Number((sum / yearlyAverages.length).toFixed(2)) : null, rank: 0, absentDays: absentDaysByStudent.get(enrollment.Student.id) || 0, conduct: enrollment.conduct || 'A' };
     });
     rows.sort((left, right) => (right.average ?? -1) - (left.average ?? -1));
     rows.forEach((row, index) => { row.rank = row.average === null ? 0 : index + 1; });
     return { section: { id: section.id, name: section.name, grade: section.GradeLevel?.name, homeroomTeacher: section.homeroomTeacher ? `${section.homeroomTeacher.firstName} ${section.homeroomTeacher.lastName}` : null }, terms: termKeys, subjects: subjects.map((subject: any) => ({ id: subject.id, name: subject.name, code: subject.code })), students: rows };
+  }
+
+  async updateStudentConduct(studentId: string, classSectionId: string, academicYearId: string, conduct: string) {
+    let enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { studentId, classSectionId, academicYearId },
+    });
+    if (!enrollment) {
+      enrollment = await this.prisma.studentEnrollment.findFirst({
+        where: { studentId },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+    if (!enrollment) {
+      throw new NotFoundException('Student enrollment record not found');
+    }
+    return this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: { conduct: (conduct || 'A').trim().toUpperCase() },
+    });
   }
 
   async getRoster(academicYearId: string, classSectionId: string) {

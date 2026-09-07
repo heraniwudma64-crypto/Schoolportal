@@ -53,7 +53,7 @@ export class AuthService {
     const role = this.mapRegisterRole(registerDto.role);
 
     if (role === Role.STUDENT) {
-      const required = ['institutionId', 'institutionName', 'fatherName', 'grandfatherName', 'admissionType', 'gender', 'dob', 'nationality', 'familyKebele', 'locationType', 'fatherEducationLevel', 'motherEducationLevel', 'economicStatus', 'guardianFullName', 'familyHeadGender', 'guardianEmail', 'guardianPhone', 'nationalId', 'residenceRegion', 'residenceZone', 'residenceWoreda', 'birthRegion', 'birthZone', 'birthWoreda', 'parentStatus'];
+      const required = ['institutionId', 'institutionName', 'fatherName', 'grandfatherName', 'admissionType', 'gender', 'dob', 'nationality', 'familyKebele', 'locationType', 'fatherEducationLevel', 'motherEducationLevel', 'economicStatus', 'guardianFullName', 'familyHeadGender', 'guardianPhone', 'nationalId', 'residenceRegion', 'residenceZone', 'residenceWoreda', 'birthRegion', 'birthZone', 'birthWoreda', 'parentStatus'];
       const missing = required.filter((field) => !String((registerDto as unknown as Record<string, unknown>)[field] ?? '').trim());
       if (missing.length) throw new BadRequestException(`Missing required student registration information: ${missing.join(', ')}`);
       if (registerDto.disability === 'yes' && !registerDto.disabilityType?.trim()) {
@@ -86,154 +86,192 @@ export class AuthService {
     const firstName = nameParts[0];
     const lastName = nameParts.slice(1).join(' ') || firstName;
 
-    const createdUser = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          id: userId,
-          loginId,
-          name: registerDto.name.trim(),
-          email,
-          password: passwordHash,
-          role,
-        },
-        select: {
-          id: true,
-          loginId: true,
-          email: true,
-          role: true,
-        },
-      });
-
-      if (role === Role.TEACHER) {
-        await tx.teacher.create({
+    try {
+      const createdUser = await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
           data: {
-            id: randomUUID(),
-            userId: user.id,
-            firstName,
-            lastName,
-            updatedAt: new Date(),
+            id: userId,
+            loginId,
+            name: registerDto.name.trim(),
+            email,
+            password: passwordHash,
+            role,
+          },
+          select: {
+            id: true,
+            loginId: true,
+            email: true,
+            role: true,
           },
         });
-      } else if (role === Role.STUDENT) {
-        const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
-        let resolvedClassSectionId: string | null = null;
-        const currentYear = classInput
-          ? await tx.academicYear.findFirst({ where: { isCurrent: true }, select: { id: true } })
-          : null;
 
-        if (classInput) {
-          const normalizedInput = String(classInput).trim();
-          if (!currentYear) {
-            throw new BadRequestException('A current academic year must be set before selecting a class section');
-          }
-          let sectionRecord = await tx.classSection.findFirst({
-            where: {
-              AND: [
-                { academicYearId: currentYear.id, gradeLevelId: { not: null } },
-                {
-                  OR: [
-                    { id: normalizedInput },
-                    // A full display label is accepted only when it resolves to
-                    // an existing grade/section pair; never create a raw class.
-                    { name: normalizedInput },
-                  ],
-                },
-              ],
+        if (role === Role.TEACHER) {
+          await tx.teacher.create({
+            data: {
+              id: randomUUID(),
+              userId: user.id,
+              firstName,
+              lastName,
+              updatedAt: new Date(),
             },
           });
+        } else if (role === Role.PARENT) {
+          await tx.parent.create({
+            data: {
+              id: randomUUID(),
+              userId: user.id,
+              firstName,
+              lastName,
+              updatedAt: new Date(),
+            },
+          });
+        } else if (role === Role.STUDENT) {
+          const classInput = (registerDto as any).classSectionId || (registerDto as any).classId || (registerDto as any).grade;
+          let resolvedClassSectionId: string | null = null;
+          const currentYear = classInput
+            ? await tx.academicYear.findFirst({ where: { isCurrent: true }, select: { id: true } })
+            : null;
 
-          if (!sectionRecord) {
-            const match = normalizedInput.match(/^grade\s*(\d+)\s*([a-z][a-z0-9]{0,3})$/i);
-            if (match) {
-              sectionRecord = await tx.classSection.findFirst({
-                where: {
-                  name: match[2].toUpperCase(),
-                  academicYearId: currentYear.id,
-                  GradeLevel: {
+          if (classInput) {
+            const normalizedInput = String(classInput).trim();
+            if (!currentYear) {
+              throw new BadRequestException('A current academic year must be set before selecting a class section');
+            }
+            let sectionRecord = await tx.classSection.findFirst({
+              where: {
+                AND: [
+                  { academicYearId: currentYear.id, gradeLevelId: { not: null } },
+                  {
                     OR: [
-                      { gradeNumber: Number(match[1]) },
-                      { name: `Grade ${match[1]}` },
+                      { id: normalizedInput },
+                      // A full display label is accepted only when it resolves to
+                      // an existing grade/section pair; never create a raw class.
+                      { name: normalizedInput },
                     ],
                   },
-                },
-              });
+                ],
+              },
+            });
+
+            if (!sectionRecord) {
+              const match = normalizedInput.match(/^grade\s*(\d+)\s*([a-z][a-z0-9]{0,3})$/i);
+              if (match) {
+                sectionRecord = await tx.classSection.findFirst({
+                  where: {
+                    name: match[2].toUpperCase(),
+                    academicYearId: currentYear.id,
+                    GradeLevel: {
+                      OR: [
+                        { gradeNumber: Number(match[1]) },
+                        { name: `Grade ${match[1]}` },
+                      ],
+                    },
+                  },
+                });
+              }
             }
+
+            if (!sectionRecord || !sectionRecord.gradeLevelId || !sectionRecord.academicYearId) {
+              throw new BadRequestException('Select a valid class and section, for example Grade 10 A');
+            }
+            resolvedClassSectionId = sectionRecord.id;
           }
 
-          if (!sectionRecord || !sectionRecord.gradeLevelId || !sectionRecord.academicYearId) {
-            throw new BadRequestException('Select a valid class and section, for example Grade 10 A');
-          }
-          resolvedClassSectionId = sectionRecord.id;
-        }
-
-        const student = await tx.student.create({
-          data: {
-            id: randomUUID(),
-            userId: user.id,
-            admissionNo: loginId,
-            firstName,
-            lastName,
-            gender: registerDto.gender,
-            institutionId: registerDto.institutionId?.trim(),
-            institutionName: registerDto.institutionName?.trim(),
-            fatherName: registerDto.fatherName?.trim(),
-            grandfatherName: registerDto.grandfatherName?.trim(),
-            admissionType: registerDto.admissionType?.trim(),
-            hasDisability: registerDto.disability === 'yes',
-            disabilityType: registerDto.disability === 'yes' ? registerDto.disabilityType?.trim() : null,
-            dob: registerDto.dob ? new Date(registerDto.dob) : undefined,
-            nationality: registerDto.nationality?.trim(),
-            familyKebele: registerDto.familyKebele?.trim(),
-            locationType: registerDto.locationType?.trim(),
-            fatherEducationLevel: registerDto.fatherEducationLevel?.trim(),
-            motherEducationLevel: registerDto.motherEducationLevel?.trim(),
-            economicStatus: registerDto.economicStatus?.trim(),
-            guardianFullName: registerDto.guardianFullName?.trim(),
-            familyHeadGender: registerDto.familyHeadGender?.trim(),
-            guardianEmail: registerDto.guardianEmail?.trim().toLowerCase(),
-            guardianPhone: registerDto.guardianPhone?.trim(),
-            nationalId: registerDto.nationalId?.trim(),
-            residenceRegion: registerDto.residenceRegion?.trim(),
-            residenceZone: registerDto.residenceZone?.trim(),
-            residenceWoreda: registerDto.residenceWoreda?.trim(),
-            birthRegion: registerDto.birthRegion?.trim(),
-            birthZone: registerDto.birthZone?.trim(),
-            birthWoreda: registerDto.birthWoreda?.trim(),
-            parentStatus: registerDto.parentStatus?.trim(),
-            updatedAt: new Date(),
-            ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
-          },
-        });
-        if (resolvedClassSectionId) {
-          const section = await tx.classSection.findUnique({
-            where: { id: resolvedClassSectionId },
-            select: { academicYearId: true, gradeLevelId: true },
-          });
-          if (!section?.academicYearId || !section.gradeLevelId || section.academicYearId !== currentYear?.id) {
-            throw new BadRequestException('Select a class section from the current academic year');
-          }
-          await tx.studentEnrollment.create({
+          const student = await tx.student.create({
             data: {
-              studentId: student.id,
-              academicYearId: section.academicYearId,
-              gradeLevelId: section.gradeLevelId,
-              classSectionId: resolvedClassSectionId,
-              status: 'ACTIVE',
+              id: randomUUID(),
+              userId: user.id,
+              admissionNo: loginId,
+              firstName,
+              lastName,
+              gender: registerDto.gender,
+              institutionId: registerDto.institutionId?.trim(),
+              institutionName: registerDto.institutionName?.trim(),
+              fatherName: registerDto.fatherName?.trim(),
+              grandfatherName: registerDto.grandfatherName?.trim(),
+              admissionType: registerDto.admissionType?.trim(),
+              hasDisability: registerDto.disability === 'yes',
+              disabilityType: registerDto.disability === 'yes' ? registerDto.disabilityType?.trim() : null,
+              dob: registerDto.dob ? new Date(registerDto.dob) : undefined,
+              nationality: registerDto.nationality?.trim(),
+              familyKebele: registerDto.familyKebele?.trim(),
+              locationType: registerDto.locationType?.trim(),
+              fatherEducationLevel: registerDto.fatherEducationLevel?.trim(),
+              motherEducationLevel: registerDto.motherEducationLevel?.trim(),
+              economicStatus: registerDto.economicStatus?.trim(),
+              guardianFullName: registerDto.guardianFullName?.trim(),
+              familyHeadGender: registerDto.familyHeadGender?.trim(),
+              guardianEmail: registerDto.guardianEmail?.trim().toLowerCase(),
+              guardianPhone: registerDto.guardianPhone?.trim(),
+              nationalId: registerDto.nationalId?.trim(),
+              residenceRegion: registerDto.residenceRegion?.trim(),
+              residenceZone: registerDto.residenceZone?.trim(),
+              residenceWoreda: registerDto.residenceWoreda?.trim(),
+              birthRegion: registerDto.birthRegion?.trim(),
+              birthZone: registerDto.birthZone?.trim(),
+              birthWoreda: registerDto.birthWoreda?.trim(),
+              parentStatus: registerDto.parentStatus?.trim(),
+              updatedAt: new Date(),
+              ...(resolvedClassSectionId ? { classSectionId: resolvedClassSectionId } : {}),
             },
           });
+          if (resolvedClassSectionId) {
+            const section = await tx.classSection.findUnique({
+              where: { id: resolvedClassSectionId },
+              select: { academicYearId: true, gradeLevelId: true },
+            });
+            if (!section?.academicYearId || !section.gradeLevelId || section.academicYearId !== currentYear?.id) {
+              throw new BadRequestException('Select a class section from the current academic year');
+            }
+            await tx.studentEnrollment.create({
+              data: {
+                studentId: student.id,
+                academicYearId: section.academicYearId,
+                gradeLevelId: section.gradeLevelId,
+                classSectionId: resolvedClassSectionId,
+                status: 'ACTIVE',
+              },
+            });
+          }
+        }
+
+        return user;
+      });
+
+      const safeUser = this.toSafeUser(createdUser, registerDto.name);
+      const accessToken = await this.signToken(createdUser.id, createdUser.role);
+
+      return {
+        accessToken,
+        user: safeUser,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof ConflictException || error instanceof NotFoundException) {
+        throw error;
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          const target = (error.meta?.target as string[]) || [];
+          if (target.includes('email')) {
+            throw new ConflictException('A user with that email already exists');
+          }
+          if (target.includes('loginId')) {
+            throw new ConflictException('A user with that ID number already exists');
+          }
+          if (target.includes('admissionNo')) {
+            throw new ConflictException('A student with that admission ID already exists');
+          }
+          if (target.includes('staffId')) {
+            throw new ConflictException('A teacher with that staff ID already exists');
+          }
+          throw new ConflictException(`Duplicate record value detected: ${target.join(', ') || 'Unique constraint failure'}`);
+        }
+        if (error.code === 'P2003') {
+          throw new BadRequestException('Invalid reference: selected class section, grade, or parent record does not exist');
         }
       }
-
-      return user;
-    });
-
-    const safeUser = this.toSafeUser(createdUser, registerDto.name);
-    const accessToken = await this.signToken(createdUser.id, createdUser.role);
-
-    return {
-      accessToken,
-      user: safeUser,
-    };
+      throw error;
+    }
   }
 
   async getTeacherPermissions(userId: string) {
