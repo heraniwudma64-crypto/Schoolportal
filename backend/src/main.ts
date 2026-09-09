@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
@@ -40,6 +41,7 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  app.useGlobalFilters(new PrismaExceptionFilter());
   const port = Number(process.env.PORT) || 3000;
   await app.listen(port);
 }

@@ -10,7 +10,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   Printer, Download, ChevronLeft, ChevronRight,
-  CheckSquare, Square, AlertCircle, Clock, RefreshCw,
+  CheckSquare, Square, AlertCircle, Clock, RefreshCw, Search,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
@@ -47,6 +47,7 @@ const COMPETENCY_KEYS: Array<{ key: keyof ReportCardData['behaviourAssessment'];
 export default function ReportCardPrintable() {
   // Selection + navigation
   const [selectedIds, setSelectedIds]   = useState<string[]>([]);
+  const [searchQuery, setSearchQuery]   = useState('');
   const [currentPage, setCurrentPage]   = useState(0);
   const [side, setSide]                 = useState<'front' | 'back'>('front');
   const [printMode, setPrintMode]       = useState<'preview' | 'all-selected' | null>(null);
@@ -57,7 +58,13 @@ export default function ReportCardPrintable() {
 
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId   = homeroomContext?.assignedSection?.id;
-  const yearId      = currentYear?.id;
+  // Use the section's own academicYearId from context so the compiled-cards
+  // query always targets the correct year, not whatever year happens to be
+  // first in the years list.
+  const yearId =
+    homeroomContext?.assignedSection?.academicYearId ??
+    homeroomContext?.academicYearId ??
+    currentYear?.id;
 
   const {
     data: rawStudents = [],
@@ -67,7 +74,8 @@ export default function ReportCardPrintable() {
   } = useCompiledReportCards(sectionId, yearId);
 
   const students = Array.isArray(rawStudents) ? rawStudents : [];
-  const loading  = contextLoading || yearsLoading || (cardsLoading && !students.length);
+  // Don't block on yearsLoading if we already have yearId from context.
+  const loading  = contextLoading || (yearsLoading && !yearId) || (cardsLoading && !students.length);
 
   const error =
     (contextError as any)?.message ||
@@ -76,10 +84,20 @@ export default function ReportCardPrintable() {
 
   // ── Selection helpers ─────────────────────────────────────────────────────
 
-  const allSelected = students.length > 0 && selectedIds.length === students.length;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visibleStudents = normalizedSearch
+    ? students.filter((student) =>
+        `${student.firstName} ${student.lastName} ${student.admissionNo}`
+          .toLowerCase()
+          .includes(normalizedSearch),
+      )
+    : students;
+  const allSelected = visibleStudents.length > 0 && visibleStudents.every((student) => selectedIds.includes(student.studentId));
 
   const toggleAll = () =>
-    setSelectedIds(allSelected ? [] : students.map((s) => s.studentId));
+    setSelectedIds((current) => allSelected
+      ? current.filter((id) => !visibleStudents.some((student) => student.studentId === id))
+      : [...new Set([...current, ...visibleStudents.map((student) => student.studentId)])]);
 
   const toggleOne = (id: string) =>
     setSelectedIds((prev) =>
@@ -205,12 +223,21 @@ export default function ReportCardPrintable() {
             </button>
             {selectedIds.length > 0 && (
               <span className="ml-2 text-xs text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded-full">
-                {selectedIds.length} selected
-              </span>
+              {selectedIds.length} selected
+            </span>
             )}
+            <label className="ml-auto relative block w-full max-w-xs">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search name or student ID"
+                className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
           </div>
           <div className="divide-y">
-            {students.map((s) => {
+            {visibleStudents.map((s) => {
               const sel = selectedIds.includes(s.studentId);
               const isPreview = displayStudent?.studentId === s.studentId;
               return (
@@ -237,6 +264,9 @@ export default function ReportCardPrintable() {
                 </div>
               );
             })}
+            {!visibleStudents.length && (
+              <p className="px-4 py-8 text-center text-sm text-gray-500">No students match that name or student ID.</p>
+            )}
           </div>
         </div>
 

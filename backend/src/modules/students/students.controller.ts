@@ -30,17 +30,23 @@ export class StudentsController {
   // 1. STATIC & "ME" ROUTES (Must be at the top)
   // ==========================================
 
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
   @Get('me/attendance')
   async getMyAttendance(@Req() req: Request & { user: { id: string } }) {
     const userId = req.user.id;
     return await this.studentsService.getMyAttendance(userId);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
   @Get('me/courses')
   getMyCourses(@Req() req: Request & { user: { id: string } }) {
     return this.studentsService.getMyCourses(req.user.id);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
   @Get('me/schedule')
   getMySchedule(
     @Req() req: Request & { user: { id: string } },
@@ -49,6 +55,8 @@ export class StudentsController {
     return this.studentsService.getMySchedule(req.user.id, academicYearId);
   }
 
+  @UseGuards(RolesGuard)
+  @Roles(Role.STUDENT)
   @Get('me/results')
   getMyResults(@Req() req: Request & { user: { id: string } }) {
     return this.studentsService.getMyResults(req.user.id);
@@ -91,6 +99,7 @@ export class StudentsController {
   ) {
     return this.studentsService.submitMyAssignment(req.user.id, id, file, content);
   }
+
   @Get('class-sections')
   async getClassSections() {
     return this.prisma.classSection.findMany();

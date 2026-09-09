@@ -182,7 +182,7 @@ export class ReportsController {
     @Body() body: SubmitRosterDto,
     @Req() req: any,
   ) {
-    return this.reportsService.submitToAdmin(body.classSectionId, body.academicYearId, body.type, req.user.id);
+    return this.reportsService.submitToAdmin(body.classSectionId, body.academicYearId, body.type, req.user.id, body.conductData);
   }
 
   /**

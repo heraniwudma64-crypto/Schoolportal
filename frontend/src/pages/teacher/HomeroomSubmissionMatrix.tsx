@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { CheckCircle2, AlertCircle, Clock, Users, Download, Printer, RefreshCw, RotateCcw, AlertTriangle, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -78,7 +79,10 @@ export default function HomeroomSubmissionMatrix() {
 
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = homeroomContext?.assignedSection?.id;
-  const yearId = currentYear?.id;
+  const yearId =
+    homeroomContext?.assignedSection?.academicYearId ??
+    homeroomContext?.academicYearId ??
+    currentYear?.id;
 
   // 2. Page Data Queries (React Query)
   const {
@@ -95,14 +99,12 @@ export default function HomeroomSubmissionMatrix() {
     refetch: refetchResults,
   } = useHomeroomStudentResults(sectionId, yearId, selectedTerm);
 
-  const loading = contextLoading || yearsLoading || (matrixLoading && !matrix);
+  const loading = contextLoading || (yearsLoading && !yearId) || (matrixLoading && !matrix);
   const refreshing = (matrixFetching || resultsFetching) && !matrixLoading;
 
   const error =
-    (contextError as any)?.response?.data?.message ||
     (contextError as any)?.message ||
     (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
-    (matrixError as any)?.response?.data?.message ||
     (matrixError as any)?.message ||
     '';
 
@@ -115,7 +117,7 @@ export default function HomeroomSubmissionMatrix() {
       await Promise.all([refetchMatrix(), refetchResults()]);
       toast.success('Submission matrix refreshed');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Refresh failed');
+      toast.error(err?.message ?? 'Refresh failed');
     }
   };
 
@@ -141,7 +143,7 @@ export default function HomeroomSubmissionMatrix() {
       setReturnReason('');
       await handleRefresh();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to return subject';
+      const msg = err?.message || 'Failed to return subject';
       toast.error(msg);
     } finally {
       setSubmittingReturn(false);
@@ -245,11 +247,10 @@ export default function HomeroomSubmissionMatrix() {
             <button
               key={t.code}
               onClick={() => handleTermChange(t.code)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${
-                selectedTerm === t.code
+              className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${selectedTerm === t.code
                   ? 'bg-blue-900 text-white border-blue-900'
                   : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}
+                }`}
             >
               {t.label}
             </button>
@@ -259,11 +260,10 @@ export default function HomeroomSubmissionMatrix() {
 
       {/* ── Overall status banner ── */}
       <div
-        className={`rounded-lg p-6 text-white ${
-          matrix.allSubmitted
+        className={`rounded-lg p-6 text-white ${matrix.allSubmitted
             ? 'bg-gradient-to-r from-green-600 to-green-500'
             : 'bg-gradient-to-r from-amber-600 to-amber-500'
-        }`}
+          }`}
       >
         <div className="flex items-center justify-between">
           <div>
@@ -350,9 +350,8 @@ export default function HomeroomSubmissionMatrix() {
                       <div className="flex items-center gap-2 justify-center">
                         <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all ${
-                              subject.isSubmitted ? 'bg-green-500' : 'bg-amber-400'
-                            }`}
+                            className={`h-full rounded-full transition-all ${subject.isSubmitted ? 'bg-green-500' : 'bg-amber-400'
+                              }`}
                             style={{ width: `${subject.completionPercentage}%` }}
                           />
                         </div>
@@ -428,11 +427,10 @@ export default function HomeroomSubmissionMatrix() {
                                       </td>
                                       <td className="border border-gray-300 p-2 text-center">
                                         <span
-                                          className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                            r.status === 'SUBMITTED'
+                                          className={`px-2 py-0.5 rounded text-xs font-semibold ${r.status === 'SUBMITTED'
                                               ? 'bg-green-100 text-green-800'
                                               : 'bg-yellow-100 text-yellow-800'
-                                          }`}
+                                            }`}
                                         >
                                           {r.status}
                                         </span>

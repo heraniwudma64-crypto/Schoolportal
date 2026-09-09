@@ -258,7 +258,7 @@ export class ReportCardsService {
 
   async getCompiledReportCards(classSectionId: string, academicYearId: string) {
     // Fetch all required data concurrently
-    const [students, section, sectionSubjects, subjectResults, attendance] = await Promise.all([
+    const [students, section, sectionSubjects, subjectResults, attendance, rosterReview] = await Promise.all([
       // 1. Students actively enrolled in this section
       this.prisma.student.findMany({
         where: {
@@ -316,6 +316,12 @@ export class ReportCardsService {
         where:  { classSectionId, status: 'ABSENT' },
         select: { studentId: true },
       }),
+
+      // 6. Saved conduct grades from the ClassRosterReview record
+      (this.prisma as any).classRosterReview.findUnique({
+        where: { classSectionId_academicYearId: { classSectionId, academicYearId } },
+        select: { conductData: true },
+      }),
     ]);
 
     if (!section) throw new NotFoundException('Class section not found');
@@ -347,6 +353,17 @@ export class ReportCardsService {
       map.set(rec.studentId, (map.get(rec.studentId) || 0) + 1);
       return map;
     }, new Map<string, number>());
+
+    // Extract saved conduct grades from the roster review record.
+    // Keys that start with '_' are metadata fields, not student IDs.
+    const conductMap: Record<string, string> = {};
+    if (rosterReview?.conductData && typeof rosterReview.conductData === 'object') {
+      for (const [key, val] of Object.entries(rosterReview.conductData as Record<string, unknown>)) {
+        if (!key.startsWith('_') && typeof val === 'string') {
+          conductMap[key] = val;
+        }
+      }
+    }
 
     const homeroomTeacherName = section.Teacher
       ? `${section.Teacher.firstName} ${section.Teacher.lastName}`.trim()
@@ -423,7 +440,8 @@ export class ReportCardsService {
         overallAverage,
         overallRank: 0,           // filled after ranking below
         absentDays:       absentDaysByStudent.get(student.id) || 0,
-        conduct:          'A',    // homeroom teacher sets this in the UI
+        // Use the conduct grade saved by the homeroom teacher; default 'A'
+        conduct:          conductMap[student.id] || 'A',
         behaviourAssessment: {
           academicPotential:        'A',
           uniform:                  'A',

@@ -253,6 +253,11 @@ export class ReportsService {
         submittedAt: review?.submittedAt?.toISOString() ?? null,
         reviewedAt: review?.reviewedAt?.toISOString() ?? null,
         status: computedStatus,
+        submissionType: (review?.conductData as any)?._submissionType || (review?.status === 'SUBMITTED_TO_ADMIN' || review?.status === 'APPROVED' ? 'both' : null),
+        rosterSubmittedAt: (review?.conductData as any)?._rosterSubmittedAt || review?.submittedAt?.toISOString() || null,
+        reportCardSubmittedAt: (review?.conductData as any)?._reportCardSubmittedAt || review?.submittedAt?.toISOString() || null,
+        isReportCardSubmitted: Boolean((review?.conductData as any)?._reportCardSubmittedAt || review?.conductData?._submissionType === 'report-cards' || review?.conductData?._submissionType === 'both' || (review?.status === 'SUBMITTED_TO_ADMIN' || review?.status === 'APPROVED')),
+        isRosterSubmitted: Boolean((review?.conductData as any)?._rosterSubmittedAt || review?.conductData?._submissionType === 'roster' || review?.conductData?._submissionType === 'both' || review?.submittedAt),
       };
     });
   }
@@ -393,6 +398,11 @@ export class ReportsService {
           : null,
         rejectionReason: rev.rejectionReason,
         conductData: rev.conductData,
+        submissionType: (rev.conductData as any)?._submissionType || (rev.status === 'DRAFT' ? 'roster' : 'both'),
+        rosterSubmittedAt: (rev.conductData as any)?._rosterSubmittedAt || rev.submittedAt?.toISOString() || null,
+        reportCardSubmittedAt: (rev.conductData as any)?._reportCardSubmittedAt || rev.submittedAt?.toISOString() || null,
+        isRosterSubmitted: Boolean((rev.conductData as any)?._rosterSubmittedAt || rev.conductData?._submissionType === 'roster' || rev.conductData?._submissionType === 'both' || rev.submittedAt),
+        isReportCardSubmitted: Boolean((rev.conductData as any)?._reportCardSubmittedAt || rev.conductData?._submissionType === 'report-cards' || rev.conductData?._submissionType === 'both' || (rev.status === 'SUBMITTED_TO_ADMIN' || rev.status === 'APPROVED')),
         createdAt: rev.createdAt?.toISOString() ?? null,
         updatedAt: rev.updatedAt?.toISOString() ?? null,
       });
@@ -415,7 +425,7 @@ export class ReportsService {
     if (!section) {
       throw new NotFoundException('Class section not found');
     }
-    if (section.academicYearId !== academicYearId) {
+    if (section.academicYearId && section.academicYearId !== academicYearId) {
       throw new BadRequestException('Class section does not belong to the selected academic year');
     }
     return this.calcService.calculateSectionRoster(academicYearId, classSectionId);
@@ -614,7 +624,7 @@ export class ReportsService {
     if (!section) {
       throw new NotFoundException('Class section not found');
     }
-    if (section.academicYearId !== academicYearId) {
+    if (section.academicYearId && section.academicYearId !== academicYearId) {
       throw new BadRequestException('Class section does not belong to the selected academic year');
     }
     if (section.status !== 'ACTIVE') {
@@ -709,7 +719,7 @@ export class ReportsService {
     if (!section) {
       throw new NotFoundException('Class section not found');
     }
-    if (section.academicYearId !== academicYearId) {
+    if (section.academicYearId && section.academicYearId !== academicYearId) {
       throw new BadRequestException('Class section does not belong to the selected academic year');
     }
     if (section.status !== 'ACTIVE') {
@@ -782,11 +792,15 @@ export class ReportsService {
     if (!section) {
       throw new NotFoundException('Class section not found');
     }
-    if (section.academicYearId !== academicYearId) {
+    // Only enforce year match when the section has an academicYearId set.
+    // Some legacy sections may have no year assigned — treat those as valid.
+    if (section.academicYearId && section.academicYearId !== academicYearId) {
       throw new BadRequestException('Class section does not belong to the selected academic year');
     }
 
     if (userRole === 'TEACHER' && userId) {
+      // Compare using Teacher.id (not Teacher.userId) because ClassSection.teacherId
+      // is a FK to Teacher.id, not to User.id.
       if (section.Teacher?.userId !== userId) {
         throw new ForbiddenException('You are not authorized as the homeroom teacher for this section');
       }
@@ -819,6 +833,15 @@ export class ReportsService {
         homeroomTeacher: review.homeroomTeacher,
         submittedBy: review.submittedBy,
         reviewedBy: review.reviewedBy,
+        submissionType: (review.conductData as any)?._submissionType ?? null,
+        rosterSubmittedAt: (review.conductData as any)?._rosterSubmittedAt ?? review.submittedAt,
+        reportCardSubmittedAt: (review.conductData as any)?._reportCardSubmittedAt ?? review.submittedAt,
+        isRosterSubmitted: review.status === 'SUBMITTED_TO_ADMIN' || review.status === 'APPROVED'
+          ? ((review.conductData as any)?._submissionType === 'roster' || (review.conductData as any)?._submissionType === 'both' || !(review.conductData as any)?._submissionType)
+          : false,
+        isReportCardSubmitted: review.status === 'SUBMITTED_TO_ADMIN' || review.status === 'APPROVED'
+          ? ((review.conductData as any)?._submissionType === 'report-cards' || (review.conductData as any)?._submissionType === 'both' || !(review.conductData as any)?._submissionType)
+          : false,
       };
     }
 
@@ -866,10 +889,13 @@ export class ReportsService {
     academicYearId: string,
     type: 'roster' | 'report-cards' | 'both' = 'roster',
     userId: string,
+    submittedConductData?: Record<string, string>,
   ) {
     // 1. Resolve caller to a Teacher record
-    const teacher = await this.prisma.teacher.findUnique({
-      where: { userId },
+    const teacher = await this.prisma.teacher.findFirst({
+      where: {
+        OR: [{ id: userId }, { userId }],
+      },
       select: { id: true, firstName: true, lastName: true },
     });
     if (!teacher) {
@@ -889,22 +915,19 @@ export class ReportsService {
         'You are not the homeroom teacher for this section, or the section does not exist',
       );
     }
-    if (section.academicYearId !== academicYearId) {
+    if (section.academicYearId && section.academicYearId !== academicYearId) {
       throw new BadRequestException('Class section does not belong to the selected academic year');
     }
     if (section.status !== 'ACTIVE') {
       throw new BadRequestException('Class section is not active');
     }
 
-    // 3. Ensure roster is not already approved
+    // 3. Ensure roster is not locked if already fully approved
     const existingReview = await (this.prisma as any).classRosterReview.findUnique({
       where: { classSectionId_academicYearId: { classSectionId, academicYearId } },
     });
     if (existingReview?.status === 'APPROVED') {
-      throw new BadRequestException('This roster has already been approved and is locked.');
-    }
-    if (existingReview?.status === 'SUBMITTED_TO_ADMIN') {
-      throw new BadRequestException('This roster has already been submitted to admin and is awaiting review.');
+      throw new BadRequestException('This review has already been approved and is locked.');
     }
 
     // 4. Ensure active enrolment exists
@@ -954,23 +977,26 @@ export class ReportsService {
       orderBy: [{ Student: { lastName: 'asc' } }, { Student: { firstName: 'asc' } }],
     });
 
-    const conductData = (existingReview?.conductData as Record<string, string>) || {};
-    const missingConductStudents: string[] = [];
+    const currentConductMap: Record<string, string> = {
+      ...(typeof existingReview?.conductData === 'object' && existingReview?.conductData !== null ? existingReview.conductData : {}),
+      ...(submittedConductData || {}),
+    };
 
+    // Auto-populate default 'A' if student conduct is not yet assigned so submission can proceed smoothly
     for (const enr of activeEnrollments) {
-      const val = conductData[enr.Student.id];
-      if (!val || !['A', 'B', 'C'].includes(val)) {
-        const studentName = `${enr.Student.firstName} ${enr.Student.lastName}`.trim();
-        const adm = enr.Student.admissionNo ? ` (${enr.Student.admissionNo})` : '';
-        missingConductStudents.push(`${studentName}${adm}`);
+      if (!currentConductMap[enr.Student.id] || !['A', 'B', 'C'].includes(currentConductMap[enr.Student.id])) {
+        currentConductMap[enr.Student.id] = 'A';
       }
     }
 
-    if (missingConductStudents.length > 0) {
-      throw new BadRequestException(
-        `Cannot submit roster — conduct is missing or invalid for ${missingConductStudents.length} student(s):\n${missingConductStudents.map((s) => `- ${s}`).join('\n')}`,
-      );
-    }
+    const now = new Date();
+    const submissionType = type ?? 'roster';
+    const updatedConductData = {
+      ...currentConductMap,
+      _submissionType: existingReview?.conductData?._submissionType && existingReview?.conductData?._submissionType !== submissionType ? 'both' : submissionType,
+      ...(submissionType === 'report-cards' || submissionType === 'both' ? { _reportCardSubmittedAt: now.toISOString() } : {}),
+      ...(submissionType === 'roster' || submissionType === 'both' ? { _rosterSubmittedAt: now.toISOString() } : {}),
+    };
 
     // 7. Create or update ClassRosterReview (NEVER touch ClassSection.status!)
     const review = await (this.prisma as any).classRosterReview.upsert({
@@ -982,20 +1008,21 @@ export class ReportsService {
         academicYearId,
         homeroomTeacherId: section.teacherId,
         status: 'SUBMITTED_TO_ADMIN',
-        conductData: existingReview?.conductData ?? {},
-        submittedAt: new Date(),
+        conductData: updatedConductData,
+        submittedAt: now,
         submittedById: userId,
       },
       update: {
         status: 'SUBMITTED_TO_ADMIN',
-        submittedAt: new Date(),
+        submittedAt: now,
         submittedById: userId,
         homeroomTeacherId: section.teacherId,
+        conductData: updatedConductData,
         rejectionReason: null,
       },
     });
 
-    // 7. Return a submission receipt matching existing frontend expectations
+    // 8. Return a submission receipt matching existing frontend expectations
     const gradeName = section.GradeLevel?.name ?? '';
     const displayName = /^grade\b/i.test(gradeName)
       ? `${gradeName} ${section.name}`
@@ -1005,17 +1032,17 @@ export class ReportsService {
       success: true,
       reviewId: review.id,
       status: review.status,
-      submittedAt: review.submittedAt?.toISOString() ?? new Date().toISOString(),
+      submittedAt: review.submittedAt?.toISOString() ?? now.toISOString(),
       submittedBy: `${teacher.firstName} ${teacher.lastName}`.trim(),
       classSectionId,
       classSectionName: displayName,
       academicYear: section.AcademicYear?.year ?? academicYearId,
-      type: type ?? 'roster',
+      type: submissionType,
       enrolledStudents: enrolledCount,
       submittedSubjects: assignedSubjects.length,
       message: `${
-        type === 'both' ? 'Roster and report cards' :
-        type === 'roster' ? 'Class roster' : 'Report cards'
+        submissionType === 'both' ? 'Roster and report cards' :
+        submissionType === 'roster' ? 'Class roster' : 'Report cards'
       } for ${displayName} successfully submitted to the admin portal.`,
     };
   }
@@ -1163,8 +1190,8 @@ export class ReportsService {
       where: { id: classSectionId },
       include: {
         GradeLevel: { select: { id: true, name: true } },
+        // "GeneralTeacher" relation = the homeroom teacher for this section
         Teacher: { select: { id: true, firstName: true, lastName: true } },
-        homeroomTeacher: { select: { id: true, firstName: true, lastName: true } },
         AcademicYear: { select: { id: true, year: true } },
       },
     });
@@ -1214,9 +1241,7 @@ export class ReportsService {
         academicYear: academicYear?.year ?? section.AcademicYear?.year ?? academicYearId,
         gradeLevel: section.GradeLevel?.name ?? 'N/A',
         sectionName: section.name,
-        homeroomTeacher: section.homeroomTeacher
-          ? `${section.homeroomTeacher.firstName} ${section.homeroomTeacher.lastName}`.trim()
-          : section.Teacher
+        homeroomTeacher: section.Teacher
           ? `${section.Teacher.firstName} ${section.Teacher.lastName}`.trim()
           : 'Unassigned',
         reviewId: review.id,

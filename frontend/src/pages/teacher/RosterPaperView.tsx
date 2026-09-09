@@ -42,7 +42,15 @@ export default function RosterPaperView() {
 
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = querySectionId || homeroomContext?.assignedSection?.id;
-  const yearId = queryYearId || currentYear?.id;
+  // Priority: URL param > section's own academicYearId > current/first year.
+  // The URL param lets the admin roster page pass an explicit year.
+  // For the teacher view we must use the section's year, not the first year
+  // in the list, to prevent academic-year mismatches on the backend.
+  const yearId =
+    queryYearId ||
+    (homeroomContext?.assignedSection?.academicYearId ??
+      homeroomContext?.academicYearId ??
+      currentYear?.id);
 
   const { data: reviewStatusData, isLoading: statusLoading } = useRosterReviewStatus(sectionId, yearId);
   const reviewStatus = reviewStatusData?.status ?? 'DRAFT';

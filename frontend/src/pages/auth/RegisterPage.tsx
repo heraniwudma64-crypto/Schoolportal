@@ -101,6 +101,7 @@ export default function RegisterPage() {
         ...form,
         name: form.name.trim(),
         idNumber: form.idNumber.trim(),
+        studentId: form.role === 'student' ? form.idNumber.trim() : undefined,
         email: form.email.trim() || undefined,
         guardianEmail: form.guardianEmail.trim() || undefined,
         role: form.role.toUpperCase(),

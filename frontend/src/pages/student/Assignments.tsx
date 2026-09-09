@@ -64,7 +64,7 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
         const formattedData: FormattedAssignment[] = list.map((item) => ({
           id: item.id,
           title: item.title || 'Untitled',
-          subjectName: item.ClassSection?.name || item.targetClass || 'General',
+          subjectName: item.subject || item.ClassSection?.name || item.targetClass || 'General',
           description: item.instructions || '',
           dueDate: item.dueDate ? new Date(item.dueDate).toLocaleDateString() : 'No date',
           rawDueDate: item.dueDate,

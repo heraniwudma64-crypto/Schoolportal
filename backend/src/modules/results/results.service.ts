@@ -278,18 +278,19 @@ export class ResultsService {
 
   // Homeroom Teacher checks submission status across all subjects
   async getHomeroomSubmissionMatrix(classSectionId: string, academicYearId: string, term: string, userId: string) {
-    const section = await this.prisma.classSection.findFirst({
-      where: {
-        id: classSectionId,
-        homeroomTeacher: { userId },
-      },
-      select: {
-        id: true,
-        name: true,
-        GradeLevel: { select: { name: true } },
-        AcademicYear: { select: { year: true } },
-      },
-    });
+    // Homeroom teacher is stored via ClassSection.teacherId
+    const teacher = await this.prisma.teacher.findFirst({ where: { userId }, select: { id: true } });
+    const section = teacher
+      ? await this.prisma.classSection.findFirst({
+          where: { id: classSectionId, teacherId: teacher.id },
+          select: {
+            id: true,
+            name: true,
+            GradeLevel: { select: { name: true } },
+            AcademicYear: { select: { year: true } },
+          },
+        })
+      : null;
     if (!section) throw new ForbiddenException('Only the homeroom teacher can view this submission matrix');
 
     const [enrolledCount, assignedSubjects, allSubmittedResults, allReturnedResults, allPendingCorrections, review] = await Promise.all([
@@ -455,11 +456,14 @@ export class ResultsService {
 
   // Get all student results for a given class, term
   async getStudentResults(classSectionId: string, academicYearId: string, term: string, userId: string) {
-    // Verify user is homeroom teacher for this section directly
-    const section = await this.prisma.classSection.findFirst({
-      where: { id: classSectionId, homeroomTeacher: { userId } },
-      select: { id: true },
-    });
+    // Verify user is homeroom teacher for this section
+    const teacher = await this.prisma.teacher.findFirst({ where: { userId }, select: { id: true } });
+    const section = teacher
+      ? await this.prisma.classSection.findFirst({
+          where: { id: classSectionId, teacherId: teacher.id },
+          select: { id: true },
+        })
+      : null;
     if (!section) throw new ForbiddenException('Only the homeroom teacher can view student results');
 
     // Fetch all submitted results for this section/term

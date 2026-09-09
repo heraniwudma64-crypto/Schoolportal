@@ -10,7 +10,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
   RefreshCw, Printer, Download, CheckCircle2, AlertCircle,
-  Clock, ChevronDown, ChevronUp, FileText,
+  Clock, ChevronDown, ChevronUp, FileText, Search, Save, Send,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
@@ -19,8 +19,10 @@ import {
   useHomeroomContext,
   useHomeroomSubmissionMatrix,
   useCompiledReportCards,
+  useRosterReviewStatus,
   ReportCardData,
 } from '../../hooks/useHomeroom';
+import { saveHomeroomConduct, submitReportCardsToAdmin } from '../../api/adminReports';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,6 +123,7 @@ function GradeSelect({
 export default function HomeroomReportCards() {
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [overrides, setOverrides] = useState<Record<string, StudentOverride>>({});
   const [expandedStudents, setExpandedStudents] = useState<Record<string, boolean>>({});
   const [showPrint, setShowPrint] = useState(false);
@@ -129,9 +132,15 @@ export default function HomeroomReportCards() {
   const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
   const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
+  // Always derive yearId from the section's own academicYearId so all queries
+  // match the section's year exactly. Fall back to the active/first year only
+  // when context hasn't resolved yet.
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = homeroomContext?.assignedSection?.id;
-  const yearId = currentYear?.id;
+  const yearId =
+    homeroomContext?.assignedSection?.academicYearId ??
+    homeroomContext?.academicYearId ??
+    currentYear?.id;
 
   const {
     data: matrix,
@@ -149,16 +158,25 @@ export default function HomeroomReportCards() {
     refetch: refetchCards,
   } = useCompiledReportCards(sectionId, yearId);
 
-  const loading   = contextLoading || yearsLoading || ((matrixLoading || cardsLoading) && !compiledStudents.length);
+  const [savingConduct, setSavingConduct] = useState(false);
+  const [submittingCards, setSubmittingCards] = useState(false);
+
+  const {
+    data: reviewStatusData,
+    refetch: refetchReviewStatus,
+  } = useRosterReviewStatus(sectionId, yearId);
+
+  const reviewStatus = reviewStatusData?.status || 'DRAFT';
+  const isReportCardSubmitted = reviewStatusData?.isReportCardSubmitted ?? (reviewStatus === 'SUBMITTED_TO_ADMIN' || reviewStatus === 'APPROVED');
+  const isReportCardApproved = reviewStatus === 'APPROVED';
+
+  const loading   = contextLoading || (yearsLoading && !yearId) || ((matrixLoading || cardsLoading) && !compiledStudents.length);
   const refreshing = (matrixFetching || cardsFetching) && !loading;
 
   const error =
-    (contextError as any)?.response?.data?.message ||
     (contextError as any)?.message ||
     (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
-    (matrixError as any)?.response?.data?.message ||
     (matrixError as any)?.message ||
-    (cardsError as any)?.response?.data?.message ||
     (cardsError as any)?.message ||
     '';
 
@@ -245,8 +263,57 @@ export default function HomeroomReportCards() {
   };
 
   const handleRefresh = async () => {
-    try { await Promise.all([refetchMatrix(), refetchCards()]); toast.success('Refreshed'); }
-    catch (err: any) { toast.error(err?.message ?? 'Refresh failed'); }
+    try {
+      await Promise.all([refetchMatrix(), refetchCards(), refetchReviewStatus()]);
+      toast.success('Refreshed');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Refresh failed');
+    }
+  };
+
+  const handleSaveConduct = async () => {
+    if (!sectionId || !yearId) return;
+    setSavingConduct(true);
+    try {
+      const conductMap: Record<string, string> = {};
+      compiledStudents.forEach((s) => {
+        const ov = getOverride(s.studentId);
+        conductMap[s.studentId] = ov.conduct || 'A';
+      });
+      await saveHomeroomConduct(sectionId, yearId, conductMap);
+      toast.success('Conduct saved successfully');
+      await Promise.all([refetchCards(), refetchReviewStatus()]);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save conduct');
+    } finally {
+      setSavingConduct(false);
+    }
+  };
+
+  const handleSubmitToAdmin = async () => {
+    if (!sectionId || !yearId) return;
+    if (compiledStudents.length === 0) {
+      toast.error('No students enrolled to submit');
+      return;
+    }
+
+    setSubmittingCards(true);
+    try {
+      const conductMap: Record<string, string> = {};
+      compiledStudents.forEach((s) => {
+        const ov = getOverride(s.studentId);
+        conductMap[s.studentId] = ov.conduct || 'A';
+      });
+      await saveHomeroomConduct(sectionId, yearId, conductMap);
+
+      await submitReportCardsToAdmin(sectionId, yearId);
+      toast.success('✓ Report cards successfully submitted to Admin for review!');
+      await Promise.all([refetchCards(), refetchReviewStatus(), refetchMatrix()]);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to submit report cards');
+    } finally {
+      setSubmittingCards(false);
+    }
   };
 
   // ── Render states ─────────────────────────────────────────────────────────
@@ -274,7 +341,13 @@ export default function HomeroomReportCards() {
   );
 
   const subjectRows = matrix?.matrix ?? matrix?.subjects ?? [];
-  const allSelected = compiledStudents.length > 0 && selectedStudents.length === compiledStudents.length;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visibleStudents = normalizedSearch
+    ? compiledStudents.filter((student) =>
+        `${student.firstName} ${student.lastName} ${student.admissionNo}`.toLowerCase().includes(normalizedSearch),
+      )
+    : compiledStudents;
+  const allSelected = visibleStudents.length > 0 && visibleStudents.every((student) => selectedStudents.includes(student.studentId));
 
   // Students to put into the print overlay
   const printStudents = compiledStudents
@@ -298,14 +371,39 @@ export default function HomeroomReportCards() {
       <div className={cn('max-w-5xl space-y-6', showPrint && 'hidden print:hidden')}>
 
         {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Report Card Preparation</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">Report Card Preparation</h1>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider inline-flex items-center gap-1.5 ${
+                  isReportCardApproved
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : isReportCardSubmitted
+                    ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                    : reviewStatus === 'REJECTED'
+                    ? 'bg-red-100 text-red-800 border border-red-300'
+                    : 'bg-gray-100 text-gray-700 border border-gray-300'
+                }`}
+              >
+                {isReportCardApproved && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                {isReportCardSubmitted && !isReportCardApproved && <Clock className="w-3.5 h-3.5 text-blue-600" />}
+                {reviewStatus === 'REJECTED' && <AlertCircle className="w-3.5 h-3.5 text-red-600" />}
+                {!isReportCardSubmitted && reviewStatus !== 'REJECTED' && <FileText className="w-3.5 h-3.5 text-gray-500" />}
+                {isReportCardApproved
+                  ? 'Approved'
+                  : isReportCardSubmitted
+                  ? 'Submitted to Admin'
+                  : reviewStatus === 'REJECTED'
+                  ? 'Returned / Rejected'
+                  : 'Draft'}
+              </span>
+            </div>
             <p className="text-sm text-gray-500 mt-0.5">
-              Set competency grades and remarks, then print selected student cards.
+              Set competency grades and remarks, then submit to Admin for review or print selected cards.
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button onClick={handleRefresh} disabled={refreshing}
               className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 disabled:opacity-50">
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -315,12 +413,45 @@ export default function HomeroomReportCards() {
               className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">
               <Download className="w-4 h-4" /> Export CSV
             </button>
+            {!isReportCardApproved && (
+              <button
+                onClick={handleSaveConduct}
+                disabled={savingConduct}
+                className="flex items-center gap-2 px-3 py-2 border border-blue-600 text-blue-700 rounded-lg text-sm font-semibold hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                title="Save conduct grades for all students"
+              >
+                <Save className="w-4 h-4" />
+                {savingConduct ? 'Saving…' : 'Save Conduct'}
+              </button>
+            )}
+            {!isReportCardApproved && (
+              <button
+                onClick={handleSubmitToAdmin}
+                disabled={submittingCards || isReportCardSubmitted}
+                className="flex items-center gap-2 px-3.5 py-2 bg-indigo-900 text-white rounded-lg text-sm font-semibold hover:bg-indigo-950 disabled:opacity-50 transition-colors shadow-sm"
+                title={isReportCardSubmitted ? 'Already submitted to Admin' : 'Submit report cards to Admin for review'}
+              >
+                <Send className="w-4 h-4" />
+                {submittingCards ? 'Submitting…' : isReportCardSubmitted ? 'Submitted to Admin' : 'Submit to Admin'}
+              </button>
+            )}
             <button onClick={handlePrint}
               className="flex items-center gap-2 px-4 py-2 bg-blue-900 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 shadow-sm shadow-blue-900/20">
               <Printer className="w-4 h-4" /> Print Selected ({selectedStudents.length})
             </button>
           </div>
         </div>
+
+        {/* ── Rejection notice if rejected by admin ── */}
+        {reviewStatus === 'REJECTED' && reviewStatusData?.rejectionReason && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-red-900 text-sm">Report Cards Returned by Admin</p>
+              <p className="text-red-700 text-xs mt-1">{reviewStatusData.rejectionReason}</p>
+            </div>
+          </div>
+        )}
 
         {/* ── Term selector ── */}
         <div className="bg-white border rounded-xl p-4">
@@ -405,10 +536,16 @@ export default function HomeroomReportCards() {
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
                 <input type="checkbox" checked={allSelected}
-                  onChange={(e) => setSelectedStudents(e.target.checked ? compiledStudents.map((s) => s.studentId) : [])} />
+                  onChange={(e) => setSelectedStudents((current) => e.target.checked
+                    ? [...new Set([...current, ...visibleStudents.map((student) => student.studentId)])]
+                    : current.filter((id) => !visibleStudents.some((student) => student.studentId === id)))} />
                 <span className="font-semibold text-gray-700">
-                  Select all ({compiledStudents.length} students)
+                  Select all ({visibleStudents.length} students)
                 </span>
+              </label>
+              <label className="relative ml-auto w-full max-w-xs">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search name or student ID" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
               </label>
             </div>
             <span className="text-xs text-gray-400 font-semibold">
@@ -423,7 +560,7 @@ export default function HomeroomReportCards() {
             </div>
           ) : (
             <div className="divide-y">
-              {compiledStudents.map((student) => {
+              {visibleStudents.map((student) => {
                 const ov = getOverride(student.studentId);
                 const expanded = !!expandedStudents[student.studentId];
                 const isSelected = selectedStudents.includes(student.studentId);
@@ -529,6 +666,7 @@ export default function HomeroomReportCards() {
                   </div>
                 );
               })}
+              {!visibleStudents.length && <p className="p-8 text-center text-sm text-gray-500">No students match that name or student ID.</p>}
             </div>
           )}
         </div>

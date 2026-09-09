@@ -25,6 +25,58 @@ export interface AdminSectionSummary {
   reviewedAt?: string | null;
   /** UI-friendly label: 'Submitted' | 'Pending Review' | 'Draft' */
   status: string;
+  submissionType?: 'roster' | 'report-cards' | 'both' | null;
+  rosterSubmittedAt?: string | null;
+  reportCardSubmittedAt?: string | null;
+  isReportCardSubmitted?: boolean;
+  isRosterSubmitted?: boolean;
+}
+
+export interface AdminRosterReview {
+  id: string;
+  classSectionId: string;
+  academicYearId: string;
+  homeroomTeacherId: string;
+  status: 'DRAFT' | 'SUBMITTED_TO_ADMIN' | 'APPROVED' | 'REJECTED';
+  submittedAt?: string | null;
+  submittedById?: string | null;
+  reviewedAt?: string | null;
+  reviewedById?: string | null;
+  rejectionReason?: string | null;
+  conductData?: Record<string, any>;
+  classSection?: {
+    id: string;
+    name: string;
+    gradeLevel?: {
+      id: string;
+      name: string;
+    };
+  };
+  academicYear?: {
+    id: string;
+    name: string;
+  };
+  homeroomTeacher?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    staffId?: string;
+  };
+  submittedBy?: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  reviewedBy?: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  submissionType?: 'roster' | 'report-cards' | 'both' | null;
+  rosterSubmittedAt?: string | null;
+  reportCardSubmittedAt?: string | null;
+  isRosterSubmitted?: boolean;
+  isReportCardSubmitted?: boolean;
 }
 
 export interface AdminReportCardStudent {

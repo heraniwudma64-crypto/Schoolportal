@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { FiSend, FiUpload, FiFileText, FiCalendar, FiBookOpen } from 'react-icons/fi';
 import { api } from '../../lib/api';
 import { formatClassSection } from '../../lib/classSection';
+import ReviewSubmissionModal, { SubmissionReviewData } from '../../components/dashboard/ReviewSubmissionModal';
 
 export default function PublishAssignmentPage() {
   const [formData, setFormData] = useState({
@@ -20,18 +21,44 @@ export default function PublishAssignmentPage() {
   // Example recent publications data matching the design
   const [recentPublications, setRecentPublications] = useState<any[]>([]);
   const [selectedSubmissions, setSelectedSubmissions] = useState<any[]>([]);
+  const [reviewSubmission, setReviewSubmission] = useState<SubmissionReviewData | null>(null);
+
+  const fetchAssignments = () => {
+    api.get<any[]>('/assignments/teacher').then((assignments) => {
+      setRecentPublications(assignments.map((item) => ({
+        id: item.id,
+        title: item.title,
+        subject: item.subject,
+        targetClass: item.ClassSection?.name || item.targetClass || '',
+        instructions: item.instructions || item.description || '',
+        time: new Date(item.createdAt).toLocaleString(),
+        submissions: item.submissions || [],
+      })));
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     api.get<any[]>('/teachers/assignments').then((assignments) => {
       setTeachingAssignments(assignments);
       const first = assignments[0];
       if (first) setFormData((current) => ({ ...current, subjectId: first.subjectId, classSectionId: first.classSectionId }));
-      setRecentPublications(assignments.map((item) => ({ id: item.id, title: item.title, targetClass: item.ClassSection?.name || item.targetClass || '', time: new Date(item.createdAt).toLocaleString(), submissions: item.submissions || [] })));
     });
+    fetchAssignments();
   }, []);
 
-  const loadSubmissions = async (id: string) => {
-    try { setSelectedSubmissions(await api.get<any[]>(`/assignments/${id}/submissions`)); } catch (error: any) { alert(error.message || 'Could not load submissions'); }
+  const loadSubmissions = async (assignment: any) => {
+    try {
+      const subs = await api.get<any[]>(`/assignments/${assignment.id}/submissions`);
+      setSelectedSubmissions(subs.map((s) => ({
+        ...s,
+        assignmentTitle: assignment.title,
+        subject: assignment.subject || '',
+        targetClass: assignment.targetClass || '',
+        instructions: assignment.instructions || '',
+      })));
+    } catch (error: any) {
+      alert(error.message || 'Could not load submissions');
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -60,6 +87,7 @@ export default function PublishAssignmentPage() {
       ]);
 
       setMessage('Assignment published successfully and distributed to enrolled students!');
+      fetchAssignments();
       setFormData({
         subjectId: teachingAssignments[0]?.subjectId || '',
         classSectionId: teachingAssignments[0]?.classSectionId || '',
@@ -220,14 +248,105 @@ export default function PublishAssignmentPage() {
                 <p className="text-[11px] font-bold text-gray-400 tracking-wider mt-1">
                   {item.targetClass} • {item.time}
                 </p>
-                <button type="button" onClick={() => loadSubmissions(item.id)} className="mt-3 text-xs font-bold text-blue-800">View student responses ({item.submissions?.length || 0})</button>
+                <button 
+                  type="button" 
+                  onClick={() => loadSubmissions(item)} 
+                  className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-blue-800 hover:text-blue-950"
+                >
+                  View student responses ({item.submissions?.length || 0})
+                </button>
               </div>
             ))}
+            {recentPublications.length === 0 && (
+              <p className="text-xs text-gray-400 italic">No published assignments yet.</p>
+            )}
           </div>
         </div>
 
-        {selectedSubmissions.length > 0 && <div className="mt-4 bg-blue-50 border border-blue-100 rounded-xl p-4"><h3 className="font-bold">Student responses</h3>{selectedSubmissions.map((submission) => <div key={submission.id} className="py-2 text-sm border-b border-blue-100">{submission.student?.firstName} {submission.student?.lastName} <span className="text-gray-500">submitted {new Date(submission.createdAt).toLocaleString()}</span></div>)}</div>}
+        {selectedSubmissions.length > 0 && (
+          <div className="lg:col-span-3 mt-4 bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">
+                  Student Responses: {selectedSubmissions[0]?.assignmentTitle}
+                </h3>
+                <p className="text-xs text-gray-500">
+                  {selectedSubmissions[0]?.subject} {selectedSubmissions[0]?.targetClass ? `• ${selectedSubmissions[0]?.targetClass}` : ''} ({selectedSubmissions.length} submission{selectedSubmissions.length === 1 ? '' : 's'})
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setSelectedSubmissions([])} 
+                className="text-xs text-gray-400 hover:text-gray-700 font-semibold"
+              >
+                Close list
+              </button>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {selectedSubmissions.map((submission) => {
+                const isGraded = submission.grades && submission.grades.length > 0;
+                return (
+                  <div key={submission.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-gray-50/50 p-2 rounded-xl transition">
+                    <div>
+                      <p className="font-bold text-sm text-gray-900">
+                        {submission.student?.firstName} {submission.student?.lastName}
+                        <span className="text-xs font-normal text-gray-400 ml-2">({submission.student?.admissionNo})</span>
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Submitted: {new Date(submission.createdAt).toLocaleString()}
+                        {submission.fileName ? ` • File: ${submission.fileName}` : ''}
+                        {submission.content ? ' • Written answer provided' : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${isGraded ? 'bg-green-100 text-green-800' : 'bg-blue-50 text-blue-800'}`}>
+                        {isGraded ? `Graded (${submission.grades[0].score}/${submission.grades[0].maxScore})` : 'Needs Review'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setReviewSubmission({
+                          id: submission.id,
+                          assignmentId: submission.assignmentId,
+                          assignmentTitle: submission.assignmentTitle,
+                          subject: submission.subject,
+                          targetClass: submission.targetClass,
+                          instructions: submission.instructions,
+                          studentId: submission.student?.id || submission.studentId,
+                          studentName: `${submission.student?.firstName || ''} ${submission.student?.lastName || ''}`.trim(),
+                          admissionNo: submission.student?.admissionNo || '',
+                          submittedAt: submission.createdAt,
+                          content: submission.content || null,
+                          fileName: submission.fileName || null,
+                          fileUrl: submission.fileUrl || null,
+                          fileSize: submission.fileSize || null,
+                          isGraded,
+                          grade: isGraded ? { score: submission.grades[0].score, maxScore: submission.grades[0].maxScore } : null,
+                        })}
+                        className="px-3 py-1.5 rounded-lg bg-blue-900 hover:bg-blue-950 text-white text-xs font-semibold shadow-sm transition"
+                      >
+                        Open / Review Answer
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
+        {/* Review Submission Modal */}
+        <ReviewSubmissionModal
+          submission={reviewSubmission}
+          isOpen={!!reviewSubmission}
+          onClose={() => setReviewSubmission(null)}
+          onGraded={(subId, score, maxScore) => {
+            setSelectedSubmissions((prev) => prev.map((s) => s.id === subId ? {
+              ...s,
+              grades: [{ score, maxScore, id: 'graded' }],
+            } : s));
+            fetchAssignments();
+          }}
+        />
       </div>
     </div>
   );

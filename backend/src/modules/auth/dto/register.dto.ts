@@ -22,6 +22,11 @@ export class RegisterDto {
   idNumber!: string;
 
   @IsOptional()
+  @IsString()
+  @MinLength(2, { message: 'Student ID must be at least 2 characters' })
+  studentId?: string;
+
+  @IsOptional()
   @Transform(({ value }) => (value === '' || value === null ? undefined : value))
   @IsEmail({}, { message: 'Please enter a valid account email address' })
   email?: string;

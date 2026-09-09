@@ -48,9 +48,16 @@ export default function HomeroomRosterRedesigned() {
   const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
   const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
+  // Always use the section's own academic year ID so all downstream queries
+  // (roster, review status, conduct, submit) match the section's year exactly.
+  // Falls back to the current/first year from the years list only when the
+  // context hasn't loaded yet or the section carries no year.
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = homeroomContext?.assignedSection?.id;
-  const yearId = currentYear?.id;
+  const yearId =
+    homeroomContext?.assignedSection?.academicYearId ??
+    homeroomContext?.academicYearId ??
+    currentYear?.id;
 
   // 2. Consolidated Roster Query
   const {
@@ -87,12 +94,10 @@ export default function HomeroomRosterRedesigned() {
     }
   }, [data]);
 
-  const loading = contextLoading || yearsLoading || (rosterLoading && !data);
+  const loading = contextLoading || (yearsLoading && !yearId) || (rosterLoading && !data);
   const error =
-    (contextError as any)?.response?.data?.message ||
     (contextError as any)?.message ||
     (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
-    (rosterError as any)?.response?.data?.message ||
     (rosterError as any)?.message ||
     '';
 
@@ -103,7 +108,7 @@ export default function HomeroomRosterRedesigned() {
       await Promise.all([refetch(), refetchReviewStatus()]);
       toast.success('Roster refreshed');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Refresh failed');
+      toast.error(err?.message ?? 'Refresh failed');
     }
   };
 
@@ -124,7 +129,7 @@ export default function HomeroomRosterRedesigned() {
       setConductDirty(false);
       await Promise.all([refetch(), refetchReviewStatus()]);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to save conduct');
+      toast.error(err?.message || 'Failed to save conduct');
     } finally {
       setSavingConduct(false);
     }
@@ -159,7 +164,7 @@ export default function HomeroomRosterRedesigned() {
         await saveHomeroomConduct(sectionId, yearId, conductState);
         setConductDirty(false);
       } catch (err: any) {
-        toast.error('Failed to save conduct before submission: ' + (err?.response?.data?.message || err.message));
+        toast.error('Failed to save conduct before submission: ' + (err?.message || 'Unknown error'));
         return;
       }
     }
@@ -170,7 +175,7 @@ export default function HomeroomRosterRedesigned() {
       toast.success('✓ Roster successfully submitted to Admin for review!');
       await Promise.all([refetch(), refetchReviewStatus()]);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to submit roster to admin');
+      toast.error(err?.message || 'Failed to submit roster to admin');
     } finally {
       setSubmittingRoster(false);
     }

@@ -30,10 +30,11 @@ export default function HomeroomRoster() {
     const load = async () => {
       try {
         const [context, years] = await Promise.all([
-          api.get<{ assignedSection: { id: string } | null }>('/teachers/me/homeroom-context'),
+          api.get<{ assignedSection: { id: string; academicYearId?: string } | null; academicYearId?: string }>('/teachers/me/homeroom-context'),
           getAcademicYears(),
         ]);
-        const year = years.find((item) => item.isCurrent) || years[0];
+        const targetYearId = context.assignedSection?.academicYearId || context.academicYearId;
+        const year = (targetYearId ? years.find((item) => item.id === targetYearId) : null) || years.find((item) => item.isCurrent) || years[0];
         if (!context.assignedSection || !year) throw new Error('No homeroom section or academic year is assigned');
         setData(await api.get<ConsolidatedRoster>(`/roster/consolidated?academicYearId=${year.id}&classSectionId=${context.assignedSection.id}`));
       } catch (err: any) { setError(err.message || 'Could not load the consolidated roster'); }

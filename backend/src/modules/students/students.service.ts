@@ -308,6 +308,22 @@ export class StudentsService {
       if (file && existing?.fileUrl && existing.fileUrl !== uploadedPath) {
         await this.usersService.removeSubmissionFile(existing.fileUrl);
       }
+      try {
+        const studentAssignment = await this.prisma.studentAssignment.findFirst({
+          where: {
+            assignmentId,
+            OR: [{ studentId: student.id }, { studentLoginId: student.admissionNo }],
+          },
+        });
+        if (studentAssignment) {
+          await this.prisma.studentAssignment.update({
+            where: { id: studentAssignment.id },
+            data: { status: 'SUBMITTED' },
+          });
+        }
+      } catch {
+        // Ignore if StudentAssignment record is absent
+      }
       return submission;
     } catch (error) {
       if (uploadedPath) await this.usersService.removeSubmissionFile(uploadedPath);

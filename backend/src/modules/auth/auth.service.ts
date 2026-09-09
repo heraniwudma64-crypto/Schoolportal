@@ -48,9 +48,11 @@ export class AuthService {
       throw new BadRequestException('Password confirmation does not match');
     }
 
-    const loginId = registerDto.idNumber.trim();
-    const email = registerDto.email?.trim().toLowerCase();
     const role = this.mapRegisterRole(registerDto.role);
+    const loginId = (role === Role.STUDENT
+      ? registerDto.studentId || registerDto.idNumber
+      : registerDto.idNumber).trim();
+    const email = registerDto.email?.trim().toLowerCase();
 
     if (role === Role.STUDENT) {
       const required = ['institutionId', 'institutionName', 'fatherName', 'grandfatherName', 'admissionType', 'gender', 'dob', 'nationality', 'familyKebele', 'locationType', 'fatherEducationLevel', 'motherEducationLevel', 'economicStatus', 'guardianFullName', 'familyHeadGender', 'guardianPhone', 'nationalId', 'residenceRegion', 'residenceZone', 'residenceWoreda', 'birthRegion', 'birthZone', 'birthWoreda', 'parentStatus'];
@@ -236,6 +238,9 @@ export class AuthService {
         }
 
         return user;
+      }, {
+        maxWait: 10000,
+        timeout: 10000,
       });
 
       const safeUser = this.toSafeUser(createdUser, registerDto.name);
@@ -275,26 +280,29 @@ export class AuthService {
   }
 
   async getTeacherPermissions(userId: string) {
-  // 1. Find the teacher record using their user ID
-  const teacher = await this.prisma.teacher.findUnique({
-    where: { userId },
-    include: { homeroomSections: true }, // This uses the "HomeroomTeacher" relation from your schema
-  });
+    // 1. Find the teacher record using their user ID
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      include: {
+        // ClassSection[] via "GeneralTeacher" relation = homeroom sections
+        ClassSection: true,
+      },
+    });
 
-  if (!teacher) {
-    throw new NotFoundException('Teacher not found');
+    if (!teacher) {
+      throw new NotFoundException('Teacher not found');
+    }
+
+    // 2. Check if they have at least one homeroom section assigned
+    const isHomeroomTeacher = teacher.ClassSection.length > 0;
+
+    // 3. Return their info plus the permission flag
+    return {
+      id: teacher.id,
+      name: `${teacher.firstName} ${teacher.lastName}`,
+      isHomeroomTeacher, // true or false
+    };
   }
-
-  // 2. Check if they have at least one homeroom section assigned
-  const isHomeroomTeacher = teacher.homeroomSections.length > 0;
-
-  // 3. Return their info plus the permission flag
-  return {
-    id: teacher.id,
-    name: `${teacher.firstName} ${teacher.lastName}`,
-    isHomeroomTeacher, // true or false
-  };
-}
 
   async login(loginDto: LoginDto) {
     const identifier = [
@@ -316,6 +324,7 @@ export class AuthService {
         OR: [
           { loginId: { equals: identifier, mode: 'insensitive' } },
           { email: { equals: emailIdentifier, mode: 'insensitive' } },
+          { Student: { admissionNo: { equals: identifier, mode: 'insensitive' } } },
         ],
       },
       select: {
